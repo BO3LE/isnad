@@ -1,0 +1,47 @@
+# Production stack: no local database (Supabase), production image targets, no source mounts.
+#
+#   docker compose -f docker-compose.prod.yml --env-file .env.production up -d --build
+#
+# Required in .env.production: DATABASE_URL (Supabase), REDIS_URL, JWT_SECRET (Supabase JWT secret),
+# CORS_ORIGINS, PUBLIC_FILES_URL, and the adapter keys. ENVIRONMENT is forced to production.
+# Run migrations once per release:
+#   docker compose -f docker-compose.prod.yml run --rm api sh -c "cd /app/db && alembic upgrade head"
+# (TODO W11, Mohammed: choose the host and fill in the deployment section of SETUP.md.)
+
+services:
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes: [redisdata:/data]
+
+  api:
+    build: { context: ., dockerfile: api/Dockerfile, target: prod }
+    env_file: [.env.production]
+    environment:
+      ENVIRONMENT: production
+      ENABLE_DEV_LOGIN: "false"
+    restart: unless-stopped
+    depends_on: [redis]
+
+  worker:
+    build: { context: ., dockerfile: worker/Dockerfile, target: prod }
+    env_file: [.env.production]
+    environment:
+      ENVIRONMENT: production
+    restart: unless-stopped
+    volumes: [artifacts:/data/artifacts]
+    depends_on: [redis]
+    deploy:
+      resources:
+        limits: { cpus: "2", memory: 4g } # FFmpeg floor from GP-plan §5.5 — resize after the W5 sizing test
+
+  web:
+    build: { context: frontend, target: prod, args: { VITE_API_URL: "${PUBLIC_API_URL:-/api}" } }
+    restart: unless-stopped
+    ports: ["80:80"]
+    depends_on: [api]
+
+volumes:
+  redisdata:
+  artifacts:

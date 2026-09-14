@@ -1,0 +1,25 @@
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "gp-agent-researcher"
+version = "0.1.0"
+description = "Researcher agent — Finds sources on a topic and gathers notes."
+requires-python = ">=3.11"
+dependencies = ["gp-contracts"]
+
+[project.optional-dependencies]
+test = ["gp-adapters"]
+
+# The worker discovers agents through this entry point. It never imports an agent by name.
+[project.entry-points."gp.agents"]
+researcher = "agents.researcher.agent:ResearcherAgent"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["agents.researcher*"]
+namespaces = true
+
+[tool.setuptools.package-data]
+"agents.researcher" = ["manifest.json", "prompts/*.md"]

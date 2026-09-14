@@ -1,0 +1,11 @@
+{
+  "name": "writer",
+  "version": "0.1.0",
+  "title": "Writer",
+  "description": "Turns research notes into an article.",
+  "family": "create",
+  "icon": "pen-line",
+  "input_type": "WriteInput",
+  "output_type": "WriteOutput",
+  "requires_approval": false
+}

@@ -1,0 +1,25 @@
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "gp-agent-image"
+version = "0.1.0"
+description = "Image agent — Creates a thumbnail and images for the content."
+requires-python = ">=3.11"
+dependencies = ["gp-contracts"]
+
+[project.optional-dependencies]
+test = ["gp-adapters"]
+
+# The worker discovers agents through this entry point. It never imports an agent by name.
+[project.entry-points."gp.agents"]
+image = "agents.image.agent:ImageAgent"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["agents.image*"]
+namespaces = true
+
+[tool.setuptools.package-data]
+"agents.image" = ["manifest.json", "prompts/*.md"]

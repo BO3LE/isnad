@@ -1,0 +1,22 @@
+# Repository-wide tool configuration only. This file is not a package:
+# each component has its own pyproject.toml and is installed separately.
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+addopts = "-ra --strict-markers"
+markers = [
+  "integration: needs PostgreSQL and Redis (run in CI's integration job or via `make test-integration`)",
+]
+
+[tool.ruff]
+line-length = 120
+target-version = "py311"
+extend-exclude = ["frontend", "**/migrations/versions/*.py"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "ASYNC", "RUF"]
+ignore = ["E501", "RUF001", "RUF002", "RUF003", "B008"]  # E501: `ruff format` owns line length
+
+[tool.ruff.lint.isort]
+known-first-party = ["contracts", "api", "worker", "agents", "adapters", "exporters", "db"]

@@ -1,0 +1,11 @@
+{
+  "name": "publisher",
+  "version": "0.1.0",
+  "title": "Publisher",
+  "description": "Uploads to YouTube or Google Drive.",
+  "family": "distribute",
+  "icon": "cloud-upload",
+  "input_type": "PublishInput",
+  "output_type": "PublishOutput",
+  "requires_approval": true
+}

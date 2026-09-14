@@ -1,0 +1,16 @@
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "gp-contracts"
+version = "0.1.0"
+description = "C0 — every type that crosses a component boundary. Depends on pydantic only."
+requires-python = ">=3.11"
+dependencies = ["pydantic>=2.8,<3"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+contracts = ["py.typed"]

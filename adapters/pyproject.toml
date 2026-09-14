@@ -1,0 +1,20 @@
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "gp-adapters"
+version = "0.1.0"
+description = "C5 — one file per external service, each behind a port from contracts.ports. Every port has a fake."
+requires-python = ">=3.11"
+dependencies = ["gp-contracts"]
+
+[project.optional-dependencies]
+openai = ["openai>=1.50"]
+search = ["httpx>=0.27"]
+tts = ["gTTS>=2.5"]
+google = ["google-api-python-client>=2.140", "google-auth-oauthlib>=1.2"]
+all = ["gp-adapters[openai,search,tts,google]"]
+
+[tool.setuptools.packages.find]
+where = ["src"]

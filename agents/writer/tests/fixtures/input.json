@@ -1,0 +1,16 @@
+{
+  "notes": [
+    "Solar capacity is growing.",
+    "Large projects are under way."
+  ],
+  "sources": [
+    {
+      "title": "IRENA",
+      "url": "https://example.org/irena",
+      "snippet": ""
+    }
+  ],
+  "length": "short",
+  "style": "informative",
+  "format": "blog_post"
+}

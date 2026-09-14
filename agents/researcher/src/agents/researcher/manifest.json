@@ -1,0 +1,11 @@
+{
+  "name": "researcher",
+  "version": "0.1.0",
+  "title": "Researcher",
+  "description": "Finds sources on a topic and gathers notes.",
+  "family": "create",
+  "icon": "telescope",
+  "input_type": "ResearchInput",
+  "output_type": "ResearchOutput",
+  "requires_approval": false
+}

@@ -1,0 +1,106 @@
+# Component boundaries, enforced in CI (GP-plan Part 2 · "Enforcing all of this").
+# If a PR turns this red, fix the boundary — not this file.
+
+[importlinter]
+root_packages =
+    contracts
+    db
+    adapters
+    exporters
+    agents
+    worker
+    api
+include_external_packages = True
+
+[importlinter:contract:contracts-leaf]
+name = C0 contracts imports no other component
+type = forbidden
+source_modules = contracts
+forbidden_modules =
+    db
+    adapters
+    exporters
+    agents
+    worker
+    api
+
+[importlinter:contract:db-leaf]
+name = C7 db imports no other component
+type = forbidden
+source_modules = db
+forbidden_modules =
+    contracts
+    adapters
+    exporters
+    agents
+    worker
+    api
+
+[importlinter:contract:api]
+name = C2 api never imports agents, adapters, exporters or the worker
+type = forbidden
+source_modules = api
+forbidden_modules =
+    agents
+    adapters
+    exporters
+    worker
+
+[importlinter:contract:worker]
+name = C3 worker never imports an agent (the registry loads them by entry point), the api or exporters
+type = forbidden
+source_modules = worker
+forbidden_modules =
+    agents
+    api
+    exporters
+
+[importlinter:contract:agents]
+name = C4 agents never import the worker, the api, the database or adapter implementations
+type = forbidden
+source_modules = agents
+forbidden_modules =
+    worker
+    api
+    db
+    adapters
+    sqlalchemy
+    celery
+# Agent *tests* may use the fake adapters; agent code may not.
+ignore_imports =
+    agents.*.tests.** -> adapters.**
+
+[importlinter:contract:agents-independent]
+name = C4 agents never import each other
+type = independence
+modules =
+    agents.researcher
+    agents.writer
+    agents.image
+    agents.video
+    agents.publisher
+    agents.email
+
+[importlinter:contract:adapters]
+name = C5 adapters never import agents, the worker, the api, the database or exporters
+type = forbidden
+source_modules = adapters
+forbidden_modules =
+    agents
+    worker
+    api
+    db
+    exporters
+
+[importlinter:contract:exporters]
+name = C6 exporters are pure: no agents, worker, api, database, adapters or network clients
+type = forbidden
+source_modules = exporters
+forbidden_modules =
+    agents
+    worker
+    api
+    db
+    adapters
+    httpx
+    requests

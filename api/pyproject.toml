@@ -1,0 +1,25 @@
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "gp-api"
+version = "0.1.0"
+description = "C2 — authenticate, validate a workflow graph, store it, enqueue a run, serve status and logs."
+requires-python = ">=3.11"
+dependencies = [
+  "gp-contracts",
+  "gp-db",
+  "fastapi>=0.115,<1",
+  "uvicorn[standard]>=0.30",
+  "pydantic-settings>=2.4",
+  "PyJWT>=2.9",
+  "celery>=5.4,<6",
+  "redis>=5",
+]
+
+[project.optional-dependencies]
+test = ["httpx>=0.27"]
+
+[tool.setuptools.packages.find]
+where = ["src"]

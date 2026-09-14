@@ -1,0 +1,11 @@
+{
+  "name": "image",
+  "version": "0.1.0",
+  "title": "Image",
+  "description": "Creates a thumbnail and images for the content.",
+  "family": "create",
+  "icon": "image",
+  "input_type": "ImageInput",
+  "output_type": "ImageOutput",
+  "requires_approval": false
+}

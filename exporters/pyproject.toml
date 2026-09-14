@@ -1,0 +1,18 @@
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "gp-exporters"
+version = "0.1.0"
+description = "C6 — pure functions: markdown → PDF, markdown → DOCX, audio (+ slides) → MP4. Input in, bytes out."
+requires-python = ">=3.11"
+dependencies = []
+
+[project.optional-dependencies]
+pdf = ["weasyprint>=62", "markdown>=3.6"]
+docx = ["python-docx>=1.1"]
+all = ["gp-exporters[pdf,docx]"]
+
+[tool.setuptools.packages.find]
+where = ["src"]

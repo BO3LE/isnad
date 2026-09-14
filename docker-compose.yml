@@ -1,0 +1,95 @@
+# Development stack.   docker compose up --build
+#
+#   frontend  http://localhost:5173   Vite dev server (C1)
+#   api       http://localhost:8000   FastAPI, docs at /docs (C2)
+#   worker    —                       Celery + FFmpeg + agents (C3, C4)
+#   redis     localhost:6379          broker + result backend
+#   db        localhost:5433          PostgreSQL 15 — development only; production uses Supabase
+#   migrate   —                       one-shot: alembic upgrade head + seed data
+
+x-python-env: &python-env
+  DATABASE_URL: postgresql://postgres:postgres@db:5432/gp
+  REDIS_URL: redis://redis:6379/0
+  STORAGE_ROOT: /data/artifacts
+  PUBLIC_FILES_URL: http://localhost:8000/files
+
+services:
+  db:
+    image: postgres:15
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: gp
+    ports: ["${DB_HOST_PORT:-5433}:5432"]  # 5433 on the host so a local Postgres on 5432 does not clash
+    volumes: [pgdata:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d gp"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  redis:
+    image: redis:7-alpine
+    ports: ["${REDIS_HOST_PORT:-6379}:6379"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  migrate:
+    build: { context: ., dockerfile: api/Dockerfile, target: dev }
+    env_file: [{ path: .env, required: false }]
+    environment: *python-env
+    working_dir: /app/db
+    command: ["sh", "-c", "alembic upgrade head && python -m db.seed"]
+    volumes:
+      - ./db:/app/db
+      - ./contracts:/app/contracts
+    depends_on:
+      db: { condition: service_healthy }
+    restart: "no"
+
+  api:
+    build: { context: ., dockerfile: api/Dockerfile, target: dev }
+    env_file: [{ path: .env, required: false }]
+    environment: *python-env
+    ports: ["8000:8000"]
+    volumes:
+      - ./api:/app/api
+      - ./contracts:/app/contracts
+      - ./db:/app/db
+      - artifacts:/data/artifacts
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+      redis: { condition: service_healthy }
+
+  worker:
+    build: { context: ., dockerfile: worker/Dockerfile, target: dev }
+    env_file: [{ path: .env, required: false }]
+    environment: *python-env
+    volumes:
+      - ./worker:/app/worker
+      - ./agents:/app/agents
+      - ./adapters:/app/adapters
+      - ./exporters:/app/exporters
+      - ./contracts:/app/contracts
+      - ./db:/app/db
+      - artifacts:/data/artifacts
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+      redis: { condition: service_healthy }
+
+  frontend:
+    build: { context: frontend, target: dev }
+    environment:
+      VITE_API_URL: http://localhost:8000
+    ports: ["5173:5173"]
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    depends_on: [api]
+
+volumes:
+  pgdata:
+  artifacts:

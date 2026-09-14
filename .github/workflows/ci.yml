@@ -1,0 +1,184 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  PYTHON_VERSION: "3.11"
+  NODE_VERSION: "20"
+  PIP_DISABLE_PIP_VERSION_CHECK: "1"
+
+jobs:
+  # ------------------------------------------------------------------ boundaries and lint
+  boundaries:
+    name: Lint · import boundaries · agent shape
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "${{ env.PYTHON_VERSION }}", cache: pip }
+      - name: Install every component
+        run: scripts/bootstrap.sh
+      - name: ruff
+        run: source .venv/bin/activate && ruff check . && ruff format --check .
+      - name: Import contract (fails when a component imports across a forbidden edge)
+        run: source .venv/bin/activate && lint-imports
+      - name: Grep tests from GP-plan Part 2
+        run: |
+          ! grep -rn "from agents\|import agents" api/src worker/src
+      - name: Agent shape (every agent folder has a valid manifest and entry point)
+        run: source .venv/bin/activate && python scripts/validate_manifests.py
+
+  # ------------------------------------------------------------------ each component tested alone
+  python-tests:
+    name: Tests · ${{ matrix.component }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - component: contracts
+            install: ./contracts
+          - component: db
+            install: ./db
+          - component: adapters
+            install: ./contracts ./adapters
+          - component: exporters
+            install: ./exporters
+            ffmpeg: true
+          # The worker suite runs with NO agents installed — the C3 decoupling test.
+          - component: worker
+            install: ./contracts ./db ./adapters ./worker
+          # The API suite runs with no worker, Redis or PostgreSQL — the C2 decoupling test.
+          - component: api
+            install: ./contracts ./db ./api[test]
+          - component: agents
+            install: ./contracts ./adapters ./exporters
+            ffmpeg: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "${{ env.PYTHON_VERSION }}", cache: pip }
+      - name: Install FFmpeg
+        if: matrix.ffmpeg
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg
+      - name: Install ${{ matrix.component }} and only what it depends on
+        run: pip install -c constraints.txt ${{ matrix.install }} pytest pytest-asyncio
+      - name: Run tests
+        if: matrix.component != 'agents'
+        working-directory: ${{ matrix.component }}
+        run: python -m pytest -q
+      - name: Run every agent's tests, each agent installed on its own
+        if: matrix.component == 'agents'
+        run: |
+          for agent in agents/*/; do
+            echo "::group::${agent}"
+            pip install -c constraints.txt "./${agent%/}"
+            (cd "$agent" && python -m pytest -q)
+            pip uninstall -y "gp-agent-$(basename "$agent")"
+            echo "::endgroup::"
+          done
+
+  db-migrations:
+    name: Migrations round-trip on PostgreSQL 15
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:15
+        env: { POSTGRES_PASSWORD: postgres, POSTGRES_DB: gp }
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres" --health-interval 3s --health-timeout 3s --health-retries 20
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/gp
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "${{ env.PYTHON_VERSION }}", cache: pip }
+      - run: pip install -c constraints.txt ./db
+      - name: upgrade → downgrade → upgrade → check for model drift
+        working-directory: db
+        run: |
+          alembic upgrade head
+          alembic downgrade base
+          alembic upgrade head
+          alembic check
+      - name: Seed twice (must be idempotent)
+        run: python -m db.seed && python -m db.seed
+
+  # ------------------------------------------------------------------ contract drift
+  api-contract:
+    name: OpenAPI and frontend types are up to date
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "${{ env.PYTHON_VERSION }}", cache: pip }
+      - uses: actions/setup-node@v4
+        with: { node-version: "${{ env.NODE_VERSION }}", cache: npm, cache-dependency-path: frontend/package-lock.json }
+      - run: pip install -c constraints.txt ./contracts ./db ./api
+      - name: contracts/openapi.json matches the API
+        run: |
+          python -m api.export_openapi
+          git diff --exit-code -- contracts/openapi.json || (echo "::error::Run 'make openapi' and commit contracts/openapi.json and frontend/src/lib/api-types.ts" && exit 1)
+      - name: frontend/src/lib/api-types.ts matches contracts/openapi.json
+        working-directory: frontend
+        run: npm ci && npm run check:api-types
+
+  # ------------------------------------------------------------------ frontend
+  frontend:
+    name: Frontend · lint · typecheck · unit tests · build
+    runs-on: ubuntu-latest
+    defaults: { run: { working-directory: frontend } }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: "${{ env.NODE_VERSION }}", cache: npm, cache-dependency-path: frontend/package-lock.json }
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build
+
+  e2e:
+    name: Frontend end-to-end (mocked API, no backend)
+    runs-on: ubuntu-latest
+    defaults: { run: { working-directory: frontend } }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: "${{ env.NODE_VERSION }}", cache: npm, cache-dependency-path: frontend/package-lock.json }
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - run: npm run test:e2e
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with: { name: playwright-report, path: frontend/playwright-report, retention-days: 7 }
+
+  # ------------------------------------------------------------------ whole stack
+  integration:
+    name: Integration · docker compose + smoke test
+    # Heavier (builds the FFmpeg worker image). Runs on main and on demand to save CI minutes.
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Start the stack with fake adapters
+        run: docker compose up -d --build db redis migrate api worker
+      - name: Run all three template workflows end to end
+        run: python3 scripts/smoke_test.py
+      - name: Logs
+        if: failure()
+        run: docker compose logs --no-color api worker migrate
+      - if: always()
+        run: docker compose down -v

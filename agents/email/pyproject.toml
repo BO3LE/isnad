@@ -1,0 +1,25 @@
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "gp-agent-email"
+version = "0.1.0"
+description = "Email agent — Sends the links and files to your recipients."
+requires-python = ">=3.11"
+dependencies = ["gp-contracts"]
+
+[project.optional-dependencies]
+test = ["gp-adapters"]
+
+# The worker discovers agents through this entry point. It never imports an agent by name.
+[project.entry-points."gp.agents"]
+email = "agents.email.agent:EmailAgent"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["agents.email*"]
+namespaces = true
+
+[tool.setuptools.package-data]
+"agents.email" = ["manifest.json", "prompts/*.md"]

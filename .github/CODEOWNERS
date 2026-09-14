@@ -1,0 +1,33 @@
+# Code owners — GitHub requests their review automatically.
+# TODO(W1, Hasan): replace the placeholder handles with real GitHub usernames, then enable
+# "Require review from Code Owners" in the branch protection rule for main.
+#
+#   @AHMED_GITHUB    Ahmed Saleh Almutairi     C1 frontend
+#   @HASAN_GITHUB    Hasan Ahmed Almutawa      C2 api, C3 worker
+#   @ZAIN_GITHUB     Zain Shehab Albandari     C4 agents, C5 adapters, C6 exporters
+#   @MOHAMMED_GITHUB Mohammed Abdullah Bajaba  C7 db, Docker, CI, deployment
+
+*                       @HASAN_GITHUB
+
+/frontend/              @AHMED_GITHUB
+/docs/DESIGN-SYSTEM.md  @AHMED_GITHUB
+
+/api/                   @HASAN_GITHUB
+/worker/                @HASAN_GITHUB
+
+/agents/                @ZAIN_GITHUB
+/adapters/              @ZAIN_GITHUB
+/exporters/             @ZAIN_GITHUB
+
+/db/                    @MOHAMMED_GITHUB
+/docker-compose*.yml    @MOHAMMED_GITHUB
+/**/Dockerfile          @MOHAMMED_GITHUB
+/.github/               @MOHAMMED_GITHUB
+/scripts/               @MOHAMMED_GITHUB
+/.importlinter          @MOHAMMED_GITHUB @HASAN_GITHUB
+# Port shapes are Mohammed's; adapters implement them.
+/contracts/src/contracts/ports.py  @MOHAMMED_GITHUB @ZAIN_GITHUB
+
+# contracts is everyone's: any change needs two approvals (set "required approvals" to 2 on main,
+# or review contracts PRs as a pair).
+/contracts/             @AHMED_GITHUB @HASAN_GITHUB @ZAIN_GITHUB @MOHAMMED_GITHUB
