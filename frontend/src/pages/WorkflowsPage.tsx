@@ -1,7 +1,7 @@
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Plus } from "lucide-react";
 import { Link, useNavigate } from "react-router-dom";
-import { TopBar } from "@/components/TopBar";
+import { AppShell, PageBody } from "@/components/app/AppShell";
 import { Button } from "@/design-system/components/Button";
 import { StatusChip } from "@/design-system/status/StatusChip";
 import { runStatusMeta } from "@/design-system/status/statusMeta";
@@ -17,9 +17,8 @@ export function WorkflowsPage() {
   });
 
   return (
-    <div className="flex h-full flex-col">
-      <TopBar />
-      <main className="mx-auto grid w-full max-w-[1200px] gap-6 px-4 py-8 md:px-8">
+    <AppShell crumbs={[{ label: "Workflows" }]}>
+      <PageBody>
         <div className="flex flex-wrap items-end justify-between gap-4">
           <div className="grid gap-1">
             <h1 className="text-heading-xl">Workflows</h1>
@@ -54,7 +53,7 @@ export function WorkflowsPage() {
             </li>
           ))}
         </ul>
-      </main>
-    </div>
+      </PageBody>
+    </AppShell>
   );
 }

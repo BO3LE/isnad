@@ -498,10 +498,12 @@ All three are free, open-source and available on Google Fonts and as `@fontsourc
 ### Fallback stacks
 
 ```css
---font-sans:  "Geist", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+--font-sans:  "Geist Sans", "Geist", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
 --font-serif: "Instrument Serif", ui-serif, Georgia, "Times New Roman", serif;
 --font-mono:  "Geist Mono", ui-monospace, "SFMono-Regular", Menlo, Consolas, "Liberation Mono", monospace;
 ```
+
+> **Family name.** `@fontsource/geist-sans` declares the family as **"Geist Sans"**, while Google Fonts serves the same face as **"Geist"** (which is what `landing/` loads). Both names are listed in `--font-sans` so the stack resolves whichever source is in use — a stack naming only one of them falls back silently to `system-ui` under the other.
 
 ### Where each typeface is allowed
 
@@ -2809,7 +2811,7 @@ Tokens are defined **once** in CSS custom properties and consumed by Tailwind, R
   --status-cancelled-solid: var(--neutral-700); --status-cancelled-fg: var(--neutral-700); --status-cancelled-bg: var(--neutral-100);
 
   /* ---------- typography ---------- */
-  --font-sans:  "Geist", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-sans:  "Geist Sans", "Geist", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
   --font-serif: "Instrument Serif", ui-serif, Georgia, "Times New Roman", serif;
   --font-mono:  "Geist Mono", ui-monospace, "SFMono-Regular", Menlo, Consolas, "Liberation Mono", monospace;
 

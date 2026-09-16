@@ -6,6 +6,20 @@
     <meta name="color-scheme" content="light dark" />
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
     <title>GP Platform</title>
+    <script>
+      // Stamps the resolved theme before the first paint so the app never flashes the wrong one.
+      // Mirrors resolveTheme() in src/design-system/theme.ts; the store re-applies on hydrate.
+      (function () {
+        try {
+          var saved = JSON.parse(localStorage.getItem("gp-theme") || "{}");
+          var choice = (saved.state && saved.state.theme) || "system";
+          var dark = choice === "dark" || (choice === "system" && matchMedia("(prefers-color-scheme: dark)").matches);
+          document.documentElement.setAttribute("data-theme", dark ? "dark" : "light");
+        } catch (error) {
+          document.documentElement.setAttribute("data-theme", "light");
+        }
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>

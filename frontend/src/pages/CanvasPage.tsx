@@ -13,7 +13,7 @@ import ReactFlow, {
   type Edge,
   type Node,
 } from "reactflow";
-import { TopBar } from "@/components/TopBar";
+import { AppShell } from "@/components/app/AppShell";
 import { Button } from "@/design-system/components/Button";
 import { ApiError, endpoints, type AgentManifest, type ValidationResult, type WorkflowGraph } from "@/lib/api";
 
@@ -101,20 +101,20 @@ export function CanvasPage() {
   });
 
   return (
-    <div className="flex h-full flex-col">
-      <TopBar>
-        <span className="truncate text-body-md text-text-muted">
-          Workflows / <span className="text-text">{workflow.data?.name ?? "…"}</span>
-        </span>
-        <div className="ml-auto flex gap-2">
-          <Button onClick={() => validate.mutate()} loading={validate.isPending}>
-            <ShieldCheck size={16} aria-hidden /> Validate
+    <AppShell
+      fullBleed
+      crumbs={[{ label: "Workflows", to: "/workflows" }, { label: workflow.data?.name ?? "…" }]}
+      actions={
+        <div className="flex gap-2">
+          <Button icon={<ShieldCheck size={16} aria-hidden />} onClick={() => validate.mutate()} loading={validate.isPending}>
+            Validate
           </Button>
-          <Button variant="accent" onClick={() => run.mutate()} loading={run.isPending}>
-            <Play size={16} aria-hidden /> Run
+          <Button variant="accent" icon={<Play size={16} aria-hidden />} onClick={() => run.mutate()} loading={run.isPending}>
+            Run
           </Button>
         </div>
-      </TopBar>
+      }
+    >
       <div className="flex min-h-0 flex-1">
         <aside className="hidden w-[264px] shrink-0 overflow-y-auto border-r border-border bg-surface p-3 lg:block" aria-label="Agents">
           <p className="mb-2 px-1 text-overline uppercase text-text-muted">Agents</p>
@@ -150,6 +150,6 @@ export function CanvasPage() {
           )}
         </div>
       </div>
-    </div>
+    </AppShell>
   );
 }

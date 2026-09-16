@@ -2,6 +2,8 @@
    Components use semantic tokens only; never raw hex values. */
 
 :root {
+  color-scheme: light;
+
   /* primitives */
   --neutral-0: #ffffff;
   --neutral-25: #fafaf8;
@@ -16,6 +18,7 @@
   --neutral-800: #262624;
   --neutral-850: #1f1f1d;
   --neutral-900: #161615;
+  --neutral-925: #111110;
   --neutral-950: #0b0b0a;
   --volt-500: #d7ff3a;
   --volt-700: #5c7000;
@@ -32,17 +35,21 @@
   --color-surface-inverse: var(--neutral-950);
   --color-border: var(--neutral-200);
   --color-border-strong: var(--neutral-400);
+  --color-border-hover: var(--neutral-600);
   --color-text: var(--neutral-950);
   --color-text-muted: var(--neutral-500);
   --color-text-subtle: var(--neutral-400);
   --color-text-inverse: var(--neutral-25);
   --color-accent: var(--volt-500);
   --color-on-accent: var(--neutral-950);
+  /* Volt as *text* — only ever on a neutral ground, so it needs a per-theme value (§04). */
+  --color-accent-text: var(--volt-700);
   --color-interactive: var(--blue-600);
   --color-interactive-hover: var(--blue-700);
   --color-focus: var(--blue-600);
   --color-selection-bg: var(--blue-50);
   --color-danger: #c8251d;
+  --color-on-danger: #ffffff;
   --color-canvas-dot: var(--neutral-300);
 
   /* status: solid / fg (text) / bg (tint) */
@@ -55,9 +62,11 @@
   --status-skipped-solid: #8e8e88;   --status-skipped-fg: #53534f;   --status-skipped-bg: #e9e9e5;
   --status-cancelled-solid: #3d3d3a; --status-cancelled-fg: #3d3d3a; --status-cancelled-bg: #e9e9e5;
 
-  --font-sans: "Geist Sans", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-  --font-serif: "Instrument Serif", ui-serif, Georgia, serif;
-  --font-mono: "Geist Mono", ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+  /* @fontsource/geist-sans declares the family as "Geist Sans"; Google Fonts serves the same
+     face as "Geist" (what landing/ loads). Both are listed so either source resolves. */
+  --font-sans: "Geist Sans", "Geist", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-serif: "Instrument Serif", ui-serif, Georgia, "Times New Roman", serif;
+  --font-mono: "Geist Mono", ui-monospace, "SFMono-Regular", Menlo, Consolas, "Liberation Mono", monospace;
 
   --radius-xs: 4px;
   --radius-sm: 6px;
@@ -75,37 +84,52 @@
   --ease-exit: cubic-bezier(0.3, 0, 1, 1);
 }
 
-/* Dark theme — follows the OS unless the user chose light; [data-theme="dark"] forces it. (D-05: ship after W8.) */
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) {
-    --color-bg: var(--neutral-950);
-    --color-bg-sunken: var(--neutral-950);
-    --color-surface: var(--neutral-900);
-    --color-surface-raised: var(--neutral-850);
-    --color-surface-hover: var(--neutral-800);
-    --color-surface-inverse: var(--neutral-25);
-    --color-border: var(--neutral-700);
-    --color-border-strong: #71716c;
-    --color-text: #ededea;
-    --color-text-muted: #a3a39e;
-    --color-text-inverse: var(--neutral-950);
-    --color-interactive: #7a9bff;
-    --color-interactive-hover: #a3baff;
-    --color-focus: #7a9bff;
-    --color-selection-bg: #111a3d;
-    --color-danger: #ff7a70;
-    --color-canvas-dot: var(--neutral-700);
-    --status-pending-fg: #a3a39e;  --status-pending-bg: #1f1f1d;
-    --status-running-solid: #7a9bff;  --status-running-fg: #7a9bff;  --status-running-bg: #111a3d;
-    --status-retrying-solid: #ffa15c; --status-retrying-fg: #ffa15c; --status-retrying-bg: #3a2008;
-    --status-approval-solid: #b69cff; --status-approval-fg: #b69cff; --status-approval-bg: #22184a;
-    --status-success-solid: #4fd1a1;  --status-success-fg: #4fd1a1;  --status-success-bg: #0b2a20;
-    --status-failed-solid: #ff7a70;   --status-failed-fg: #ff7a70;   --status-failed-bg: #3a1311;
-    --status-skipped-fg: #a3a39e;     --status-skipped-bg: #1f1f1d;
-    --status-cancelled-solid: #a3a39e; --status-cancelled-fg: #a3a39e; --status-cancelled-bg: #1f1f1d;
-    --shadow-1: 0 0 0 1px var(--neutral-800);
-    --shadow-2: 0 0 0 1px var(--neutral-700);
-  }
+/* Dark theme (D-05: ship after W8).
+
+   theme.ts always stamps a *concrete* data-theme: "system" is resolved from
+   prefers-color-scheme and re-resolved when the OS flips. That keeps the dark palette in
+   exactly one rule, so it can never drift out of step with the light one — which is how
+   --color-bg-sunken previously ended up identical to --color-bg here. */
+:root[data-theme="dark"] {
+  color-scheme: dark;
+
+  --color-bg: var(--neutral-950);
+  --color-bg-sunken: var(--neutral-925);
+  --color-surface: var(--neutral-900);
+  --color-surface-raised: var(--neutral-850);
+  --color-surface-hover: var(--neutral-800);
+  --color-surface-inverse: var(--neutral-25);
+  --color-border: var(--neutral-700);
+  --color-border-strong: #71716c;
+  --color-border-hover: #a3a39e;
+  --color-text: #ededea;
+  --color-text-muted: #a3a39e;
+  --color-text-subtle: var(--neutral-400);
+  --color-text-inverse: var(--neutral-950);
+  /* Volt 700 is a light-theme ink; on a dark ground it measures 3.5:1, so dark uses Volt 500. */
+  --color-accent-text: var(--volt-500);
+  --color-interactive: #7a9bff;
+  --color-interactive-hover: #a3baff;
+  --color-focus: #7a9bff;
+  --color-selection-bg: #111a3d;
+  --color-danger: #ff7a70;
+  /* Ink on the lighter dark-theme red: 7.75:1, where white would be 2.54:1. */
+  --color-on-danger: #0b0b0a;
+  --color-canvas-dot: var(--neutral-700);
+
+  --status-pending-solid: #8e8e88;   --status-pending-fg: #a3a39e;  --status-pending-bg: #1f1f1d;
+  --status-running-solid: #7a9bff;   --status-running-fg: #7a9bff;  --status-running-bg: #111a3d;
+  --status-retrying-solid: #ffa15c;  --status-retrying-fg: #ffa15c; --status-retrying-bg: #3a2008;
+  --status-approval-solid: #b69cff;  --status-approval-fg: #b69cff; --status-approval-bg: #22184a;
+  --status-success-solid: #4fd1a1;   --status-success-fg: #4fd1a1;  --status-success-bg: #0b2a20;
+  --status-failed-solid: #ff7a70;    --status-failed-fg: #ff7a70;   --status-failed-bg: #3a1311;
+  --status-skipped-solid: #8e8e88;   --status-skipped-fg: #a3a39e;  --status-skipped-bg: #1f1f1d;
+  --status-cancelled-solid: #a3a39e; --status-cancelled-fg: #a3a39e; --status-cancelled-bg: #1f1f1d;
+
+  --shadow-1: 0 0 0 1px var(--neutral-800);
+  --shadow-2: 0 0 0 1px var(--neutral-700);
+  --shadow-3: 0 8px 24px rgb(0 0 0 / 0.5);
+  --shadow-4: 0 16px 48px rgb(0 0 0 / 0.6);
 }
 
 @media (prefers-reduced-motion: reduce) {

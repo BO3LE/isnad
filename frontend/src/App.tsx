@@ -1,43 +1,72 @@
-import type { ReactNode } from "react";
-import { BrowserRouter, Link, Navigate, Route, Routes, useLocation } from "react-router-dom";
+import { lazy, Suspense, type ReactNode } from "react";
+import { BrowserRouter, Navigate, Route, Routes, useLocation } from "react-router-dom";
+import { ErrorBoundary } from "./components/app/ErrorBoundary";
+import { Spinner } from "./design-system/components/Progress";
+import { ToastProvider } from "./design-system/components/Toast";
 import { useAuth } from "./lib/auth";
 import { CanvasPage } from "./pages/CanvasPage";
 import { LoginPage } from "./pages/LoginPage";
+import { NotFoundPage } from "./pages/NotFoundPage";
 import { RunPage } from "./pages/RunPage";
 import { WorkflowsPage } from "./pages/WorkflowsPage";
 
-// Routes follow DESIGN-SYSTEM.md §19. Screens still to build: approval, logs, outputs, connections.
+// Routes follow FRONTEND-PAGES-PLAN.md §3. Pages still to build: P-02 register, P-05 run history,
+// P-07 approval, P-08 logs, P-09 outputs, P-10 connections.
+const DevDesignPage = lazy(() => import("./pages/DevDesignPage").then((m) => ({ default: m.DevDesignPage })));
+
 export function App() {
   return (
-    <BrowserRouter>
-      <Routes>
-        <Route path="/login" element={<LoginPage />} />
-        <Route path="/" element={<Navigate to="/workflows" replace />} />
-        <Route path="/workflows" element={<Protected><WorkflowsPage /></Protected>} />
-        <Route path="/workflows/:workflowId" element={<Protected><CanvasPage /></Protected>} />
-        <Route path="/runs/:runId" element={<Protected><RunPage /></Protected>} />
-        <Route path="*" element={<NotFound />} />
-      </Routes>
-    </BrowserRouter>
+    <ErrorBoundary>
+      <ToastProvider>
+        <BrowserRouter>
+          <Routes>
+            <Route path="/login" element={<LoginPage />} />
+            <Route path="/" element={<Navigate to="/workflows" replace />} />
+            <Route
+              path="/workflows"
+              element={
+                <RequireAuth>
+                  <WorkflowsPage />
+                </RequireAuth>
+              }
+            />
+            <Route
+              path="/workflows/:workflowId"
+              element={
+                <RequireAuth>
+                  <CanvasPage />
+                </RequireAuth>
+              }
+            />
+            <Route
+              path="/runs/:runId"
+              element={
+                <RequireAuth>
+                  <RunPage />
+                </RequireAuth>
+              }
+            />
+            {import.meta.env.DEV && (
+              <Route
+                path="/dev/design"
+                element={
+                  <Suspense fallback={<Spinner label="Loading the design system" />}>
+                    <DevDesignPage />
+                  </Suspense>
+                }
+              />
+            )}
+            <Route path="*" element={<NotFoundPage />} />
+          </Routes>
+        </BrowserRouter>
+      </ToastProvider>
+    </ErrorBoundary>
   );
 }
 
-function Protected({ children }: { children: ReactNode }) {
-  const token = useAuth((s) => s.token);
+function RequireAuth({ children }: { children: ReactNode }) {
+  const token = useAuth((state) => state.token);
   const location = useLocation();
   if (!token) return <Navigate to={`/login?next=${encodeURIComponent(location.pathname)}`} replace />;
   return <>{children}</>;
-}
-
-function NotFound() {
-  return (
-    <main className="grid h-full place-items-center p-8 text-center">
-      <div className="grid gap-3">
-        <h1 className="text-heading-lg">This page doesn&apos;t exist.</h1>
-        <Link className="text-interactive hover:underline" to="/workflows">
-          Back to workflows
-        </Link>
-      </div>
-    </main>
-  );
 }
