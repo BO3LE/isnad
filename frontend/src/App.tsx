@@ -7,10 +7,11 @@ import { useAuth } from "./lib/auth";
 import { CanvasPage } from "./pages/CanvasPage";
 import { LoginPage } from "./pages/LoginPage";
 import { NotFoundPage } from "./pages/NotFoundPage";
+import { RegisterPage } from "./pages/RegisterPage";
 import { RunPage } from "./pages/RunPage";
 import { WorkflowsPage } from "./pages/WorkflowsPage";
 
-// Routes follow FRONTEND-PAGES-PLAN.md §3. Pages still to build: P-02 register, P-05 run history,
+// Routes follow FRONTEND-PAGES-PLAN.md §3. Pages still to build: P-05 run history,
 // P-07 approval, P-08 logs, P-09 outputs, P-10 connections.
 const DevDesignPage = lazy(() => import("./pages/DevDesignPage").then((m) => ({ default: m.DevDesignPage })));
 
@@ -21,6 +22,7 @@ export function App() {
         <BrowserRouter>
           <Routes>
             <Route path="/login" element={<LoginPage />} />
+            <Route path="/register" element={<RegisterPage />} />
             <Route path="/" element={<Navigate to="/workflows" replace />} />
             <Route
               path="/workflows"
