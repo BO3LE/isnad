@@ -44,6 +44,14 @@ openapi: ## Regenerate contracts/openapi.json and the frontend API types
 	$(VENV) python -m api.export_openapi
 	cd frontend && npm run gen:api
 
+# ---------------------------------------------------------------- Landing page
+landing: ## Rebuild landing/site/index.html from landing/index.html
+	python3 landing/build-site.py
+
+landing-check: ## Fail if landing/site/index.html is out of date
+	python3 landing/build-site.py
+	git diff --exit-code -- landing/site/index.html
+
 check: lint test ## Everything CI runs, locally
 
-.PHONY: help up down reset logs migrate revision bootstrap test lint format openapi check
+.PHONY: help up down reset logs migrate revision bootstrap test lint format openapi landing landing-check check
