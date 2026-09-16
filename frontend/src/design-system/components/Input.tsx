@@ -1,5 +1,5 @@
-import { Search, X } from "lucide-react";
-import { forwardRef, type InputHTMLAttributes, type TextareaHTMLAttributes } from "react";
+import { Eye, EyeOff, Search, X } from "lucide-react";
+import { forwardRef, useState, type InputHTMLAttributes, type TextareaHTMLAttributes } from "react";
 
 // DESIGN-SYSTEM.md §14.3 — 36 px tall (md), 1.5 px focus border plus the focus ring.
 const base =
@@ -111,3 +111,38 @@ export function SearchInput({ value, onValueChange, label, className = "", ...re
     </div>
   );
 }
+
+export interface PasswordInputProps extends Omit<InputProps, "type"> {
+  /** "current-password" on sign in, "new-password" on register (§21 S-01). */
+  autoComplete?: "current-password" | "new-password";
+}
+
+/**
+ * §14.3 — password with a show/hide toggle. Auth screens only.
+ *
+ * The toggle is a real button inside the field: it carries its own label, announces the state it
+ * will produce, and is reachable by keyboard. Revealing is per-field and never sticky, so a
+ * password is not left on screen after a failed attempt.
+ */
+export const PasswordInput = forwardRef<HTMLInputElement, PasswordInputProps>(function PasswordInput(
+  { autoComplete = "current-password", className = "", ...rest },
+  ref,
+) {
+  const [visible, setVisible] = useState(false);
+  const Icon = visible ? EyeOff : Eye;
+
+  return (
+    <div className="relative">
+      <Input {...rest} ref={ref} type={visible ? "text" : "password"} autoComplete={autoComplete} className={`pr-11 ${className}`} />
+      <button
+        type="button"
+        onClick={() => setVisible((value) => !value)}
+        aria-label={visible ? "Hide password" : "Show password"}
+        aria-pressed={visible}
+        className="absolute right-1.5 top-1/2 grid h-8 w-8 -translate-y-1/2 place-items-center rounded-xs text-text-muted hover:bg-surface-hover hover:text-text"
+      >
+        <Icon size={16} aria-hidden />
+      </button>
+    </div>
+  );
+});

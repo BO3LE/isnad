@@ -8,7 +8,7 @@ import { ConfirmDialog, Dialog } from "@/design-system/components/Dialog";
 import { EmptyState } from "@/design-system/components/EmptyState";
 import { Field } from "@/design-system/components/Field";
 import { IconButton } from "@/design-system/components/IconButton";
-import { Input, NumberInput, SearchInput, Textarea } from "@/design-system/components/Input";
+import { Input, NumberInput, PasswordInput, SearchInput, Textarea } from "@/design-system/components/Input";
 import { Kbd } from "@/design-system/components/Kbd";
 import { Menu } from "@/design-system/components/Menu";
 import { ProgressBar, Spinner } from "@/design-system/components/Progress";
@@ -19,6 +19,9 @@ import { Switch } from "@/design-system/components/Switch";
 import { Tabs } from "@/design-system/components/Tabs";
 import { useToast } from "@/design-system/components/toast-context";
 import { Tooltip } from "@/design-system/components/Tooltip";
+import { ChainRule } from "@/design-system/patterns/ChainRule";
+import { Contour } from "@/design-system/patterns/Contour";
+import { HandoffLines } from "@/design-system/patterns/HandoffLines";
 import { StatusChip } from "@/design-system/status/StatusChip";
 import { nodeStatusMeta, runStatusMeta } from "@/design-system/status/statusMeta";
 import { useTheme, type ThemeChoice } from "@/design-system/theme";
@@ -194,6 +197,9 @@ export function DevDesignPage() {
               />
             )}
           </Field>
+          <Field label="Password" help="Auth screens only — the only place a password is typed.">
+            {({ id, describedBy }) => <PasswordInput id={id} aria-describedby={describedBy} defaultValue="correct-horse" />}
+          </Field>
           <Field label="Message" help="Sent with the links.">
             {({ id, describedBy }) => <Textarea id={id} aria-describedby={describedBy} defaultValue="Here's the latest:" />}
           </Field>
@@ -295,6 +301,32 @@ export function DevDesignPage() {
             />
             <Skeleton className="h-4 w-2/3" />
             <Skeleton className="h-4 w-1/3" />
+          </Card>
+        </div>
+      </Section>
+
+      <Section title="Patterns" note="§07. Ornament comes only from here, and each pattern has one meaning.">
+        <div className="grid gap-4 md:grid-cols-3">
+          <Card className="grid gap-3">
+            <span className="text-heading-sm">P-02 Handoff lines</span>
+            <span className="text-body-sm text-text-muted">Work moving through the chain. Auth hero and covers only.</span>
+            <div className="gradient-handoff grain relative h-28 overflow-hidden rounded-sm">
+              <HandoffLines className="absolute inset-0 h-full w-full text-[#9fb6ff] opacity-40" />
+            </div>
+          </Card>
+          <Card className="grid gap-3">
+            <span className="text-heading-sm">P-05 Chain rule</span>
+            <span className="text-body-sm text-text-muted">A section boundary. Never a row divider.</span>
+            <div className="grid h-28 place-items-center">
+              <ChainRule className="h-3 w-48 text-border-strong" />
+            </div>
+          </Card>
+          <Card className="grid gap-3">
+            <span className="text-heading-sm">P-06 Contour</span>
+            <span className="text-body-sm text-text-muted">Space waiting to be filled. Empty states, never errors.</span>
+            <div className="grid h-28 place-items-center">
+              <Contour className="h-24 w-32 text-border-strong" />
+            </div>
           </Card>
         </div>
       </Section>
