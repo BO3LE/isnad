@@ -7,6 +7,28 @@
 @import "reactflow/dist/style.css";
 @import "./design-system/tokens.css";
 
+/* G-1 Handoff gradient (DESIGN-SYSTEM.md §09). Auth hero, deck and report covers, og-image and
+   the 404 page only — never inside the logged-in app shell. The Ink corner is always top-left so
+   display text sits on the darkest area. */
+.gradient-handoff {
+  background:
+    radial-gradient(120% 90% at 100% 100%, #9fb6ff 0%, transparent 45%),
+    radial-gradient(100% 80% at 85% 70%, #2456f5 0%, transparent 55%),
+    radial-gradient(90% 90% at 40% 40%, #1e3a5f 0%, transparent 70%),
+    #0b0b0a;
+}
+
+/* Grain overlay — 6-10% opacity per §09. */
+.grain::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0.08;
+  mix-blend-mode: overlay;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='200' height='200'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>");
+}
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
