@@ -25,9 +25,10 @@ revision: ## Create a migration: make revision m="add something"
 	docker compose run --rm migrate alembic revision --autogenerate -m "$(m)"
 
 # ---------------------------------------------------------------- Local (no Docker)
-bootstrap: ## Create .venv with every Python component installed (editable)
+bootstrap: ## Create .venv with every Python component installed (editable), and install the git hooks
 	scripts/bootstrap.sh
 	cd frontend && npm ci
+	$(VENV) pre-commit install --install-hooks
 
 test: ## Run every component's own test suite
 	$(VENV) scripts/test_all.sh
@@ -39,6 +40,12 @@ lint: ## ruff + format check + import boundaries + agent shape + frontend lint
 
 format: ## Auto-format Python
 	$(VENV) ruff format . && ruff check --fix .
+
+hooks: ## Install the git hooks (run once per clone)
+	$(VENV) pre-commit install --install-hooks
+
+hooks-all: ## Run every hook against the whole repo, not just staged files
+	$(VENV) pre-commit run --all-files
 
 openapi: ## Regenerate contracts/openapi.json and the frontend API types
 	$(VENV) python -m api.export_openapi
@@ -54,4 +61,4 @@ landing-check: ## Fail if landing/site/index.html is out of date
 
 check: lint test ## Everything CI runs, locally
 
-.PHONY: help up down reset logs migrate revision bootstrap test lint format openapi landing landing-check check
+.PHONY: help up down reset logs migrate revision bootstrap test lint format hooks hooks-all openapi landing landing-check check

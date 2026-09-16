@@ -42,6 +42,8 @@ jobs:
           ! grep -rnE '^[[:space:]]*(from|import)[[:space:]]+agents([.[:space:]]|$)' api/src worker/src
       - name: Agent shape (every agent folder has a valid manifest and entry point)
         run: source .venv/bin/activate && python scripts/validate_manifests.py
+      - name: landing/site/index.html is up to date
+        run: make landing-check
 
   # ------------------------------------------------------------------ each component tested alone
   python-tests:
@@ -186,3 +188,30 @@ jobs:
         run: docker compose logs --no-color api worker migrate
       - if: always()
         run: docker compose down -v
+
+  # ------------------------------------------------------------------ the gate
+  # The single check to require in the branch protection rule for main.
+  #
+  # Requiring the six jobs by name means editing the rule on GitHub every time one is added or
+  # renamed — and a job that is required but never runs blocks every pull request for ever. This
+  # job depends on all of them instead, so the rule names one check that can never go stale.
+  #
+  # `integration` is not here on purpose: it is skipped on pull requests to save CI minutes and
+  # runs on main after the merge.
+  ci-ok:
+    name: CI passed
+    if: always()
+    needs: [boundaries, python-tests, db-migrations, api-contract, frontend, e2e]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Every required job succeeded
+        run: |
+          results="${{ join(needs.*.result, ' ') }}"
+          echo "Results: $results"
+          for result in $results; do
+            if [ "$result" != "success" ]; then
+              echo "::error::A required job did not pass (saw: $results). This pull request is not mergeable."
+              exit 1
+            fi
+          done
+          echo "All required jobs passed."

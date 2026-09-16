@@ -1,0 +1,83 @@
+# Local gates, so a mistake is caught in the two seconds before a commit rather than the four
+# minutes after a push. CI is still the authority — these hooks only make it rarer to hear from it.
+#
+# Install once per clone:  make hooks
+# Run against everything:  pre-commit run --all-files
+#
+# Two speeds:
+#   pre-commit — instant, runs on the staged files only
+#   pre-push   — the slow ones (typecheck, unit tests), run once before the push
+
+default_install_hook_types: [pre-commit, pre-push]
+
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: check-merge-conflict
+      - id: check-case-conflict
+      - id: check-yaml
+      - id: check-json
+      - id: check-toml
+      # Alembic generates the migration files and they are immutable once applied, so they are
+      # left exactly as written — the same exclusion ruff already uses in pyproject.toml.
+      - id: end-of-file-fixer
+        exclude: ^db/migrations/versions/
+      - id: trailing-whitespace
+        exclude: ^db/migrations/versions/
+      - id: mixed-line-ending
+        exclude: ^db/migrations/versions/
+      # CONTRIBUTING "Secrets": never commit a key. Removing it from history later is not enough.
+      - id: detect-private-key
+      - id: check-added-large-files
+        args: [--maxkb=2048]
+        # The self-contained landing build is committed on purpose (landing/README.md).
+        exclude: ^landing/site/
+
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.6.9
+    hooks:
+      - id: ruff
+        args: [--fix]
+      - id: ruff-format
+
+  - repo: local
+    hooks:
+      - id: landing-drift
+        name: landing/site/index.html is up to date
+        entry: bash -c 'python3 landing/build-site.py >/dev/null && git diff --exit-code -- landing/site/index.html'
+        language: system
+        files: ^landing/
+        pass_filenames: false
+
+      - id: frontend-lint
+        name: frontend eslint
+        entry: bash -c 'cd frontend && npx eslint .'
+        language: system
+        files: ^frontend/.*\.(ts|tsx|js)$
+        pass_filenames: false
+
+      # ---------------- pre-push only: too slow to run on every commit ----------------
+      - id: frontend-typecheck
+        name: frontend typecheck
+        stages: [pre-push]
+        entry: bash -c 'cd frontend && npm run typecheck'
+        language: system
+        files: ^frontend/
+        pass_filenames: false
+
+      - id: frontend-tests
+        name: frontend unit tests
+        stages: [pre-push]
+        entry: bash -c 'cd frontend && npm test'
+        language: system
+        files: ^frontend/
+        pass_filenames: false
+
+      - id: import-boundaries
+        name: import boundaries (lint-imports)
+        stages: [pre-push]
+        entry: lint-imports
+        language: system
+        files: \.py$
+        pass_filenames: false
