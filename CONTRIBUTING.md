@@ -16,10 +16,9 @@ Every area has a named backup reviewer (risk R9 — exams). No account, key or s
 
 ## Branches
 
-- `main` is protected: no direct pushes, CI must pass, at least one approval.
-  **This is only true once the rule in "Setting up the GitHub repository" below is applied.**
-  Until then every line in this file is a convention, not a gate: anyone can push straight to
-  `main`, and a pull request can be merged while CI is red.
+- `main` is protected, and since 16 September 2026 GitHub enforces it: a pull request, **one
+  approval** and a green `CI passed` are required, the branch must be up to date, and force-pushes
+  and deletion are blocked. The bypass list is empty, so the rule applies to the lead too.
 - Branch from `main`, named `<component>/<short-description>`:
   `frontend/canvas-palette`, `worker/retry-backoff`, `agents/writer-prompt`, `db/credentials-index`, `infra/ci-cache`, `contracts/email-port`.
 - Keep branches short-lived: open a pull request within two days, even as a draft.
@@ -108,8 +107,10 @@ A task is done when:
 
 1. Create the repository (private) and push `main`.
 2. **Settings → Collaborators**: add the other three.
-3. Replace the placeholder handles in [.github/CODEOWNERS](.github/CODEOWNERS) with real GitHub usernames.
-4. **Settings → Branches → Add rule for `main`**:
+3. ✅ **Done.** Real GitHub handles are in [.github/CODEOWNERS](.github/CODEOWNERS). "Require review
+   from Code Owners" can now be switched on in the ruleset whenever we want it.
+4. ✅ **Done, 16 Sep 2026.** **Settings → Rules → Rulesets → New branch ruleset**, named `main`,
+   enforcement **Active**, target **Include default branch**, bypass list empty:
    - Require a pull request before merging — 1 approval (2 for contracts is enforced by CODEOWNERS + reviewers)
    - Require review from Code Owners
    - Require status checks to pass: **`CI passed`** — that one job covers all six (see above). Do
