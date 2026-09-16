@@ -56,6 +56,9 @@ export const endpoints = {
   createWorkflow: (name: string) => api<WorkflowOut>("/workflows", { method: "POST", body: JSON.stringify({ name }) }),
   saveWorkflow: (id: string, body: Schemas["WorkflowUpdate"]) =>
     api<WorkflowOut>(`/workflows/${id}`, { method: "PUT", body: JSON.stringify(body) }),
+  renameWorkflow: (id: string, name: string) =>
+    api<WorkflowOut>(`/workflows/${id}`, { method: "PUT", body: JSON.stringify({ name }) }),
+  deleteWorkflow: (id: string) => api<void>(`/workflows/${id}`, { method: "DELETE" }),
   validate: (id: string) => api<ValidationResult>(`/workflows/${id}/validate`, { method: "POST" }),
   run: (id: string) => api<RunCreated>(`/workflows/${id}/run`, { method: "POST" }),
   runState: (id: string) => api<RunState>(`/runs/${id}`),
@@ -63,3 +66,18 @@ export const endpoints = {
     api<RunCreated>(`/runs/${runId}/nodes/${nodeId}/approve`, { method: "POST", body: JSON.stringify({ decision, note }) }),
   cancel: (runId: string) => api<RunState>(`/runs/${runId}/cancel`, { method: "POST" }),
 };
+
+/**
+ * Copy a workflow, graph and all.
+ *
+ * There is no duplicate endpoint (FRONTEND-PAGES-PLAN.md P-03 says so), so this is read-then-write:
+ * three calls instead of one, and not atomic — if the graph save fails the copy is left empty rather
+ * than half-built, which is why the caller is told about that failure rather than it being swallowed.
+ * Worth replacing with POST /workflows/{id}/duplicate if the API ever grows one.
+ */
+export async function duplicateWorkflow(id: string): Promise<WorkflowOut> {
+  const source = await endpoints.workflow(id);
+  const copy = await endpoints.createWorkflow(`${source.name} (copy)`);
+  if (!source.graph?.nodes?.length) return copy;
+  return endpoints.saveWorkflow(copy.id, { graph: source.graph });
+}

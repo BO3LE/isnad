@@ -19,6 +19,7 @@ export default {
         border: { DEFAULT: v("color-border"), strong: v("color-border-strong"), hover: v("color-border-hover") },
         text: { DEFAULT: v("color-text"), muted: v("color-text-muted"), subtle: v("color-text-subtle"), inverse: v("color-text-inverse") },
         accent: { DEFAULT: v("color-accent"), on: v("color-on-accent"), text: v("color-accent-text") },
+        agent: { distribute: v("color-agent-distribute-bg"), "distribute-fg": v("color-agent-distribute-fg") },
         interactive: { DEFAULT: v("color-interactive"), hover: v("color-interactive-hover") },
         focus: v("color-focus"),
         selection: v("color-selection-bg"),

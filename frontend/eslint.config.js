@@ -15,9 +15,19 @@ export default tseslint.config(
       ...reactHooks.configs.recommended.rules,
       "react-refresh/only-export-components": ["warn", { allowConstantExport: true }],
       // C1 must not know the backend's internals: no Celery, Redis, database or agent code.
+      // api, worker, agents and db are sibling components outside frontend/, so a real violation
+      // always climbs out with "../". Anchoring on that keeps the guard while letting the frontend
+      // have its own folders named agents/ or db/ — the unanchored pattern blocked those too.
       "no-restricted-imports": [
         "error",
-        { patterns: [{ group: ["**/api/src/**", "**/worker/**", "**/agents/**", "**/db/**"], message: "The frontend talks to the API over HTTP only." }] },
+        {
+          patterns: [
+            {
+              group: ["../**/api/src/**", "../**/worker/**", "../**/agents/**", "../**/db/**"],
+              message: "The frontend talks to the API over HTTP only.",
+            },
+          ],
+        },
       ],
     },
   },
