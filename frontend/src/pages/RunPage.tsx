@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useParams } from "react-router-dom";
-import { TopBar } from "@/components/TopBar";
+import { AppShell, PageBody } from "@/components/app/AppShell";
 import { Button } from "@/design-system/components/Button";
 import { StatusChip } from "@/design-system/status/StatusChip";
 import { nodeStatusMeta, runStatusMeta, TERMINAL_RUN_STATUSES } from "@/design-system/status/statusMeta";
@@ -24,13 +24,8 @@ export function RunPage() {
   const done = state?.nodes?.filter((n) => n.status === "success").length ?? 0;
 
   return (
-    <div className="flex h-full flex-col">
-      <TopBar>
-        <span className="text-body-md text-text-muted">
-          Run <span className="font-mono text-mono-sm">{runId.slice(0, 8)}</span>
-        </span>
-      </TopBar>
-      <main className="mx-auto grid w-full max-w-[960px] gap-6 px-4 py-8 md:px-8">
+    <AppShell crumbs={[{ label: "Workflows", to: "/workflows" }, { label: `Run ${runId.slice(0, 8)}` }]}>
+      <PageBody width="narrow">
         {run.isError && <p role="alert" className="text-status-failed-fg">{run.error.message}</p>}
         {state && (
           <>
@@ -71,7 +66,7 @@ export function RunPage() {
             </ol>
           </>
         )}
-      </main>
-    </div>
+      </PageBody>
+    </AppShell>
   );
 }

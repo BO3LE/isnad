@@ -1,6 +1,6 @@
 import { useState, type FormEvent } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
-import { Logo } from "@/components/TopBar";
+import { Logo } from "@/components/app/Logo";
 import { Button } from "@/design-system/components/Button";
 import { ApiError, endpoints } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
