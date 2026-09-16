@@ -1,0 +1,1302 @@
+<!-- Isnad landing page — Artifact body fragment.
+
+     This file is the page *content only*: the Artifact runtime wraps it in
+     <!doctype html><head>…</head><body>, which is where <meta charset="utf-8"> and the viewport
+     tag come from. Opened straight from disk it has no charset, so the browser falls back to
+     windows-1252 and every — · … and Arabic character renders as mojibake — that is the missing
+     wrapper, not a missing font.
+
+     site/index.html is the standalone build: the same bytes with a real <head> in front. Edit this
+     file, then run `python3 build-site.py` to regenerate it. -->
+<title>Isnad</title>
+<meta name="description" content="Drag AI agents onto a canvas, connect them into a chain, and watch research become a published video — with nothing going public until you approve it.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500&family=Instrument+Serif&display=swap">
+<script src="https://cdn.jsdelivr.net/npm/lucide@0.460.0/dist/umd/lucide.min.js"></script>
+<style>
+/* ============================================================
+   Tokens — taken from DESIGN-SYSTEM.md §04, §05, §11, §12, §24
+   ============================================================ */
+:root {
+  --bg: #FAFAF8;
+  --bg-sunken: #F4F4F1;
+  --surface: #FFFFFF;
+  --surface-hover: #F4F4F1;
+  --inverse-bg: #0B0B0A;
+  --inverse-fg: #FAFAF8;
+  --inverse-hover: #262624;
+  --band-bg: #0B0B0A;
+  --band-fg: #FAFAF8;
+  --band-muted: #A3A39E;
+  --band-line: #3D3D3A;
+  --border: #D6D6D1;
+  --border-strong: #8E8E88;
+  --text: #0B0B0A;
+  --muted: #6B6B66;
+  --subtle: #8E8E88;
+  --dot: #B9B9B3;
+  --volt: #D7FF3A;
+  --on-volt: #0B0B0A;
+  --volt-text: #5C7000;
+  --interactive: #2456F5;
+  --interactive-hover: #1A43CC;
+  --focus: #2456F5;
+  --tile-create-bg: #F4F4F1;
+  --tile-create-fg: #0B0B0A;
+  --tile-dist-bg: #0B0B0A;
+  --tile-dist-fg: #D7FF3A;
+
+  --pending-solid: #8E8E88;  --pending-fg: #6B6B66;  --pending-bg: #F4F4F1;
+  --running-solid: #2456F5;  --running-fg: #1A43CC;  --running-bg: #EAF0FF;
+  --retrying-solid: #B85400; --retrying-fg: #963F00; --retrying-bg: #FFF1E5;
+  --approval-solid: #6D3FD9; --approval-fg: #5530B3; --approval-bg: #F0EBFF;
+  --success-solid: #12805C;  --success-fg: #0B6B4C;  --success-bg: #E3F5EC;
+  --failed-solid: #C8251D;   --failed-fg: #A51D16;   --failed-bg: #FDECEA;
+  --skipped-solid: #8E8E88;  --skipped-fg: #53534F;  --skipped-bg: #E9E9E5;
+
+  --shadow-1: 0 1px 2px rgb(11 11 10 / 0.06);
+  --shadow-2: 0 2px 6px rgb(11 11 10 / 0.08), 0 1px 2px rgb(11 11 10 / 0.06);
+  --shadow-3: 0 8px 24px rgb(11 11 10 / 0.10), 0 2px 6px rgb(11 11 10 / 0.06);
+
+  --font-sans: "Geist", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-serif: "Instrument Serif", ui-serif, Georgia, "Times New Roman", serif;
+  --font-mono: "Geist Mono", ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+
+  --radius-xs: 4px; --radius-sm: 6px; --radius-md: 10px; --radius-lg: 16px;
+  --ease-standard: cubic-bezier(0.2, 0, 0, 1);
+  --ease-enter: cubic-bezier(0, 0, 0, 1);
+  --max: 1200px;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0B0B0A;
+    --bg-sunken: #111110;
+    --surface: #161615;
+    --surface-hover: #262624;
+    --inverse-bg: #FAFAF8;
+    --inverse-fg: #0B0B0A;
+    --inverse-hover: #E9E9E5;
+    --band-bg: #161615;
+    --band-fg: #EDEDEA;
+    --band-muted: #A3A39E;
+    --band-line: #3D3D3A;
+    --border: #3D3D3A;
+    --border-strong: #71716C;
+    --text: #EDEDEA;
+    --muted: #A3A39E;
+    --subtle: #8E8E88;
+    --dot: #3D3D3A;
+    --volt-text: #D7FF3A;
+    --interactive: #7A9BFF;
+    --interactive-hover: #A3BAFF;
+    --focus: #7A9BFF;
+    --tile-create-bg: #262624;
+    --tile-create-fg: #EDEDEA;
+    --tile-dist-bg: #0B0B0A;
+    --tile-dist-fg: #D7FF3A;
+    --pending-solid: #8E8E88;  --pending-fg: #A3A39E;  --pending-bg: #1F1F1D;
+    --running-solid: #7A9BFF;  --running-fg: #7A9BFF;  --running-bg: #111A3D;
+    --retrying-solid: #FFA15C; --retrying-fg: #FFA15C; --retrying-bg: #3A2008;
+    --approval-solid: #B69CFF; --approval-fg: #B69CFF; --approval-bg: #22184A;
+    --success-solid: #4FD1A1;  --success-fg: #4FD1A1;  --success-bg: #0B2A20;
+    --failed-solid: #FF7A70;   --failed-fg: #FF7A70;   --failed-bg: #3A1311;
+    --skipped-solid: #8E8E88;  --skipped-fg: #A3A39E;  --skipped-bg: #1F1F1D;
+    --shadow-1: 0 0 0 1px #262624;
+    --shadow-2: 0 0 0 1px #3D3D3A;
+    --shadow-3: 0 8px 24px rgb(0 0 0 / 0.5);
+  }
+}
+
+:root[data-theme="dark"] {
+  --bg: #0B0B0A;
+  --bg-sunken: #111110;
+  --surface: #161615;
+  --surface-hover: #262624;
+  --inverse-bg: #FAFAF8;
+  --inverse-fg: #0B0B0A;
+  --inverse-hover: #E9E9E5;
+  --band-bg: #161615;
+  --band-fg: #EDEDEA;
+  --band-muted: #A3A39E;
+  --band-line: #3D3D3A;
+  --border: #3D3D3A;
+  --border-strong: #71716C;
+  --text: #EDEDEA;
+  --muted: #A3A39E;
+  --subtle: #8E8E88;
+  --dot: #3D3D3A;
+  --volt-text: #D7FF3A;
+  --interactive: #7A9BFF;
+  --interactive-hover: #A3BAFF;
+  --focus: #7A9BFF;
+  --tile-create-bg: #262624;
+  --tile-create-fg: #EDEDEA;
+  --tile-dist-bg: #0B0B0A;
+  --tile-dist-fg: #D7FF3A;
+  --pending-solid: #8E8E88;  --pending-fg: #A3A39E;  --pending-bg: #1F1F1D;
+  --running-solid: #7A9BFF;  --running-fg: #7A9BFF;  --running-bg: #111A3D;
+  --retrying-solid: #FFA15C; --retrying-fg: #FFA15C; --retrying-bg: #3A2008;
+  --approval-solid: #B69CFF; --approval-fg: #B69CFF; --approval-bg: #22184A;
+  --success-solid: #4FD1A1;  --success-fg: #4FD1A1;  --success-bg: #0B2A20;
+  --failed-solid: #FF7A70;   --failed-fg: #FF7A70;   --failed-bg: #3A1311;
+  --skipped-solid: #8E8E88;  --skipped-fg: #A3A39E;  --skipped-bg: #1F1F1D;
+  --shadow-1: 0 0 0 1px #262624;
+  --shadow-2: 0 0 0 1px #3D3D3A;
+  --shadow-3: 0 8px 24px rgb(0 0 0 / 0.5);
+}
+
+/* ============================================================
+   Base
+   ============================================================ */
+*, *::before, *::after { box-sizing: border-box; }
+html { scroll-behavior: smooth; -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-sans);
+  font-size: 16px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+h1, h2, h3, h4, p { margin: 0; }
+h1, h2, h3 { text-wrap: balance; }
+a { color: var(--interactive); text-decoration: none; }
+a:hover { color: var(--interactive-hover); text-decoration: underline; }
+:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; border-radius: 2px; }
+img, svg { max-width: 100%; }
+.mono { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+.sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
+
+.wrap { width: 100%; max-width: var(--max); margin-inline: auto; padding-inline: 32px; }
+@media (max-width: 767px) { .wrap { padding-inline: 16px; } }
+
+.overline {
+  font-size: 11px; line-height: 16px; font-weight: 600;
+  letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted);
+}
+.lede { font-size: 18px; line-height: 1.55; color: var(--muted); max-width: 46ch; }
+.serif { font-family: var(--font-serif); font-weight: 400; }
+
+/* ============================================================
+   Buttons (§14.1)
+   ============================================================ */
+.btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+  height: 44px; padding-inline: 20px; border-radius: var(--radius-sm);
+  font: 500 16px/1 var(--font-sans); border: 1px solid transparent; cursor: pointer;
+  transition: background-color 120ms var(--ease-standard), transform 120ms var(--ease-standard);
+  text-decoration: none; white-space: nowrap;
+}
+.btn:hover { text-decoration: none; }
+.btn:active { transform: translateY(1px); }
+.btn svg { width: 18px; height: 18px; }
+.btn-sm { height: 32px; padding-inline: 12px; font-size: 13px; gap: 6px; }
+.btn-sm svg { width: 14px; height: 14px; }
+.btn-run { background: var(--volt); color: var(--on-volt); }
+.btn-run:hover { color: var(--on-volt); background: color-mix(in srgb, var(--volt) 88%, #0B0B0A); }
+.btn-primary { background: var(--inverse-bg); color: var(--inverse-fg); }
+.btn-primary:hover { background: var(--inverse-hover); color: var(--inverse-fg); }
+.btn-secondary { background: var(--surface); color: var(--text); border-color: var(--border-strong); }
+.btn-secondary:hover { background: var(--surface-hover); color: var(--text); }
+.btn-danger-2 { background: var(--surface); color: var(--failed-fg); border-color: var(--failed-solid); }
+.btn-danger-2:hover { background: var(--failed-bg); color: var(--failed-fg); }
+.btn-ghost { background: transparent; color: var(--text); }
+.btn-ghost:hover { background: var(--surface-hover); color: var(--text); }
+
+/* ============================================================
+   Status chip (§14.7, §16)
+   ============================================================ */
+.chip {
+  display: inline-flex; align-items: center; gap: 5px; height: 22px; padding-inline: 7px;
+  border-radius: var(--radius-xs); font-size: 12px; line-height: 16px; font-weight: 500; white-space: nowrap;
+  background: var(--pending-bg); color: var(--pending-fg);
+  transition: background-color 200ms var(--ease-standard), color 200ms var(--ease-standard);
+}
+.chip svg { width: 13px; height: 13px; flex: none; }
+[data-status="running"] .chip, .chip[data-tone="running"] { background: var(--running-bg); color: var(--running-fg); }
+[data-status="retrying"] .chip, .chip[data-tone="retrying"] { background: var(--retrying-bg); color: var(--retrying-fg); }
+[data-status="awaiting_approval"] .chip, .chip[data-tone="approval"] { background: var(--approval-bg); color: var(--approval-fg); }
+[data-status="success"] .chip, .chip[data-tone="success"] { background: var(--success-bg); color: var(--success-fg); }
+[data-status="failed"] .chip, .chip[data-tone="failed"] { background: var(--failed-bg); color: var(--failed-fg); }
+[data-status="skipped"] .chip, .chip[data-tone="skipped"] { background: var(--skipped-bg); color: var(--skipped-fg); }
+.spin svg, svg.spin { animation: spin 1s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* ============================================================
+   Nav
+   ============================================================ */
+.nav { position: sticky; top: 0; z-index: 10; background: color-mix(in srgb, var(--bg) 88%, transparent); backdrop-filter: blur(10px); border-bottom: 1px solid var(--border); }
+.nav .wrap { display: flex; align-items: center; justify-content: space-between; gap: 24px; height: 60px; }
+.brand { display: inline-flex; align-items: center; gap: 10px; color: var(--text); font-weight: 600; font-size: 20px; letter-spacing: -0.02em; }
+.brand:hover { color: var(--text); text-decoration: none; }
+.brand svg { width: 48px; height: 18px; }
+.nav-links { display: flex; align-items: center; gap: 4px; }
+.nav-links a:not(.btn) { color: var(--muted); font-size: 14px; padding: 8px 10px; border-radius: var(--radius-sm); }
+.nav-links a:not(.btn):hover { color: var(--text); background: var(--surface-hover); text-decoration: none; }
+@media (max-width: 860px) { .nav-links a:not(.btn) { display: none; } }
+
+/* ============================================================
+   Hero
+   ============================================================ */
+.hero { padding-block: 72px 32px; }
+.hero-grid { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); gap: 24px; align-items: end; }
+.hero-title { grid-column: 1 / span 7; }
+.hero-title .overline { margin-bottom: 20px; display: flex; align-items: center; gap: 10px; }
+.hero-title .overline::before { content: ""; width: 24px; height: 1px; background: var(--border-strong); }
+.hero h1 {
+  font-family: var(--font-serif); font-weight: 400;
+  font-size: clamp(52px, 8.4vw, 112px); line-height: 0.94; letter-spacing: -0.03em;
+}
+.hero h1 .quiet { color: var(--muted); }
+.hero-side { grid-column: 9 / span 4; display: grid; gap: 24px; padding-bottom: 10px; }
+.hero-cta { display: flex; flex-wrap: wrap; gap: 12px; }
+@media (max-width: 960px) {
+  .hero { padding-block: 48px 24px; }
+  .hero-title, .hero-side { grid-column: 1 / -1; }
+}
+
+/* ============================================================
+   Live run demo — the thesis
+   ============================================================ */
+.demo { margin-top: 48px; border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--surface); box-shadow: var(--shadow-1); overflow: hidden; }
+.run-head { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 20px; padding: 14px 20px; border-bottom: 1px solid var(--border); }
+.run-title { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.run-title strong { font-size: 15px; font-weight: 600; white-space: nowrap; }
+.run-title .crumb { color: var(--muted); font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.run-meta { display: flex; align-items: center; gap: 14px; color: var(--muted); font-size: 13px; }
+.run-progress { flex: 1 1 160px; display: flex; align-items: center; gap: 10px; min-width: 140px; }
+.bar { flex: 1; height: 4px; border-radius: 999px; background: var(--bg-sunken); overflow: hidden; }
+.bar > span { display: block; height: 100%; width: 0; background: var(--running-solid); border-radius: inherit; transition: width 320ms var(--ease-standard), background-color 200ms; }
+.run-head[data-run="succeeded"] .bar > span { background: var(--success-solid); }
+.run-head[data-run="awaiting_approval"] .bar > span { background: var(--approval-solid); }
+.run-actions { margin-inline-start: auto; display: flex; gap: 8px; position: relative; }
+.speed { font-size: 12px; color: var(--subtle); }
+
+.canvas {
+  position: relative; padding: 40px 32px;
+  background-color: var(--bg-sunken);
+  background-image: radial-gradient(var(--dot) 1px, transparent 1.2px);
+  background-size: 16px 16px;
+}
+.chain { position: relative; z-index: 1; display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 48px 40px; }
+@media (max-width: 1100px) { .chain { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+@media (max-width: 700px) { .chain { grid-template-columns: minmax(0, 1fr); gap: 36px; } .canvas { padding: 28px 16px; } }
+.edges { position: absolute; inset: 0; width: 100%; height: 100%; z-index: 0; pointer-events: none; overflow: visible; }
+.edges path { fill: none; stroke: var(--border-strong); stroke-width: 1.5; transition: stroke 200ms; }
+.edges path.active { stroke: var(--running-solid); stroke-width: 2; stroke-dasharray: 6 10; animation: flow 800ms linear infinite; }
+.edges path.completed { stroke: var(--text); }
+.edges circle { fill: var(--surface); stroke: var(--border-strong); stroke-width: 1.5; }
+@keyframes flow { to { stroke-dashoffset: -16; } }
+
+.node {
+  position: relative; background: var(--surface); border: 1px solid var(--border-strong); border-radius: var(--radius-md);
+  box-shadow: var(--shadow-1); padding: 12px; display: grid; gap: 10px; min-height: 132px; align-content: start;
+  transition: border-color 200ms var(--ease-standard), box-shadow 200ms, opacity 200ms;
+}
+.node[data-status="pending"] > :not(.node-foot) { opacity: 0.72; }
+.node[data-status="running"] { border-color: var(--running-solid); box-shadow: 0 0 0 1px var(--running-solid), var(--shadow-2); }
+.node[data-status="retrying"] { border-color: var(--retrying-solid); box-shadow: 0 0 0 1px var(--retrying-solid), var(--shadow-2); }
+.node[data-status="awaiting_approval"] { border-color: var(--approval-solid); box-shadow: 0 0 0 1px var(--approval-solid), var(--shadow-2); }
+.node[data-status="success"] { box-shadow: inset 3px 0 0 var(--success-solid), var(--shadow-1); }
+.node-head { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.tile { position: relative; flex: none; width: 32px; height: 32px; border-radius: var(--radius-sm); display: grid; place-items: center; background: var(--tile-create-bg); color: var(--tile-create-fg); }
+.tile svg { width: 17px; height: 17px; position: relative; z-index: 1; }
+.node[data-family="distribute"] .tile, .agent[data-family="distribute"] .tile { background: var(--tile-dist-bg); color: var(--tile-dist-fg); }
+.node[data-status="running"] .tile::before, .node[data-status="running"] .tile::after {
+  content: ""; position: absolute; inset: -2px; border-radius: 999px; border: 1px solid var(--running-solid);
+  animation: ring 1600ms cubic-bezier(0, 0, 0.2, 1) infinite;
+}
+.node[data-status="running"] .tile::after { animation-delay: 800ms; }
+@keyframes ring { from { transform: scale(1); opacity: 0.55; } to { transform: scale(1.9); opacity: 0; } }
+.node-name { font-size: 14px; font-weight: 500; line-height: 1.3; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.node-type { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 10.5px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); font-weight: 600; }
+.node-summary { font-size: 13px; line-height: 18px; color: var(--muted); border-top: 1px solid var(--border); padding-top: 9px; }
+.node-foot { display: flex; align-items: center; gap: 8px; min-height: 22px; }
+.node-foot .time { font-size: 12px; color: var(--muted); margin-inline-start: auto; }
+.gate { font-family: var(--font-mono); font-size: 13px; color: var(--muted); padding-inline: 2px; }
+.node-strip { margin: 0 -12px -12px; padding: 8px 12px; border-top: 1px solid var(--border); font-size: 12px; line-height: 16px; border-radius: 0 0 var(--radius-md) var(--radius-md); display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.node-strip[data-kind="retry"] { background: var(--retrying-bg); color: var(--retrying-fg); }
+.node-strip[data-kind="approval"] { background: var(--approval-bg); color: var(--approval-fg); }
+.node-strip[data-kind="render"] { background: var(--running-bg); color: var(--running-fg); }
+.node-strip[data-kind="link"] { background: var(--success-bg); color: var(--success-fg); }
+.node-strip .btn { margin-inline-start: auto; }
+.node[data-status="awaiting_approval"] .hand svg { animation: breathe 2s var(--ease-standard) infinite; }
+@keyframes breathe { 50% { opacity: 0.55; } }
+
+.log-strip { border-top: 1px solid var(--border); padding: 12px 20px 14px; display: grid; gap: 4px; min-height: 124px; background: var(--surface); }
+.log-strip .overline { margin-bottom: 4px; display: flex; justify-content: space-between; gap: 12px; }
+.log-lines { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; font-size: 12px; line-height: 18px; color: var(--muted); overflow-x: auto; }
+.log-lines li { white-space: pre; }
+.log-lines li b { font-weight: 500; color: var(--text); }
+.log-lines .s-success { color: var(--success-fg); }
+.log-lines .s-retrying { color: var(--retrying-fg); }
+.log-lines .s-approval { color: var(--approval-fg); }
+.log-lines .s-running { color: var(--running-fg); }
+
+.burst {
+  position: absolute; left: -26px; top: 50%; width: 76px; height: 76px; margin-top: -38px; pointer-events: none; opacity: 0;
+  background: repeating-conic-gradient(var(--success-solid) 0 2deg, transparent 2deg 15deg);
+  -webkit-mask: radial-gradient(circle, transparent 42%, #000 44%, #000 70%, transparent 72%);
+          mask: radial-gradient(circle, transparent 42%, #000 44%, #000 70%, transparent 72%);
+}
+.burst.go { animation: burst 600ms var(--ease-enter) 1; }
+@keyframes burst { 0% { opacity: 0.9; transform: scale(0.5); } 100% { opacity: 0; transform: scale(1.35); } }
+
+/* ============================================================
+   Sections
+   ============================================================ */
+section { scroll-margin-top: 72px; }
+.section { padding-block: 112px 0; }
+.section-head { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); gap: 24px; margin-bottom: 48px; align-items: end; }
+.section-head .h { grid-column: 1 / span 7; display: grid; gap: 16px; }
+.section-head .lede { grid-column: 9 / span 4; }
+.h2 { font-family: var(--font-serif); font-weight: 400; font-size: clamp(40px, 5.2vw, 64px); line-height: 1.02; letter-spacing: -0.02em; }
+@media (max-width: 960px) {
+  .section { padding-block: 80px 0; }
+  .section-head .h, .section-head .lede { grid-column: 1 / -1; }
+}
+
+/* Before / after */
+.compare { display: grid; gap: 1px; background: var(--border); border: 1px solid var(--border); border-radius: var(--radius-lg); overflow: hidden; }
+.compare-row { background: var(--surface); display: grid; grid-template-columns: 180px minmax(0, 1fr); gap: 24px; padding: 28px; align-items: center; }
+.compare-row h3 { font-size: 15px; font-weight: 600; }
+.compare-row p.note { font-size: 13px; color: var(--muted); margin-top: 4px; }
+.manual { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.tool { border: 1.5px dashed var(--border-strong); border-radius: var(--radius-sm); padding: 8px 12px; font-size: 14px; background: var(--bg); }
+.tool small { display: block; font-size: 12px; color: var(--muted); }
+.paste { font-family: var(--font-mono); font-size: 11px; color: var(--subtle); padding-inline: 2px; }
+.chained { display: flex; flex-wrap: wrap; align-items: center; gap: 0; }
+.chained .link { display: inline-flex; align-items: center; gap: 8px; padding: 8px 12px; border: 1px solid var(--border-strong); border-radius: var(--radius-sm); background: var(--surface); font-size: 14px; }
+.chained .link svg { width: 15px; height: 15px; }
+.chained .wire { width: 24px; height: 1.5px; background: var(--text); }
+@media (max-width: 700px) {
+  .compare-row { grid-template-columns: minmax(0, 1fr); gap: 14px; padding: 20px; }
+  .chained { gap: 8px; } .chained .wire { display: none; }
+}
+
+/* Steps (real sequence) */
+.steps { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); border-top: 1px solid var(--text); }
+.steps li { padding: 20px 20px 0 0; display: grid; gap: 10px; align-content: start; }
+.steps li + li { padding-inline-start: 20px; border-inline-start: 1px solid var(--border); }
+.step-n { font-family: var(--font-mono); font-size: 12px; color: var(--muted); }
+.steps h3 { font-size: 18px; font-weight: 600; letter-spacing: -0.005em; }
+.steps p { font-size: 14px; color: var(--muted); line-height: 1.55; }
+@media (max-width: 960px) {
+  .steps { grid-template-columns: minmax(0, 1fr); }
+  .steps li, .steps li + li { padding: 18px 0; border-inline-start: 0; border-bottom: 1px solid var(--border); grid-template-columns: 40px minmax(0, 1fr); column-gap: 12px; }
+  .steps li > :not(.step-n) { grid-column: 2; }
+}
+
+/* Agents */
+.family { display: grid; gap: 16px; }
+.family + .family { margin-top: 40px; }
+.family-label { display: flex; align-items: baseline; gap: 12px; }
+.family-label p { font-size: 14px; color: var(--muted); }
+.agents { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px; }
+@media (max-width: 1000px) { .agents { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 560px) { .agents { grid-template-columns: minmax(0, 1fr); } }
+.agent { border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--surface); padding: 20px; display: grid; gap: 14px; align-content: start; }
+.agent .tile { width: 40px; height: 40px; }
+.agent .tile svg { width: 20px; height: 20px; }
+.agent-top { display: flex; align-items: center; justify-content: space-between; }
+.agent h3 { font-size: 17px; font-weight: 600; }
+.agent p { font-size: 14px; color: var(--muted); line-height: 1.5; }
+.io { display: grid; gap: 6px; padding-top: 12px; border-top: 1px solid var(--border); font-size: 12px; }
+.io div { display: grid; grid-template-columns: 34px minmax(0, 1fr); gap: 8px; }
+.io dt { color: var(--subtle); }
+.io dd { margin: 0; font-family: var(--font-mono); color: var(--text); overflow-wrap: anywhere; }
+.agent-yours { grid-column: span 2; border: 1.5px dashed var(--border-strong); background: transparent; }
+@media (max-width: 560px) { .agent-yours { grid-column: auto; } }
+.agent-yours .tile { background: transparent; border: 1.5px dashed var(--border-strong); color: var(--muted); }
+.diff { margin: 0; font-family: var(--font-mono); font-size: 12px; line-height: 1.7; background: var(--bg-sunken); border-radius: var(--radius-sm); padding: 12px 14px; overflow-x: auto; color: var(--muted); }
+.diff .add { color: var(--success-fg); }
+.diff b { color: var(--text); font-weight: 500; }
+
+/* Status system */
+.status-grid { display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 7fr); gap: 48px; align-items: start; }
+@media (max-width: 960px) { .status-grid { grid-template-columns: minmax(0, 1fr); } }
+.states { list-style: none; margin: 0; padding: 0; border-top: 1px solid var(--border); }
+.states li { display: grid; grid-template-columns: 150px minmax(0, 1fr); gap: 16px; padding: 14px 0; border-bottom: 1px solid var(--border); align-items: center; }
+.states p { font-size: 14px; color: var(--muted); }
+@media (max-width: 480px) { .states li { grid-template-columns: minmax(0, 1fr); gap: 6px; } }
+
+.retry-card { border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--surface); padding: 28px; display: grid; gap: 22px; }
+.retry-card h3 { font-size: 18px; font-weight: 600; }
+.retry-card > p { font-size: 14px; color: var(--muted); max-width: 60ch; }
+.formula { font-family: var(--font-mono); font-size: 13px; background: var(--bg-sunken); padding: 3px 7px; border-radius: var(--radius-xs); color: var(--text); white-space: nowrap; }
+.timeline-scroll { overflow-x: auto; padding-bottom: 4px; }
+.timeline { position: relative; min-width: 520px; height: 132px; margin-inline: 8px; }
+.tl-axis { position: absolute; left: 0; right: 0; top: 92px; height: 1px; background: var(--border-strong); }
+.tl-tick { position: absolute; top: 92px; width: 1px; height: 6px; background: var(--border-strong); }
+.tl-tick span { position: absolute; top: 10px; left: 50%; transform: translateX(-50%); font-family: var(--font-mono); font-size: 11px; color: var(--muted); white-space: nowrap; }
+.tl-wait { position: absolute; top: 58px; height: 22px; border-radius: var(--radius-xs); background: var(--retrying-bg); color: var(--retrying-fg); font-family: var(--font-mono); font-size: 11px; display: grid; place-items: center; white-space: nowrap; }
+.tl-attempt { position: absolute; top: 0; transform: translateX(-50%); display: grid; justify-items: center; gap: 4px; }
+.tl-attempt .dot { width: 12px; height: 12px; border-radius: 999px; background: var(--surface); border: 2px solid var(--retrying-solid); margin-top: 80px; position: absolute; top: 0; }
+.tl-attempt.final .dot { border-color: var(--failed-solid); background: var(--failed-solid); }
+.tl-attempt .lbl { font-size: 12px; font-weight: 500; white-space: nowrap; }
+.tl-attempt .sub { font-size: 11px; color: var(--muted); white-space: nowrap; font-family: var(--font-mono); }
+.retry-foot { display: flex; flex-wrap: wrap; gap: 8px 16px; font-size: 13px; color: var(--muted); padding-top: 18px; border-top: 1px solid var(--border); }
+
+/* Approval */
+.split { display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 7fr); gap: 56px; align-items: center; }
+@media (max-width: 960px) { .split { grid-template-columns: minmax(0, 1fr); gap: 40px; } }
+.points { list-style: none; margin: 32px 0 0; padding: 0; display: grid; gap: 18px; }
+.points li { display: grid; grid-template-columns: 28px minmax(0, 1fr); gap: 12px; }
+.points svg { width: 20px; height: 20px; color: var(--text); margin-top: 1px; }
+.points strong { display: block; font-size: 15px; font-weight: 600; margin-bottom: 2px; }
+.points span { font-size: 14px; color: var(--muted); }
+
+.approve-card { border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--surface); box-shadow: var(--shadow-3); overflow: hidden; }
+.ap-head { padding: 18px 22px; border-bottom: 1px solid var(--border); display: flex; align-items: flex-start; gap: 12px; background: var(--approval-bg); }
+.ap-head .gate-mark { font-family: var(--font-mono); font-size: 20px; line-height: 24px; color: var(--approval-fg); }
+.ap-head h3 { font-size: 17px; font-weight: 600; color: var(--text); }
+.ap-head p { font-size: 13px; color: var(--muted); }
+.ap-body { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr); }
+@media (max-width: 620px) { .ap-body { grid-template-columns: minmax(0, 1fr); } }
+.ap-preview { padding: 22px; display: grid; gap: 12px; align-content: start; border-inline-end: 1px solid var(--border); }
+@media (max-width: 620px) { .ap-preview { border-inline-end: 0; border-bottom: 1px solid var(--border); } }
+.ap-tabs { display: flex; gap: 18px; border-bottom: 1px solid var(--border); font-size: 13px; font-weight: 500; }
+.ap-tabs span { padding-bottom: 8px; color: var(--muted); }
+.ap-tabs span[aria-current] { color: var(--text); box-shadow: inset 0 -2px 0 var(--text); }
+.generated { justify-self: start; font-size: 11px; font-weight: 500; padding: 2px 6px; border-radius: var(--radius-xs); background: var(--bg-sunken); color: var(--volt-text); }
+.ap-preview h4 { font-size: 19px; line-height: 1.3; font-weight: 600; letter-spacing: -0.01em; }
+.ap-preview p { font-size: 14px; line-height: 1.6; color: var(--muted); }
+.ap-dest { padding: 22px; display: grid; gap: 14px; align-content: start; }
+.ap-dest dl { margin: 0; display: grid; gap: 10px; font-size: 13px; }
+.ap-dest dl div { display: grid; gap: 1px; }
+.ap-dest dt { color: var(--subtle); font-size: 12px; }
+.ap-dest dd { margin: 0; color: var(--text); overflow-wrap: anywhere; }
+.ap-dest .then { padding-top: 12px; border-top: 1px solid var(--border); font-size: 13px; color: var(--muted); }
+.ap-foot { border-top: 1px solid var(--border); padding: 16px 22px; display: grid; gap: 10px; }
+.ap-foot label { font-size: 13px; font-weight: 500; }
+.ap-foot textarea { width: 100%; min-height: 40px; resize: vertical; font: 14px/1.4 var(--font-sans); color: var(--text); background: var(--surface); border: 1px solid var(--border-strong); border-radius: var(--radius-sm); padding: 9px 12px; }
+.ap-foot textarea:focus { outline: 2px solid var(--focus); outline-offset: 0; border-color: var(--focus); }
+.ap-foot textarea[aria-invalid="true"] { border-color: var(--failed-solid); }
+.ap-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 10px; }
+.ap-msg { font-size: 13px; min-height: 20px; }
+.ap-msg.err { color: var(--failed-fg); }
+.ap-msg.ok { color: var(--success-fg); }
+.example-tag { font-size: 12px; color: var(--subtle); margin-top: 12px; }
+
+/* Logs */
+.table-scroll { overflow-x: auto; border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--surface); }
+table.logs { width: 100%; min-width: 760px; border-collapse: collapse; font-size: 14px; }
+.logs th { text-align: left; font-size: 13px; font-weight: 600; background: var(--bg-sunken); padding: 10px 14px; border-bottom: 1px solid var(--border); white-space: nowrap; }
+.logs td { padding: 10px 14px; border-bottom: 1px solid var(--border); white-space: nowrap; vertical-align: middle; }
+.logs tr:last-child td { border-bottom: 0; }
+.logs .num { text-align: right; font-family: var(--font-mono); font-size: 12.5px; font-variant-numeric: tabular-nums; }
+.logs .t { font-family: var(--font-mono); font-size: 12.5px; color: var(--muted); }
+.logs .err { color: var(--failed-fg); }
+.logs tr.expanded > td { background: var(--bg-sunken); white-space: normal; padding: 14px 18px 16px 48px; }
+.logs tr.is-open td:first-child { box-shadow: inset 2px 0 0 var(--failed-solid); }
+.attempts { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; font-family: var(--font-mono); font-size: 12px; color: var(--muted); }
+.attempts b { color: var(--text); font-weight: 500; }
+.fix { margin-top: 10px; font-size: 13px; color: var(--text); }
+.logs-foot { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px 24px; margin-top: 14px; font-size: 13px; color: var(--muted); }
+.logs-foot code { font-family: var(--font-mono); font-size: 12px; color: var(--text); }
+
+/* Build timeline */
+.weeks-scroll { overflow-x: auto; padding-bottom: 6px; }
+.weeks { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(12, minmax(96px, 1fr)); min-width: 1150px; border-top: 1px solid var(--border-strong); }
+.weeks li { padding: 14px 12px 0 0; display: grid; gap: 6px; align-content: start; position: relative; }
+.weeks li::before { content: ""; position: absolute; top: -4px; left: 0; width: 7px; height: 7px; border-radius: 999px; background: var(--bg); border: 1.5px solid var(--border-strong); }
+.weeks li.now::before { background: var(--volt); border-color: var(--text); width: 9px; height: 9px; top: -5px; }
+.weeks li.key h3 { color: var(--text); }
+.weeks .wk { font-family: var(--font-mono); font-size: 12px; color: var(--muted); }
+.weeks h3 { font-size: 13px; font-weight: 500; line-height: 1.35; color: var(--muted); }
+.weeks .date { font-size: 11px; color: var(--subtle); font-family: var(--font-mono); }
+.now-tag { justify-self: start; font-size: 11px; font-weight: 600; background: var(--volt); color: var(--on-volt); padding: 1px 6px; border-radius: var(--radius-xs); }
+
+.team { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 0; border-top: 1px solid var(--border); margin-top: 56px; }
+.team > div { padding: 20px 20px 20px 0; display: grid; gap: 4px; align-content: start; }
+.team > div + div { padding-inline-start: 20px; border-inline-start: 1px solid var(--border); }
+.team strong { font-size: 15px; font-weight: 600; }
+.team span { font-size: 13px; color: var(--muted); }
+.team code { font-family: var(--font-mono); font-size: 12px; color: var(--text); }
+@media (max-width: 860px) {
+  .team { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .team > div:nth-child(3) { padding-inline-start: 0; border-inline-start: 0; }
+  .team > div:nth-child(n+3) { border-top: 1px solid var(--border); }
+}
+@media (max-width: 480px) {
+  .team { grid-template-columns: minmax(0, 1fr); }
+  .team > div, .team > div + div { padding-inline-start: 0; border-inline-start: 0; }
+  .team > div + div { border-top: 1px solid var(--border); }
+}
+.credits { display: flex; flex-wrap: wrap; gap: 8px 32px; margin-top: 24px; font-size: 14px; color: var(--muted); }
+.credits b { color: var(--text); font-weight: 500; }
+.stack { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 24px; }
+.stack span { font-family: var(--font-mono); font-size: 12px; padding: 4px 8px; border: 1px solid var(--border); border-radius: var(--radius-xs); color: var(--muted); }
+
+/* Closing band */
+.band { margin-top: 128px; background: var(--band-bg); color: var(--band-fg); position: relative; overflow: hidden; }
+.band canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
+.band .wrap { position: relative; padding-block: 96px; display: grid; gap: 28px; }
+.band h2 { font-family: var(--font-serif); font-weight: 400; font-size: clamp(48px, 7vw, 96px); line-height: 0.98; letter-spacing: -0.03em; max-width: 12ch; }
+.band p { font-size: 18px; color: var(--band-muted); max-width: 48ch; }
+.band .btn-ghost { color: var(--band-fg); border-color: var(--band-line); }
+.band .btn-ghost:hover { background: rgb(255 255 255 / 0.06); color: var(--band-fg); }
+
+footer { background: var(--band-bg); color: var(--band-muted); border-top: 1px solid var(--band-line); }
+footer .wrap { padding-block: 28px; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px 24px; font-size: 13px; }
+footer .brand { color: var(--band-fg); font-size: 17px; }
+footer .brand svg { width: 40px; height: 15px; }
+
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+  *, *::before, *::after { animation: none !important; transition: none !important; }
+  .edges path.active { stroke-dasharray: none; }
+}
+</style>
+
+<!-- ================= NAV ================= -->
+<header class="nav">
+  <div class="wrap">
+    <a class="brand" href="#top" aria-label="Isnad home">
+      <svg viewBox="0 0 64 24" fill="none" aria-hidden="true"><line x1="11" y1="12" x2="27" y2="12" stroke="currentColor" stroke-width="2"/><line x1="37" y1="12" x2="53" y2="12" stroke="currentColor" stroke-width="2"/><circle cx="6" cy="12" r="4" stroke="currentColor" stroke-width="2"/><circle cx="32" cy="12" r="4" stroke="currentColor" stroke-width="2"/><circle cx="58" cy="12" r="5" fill="currentColor"/></svg>
+      isnad
+    </a>
+    <nav class="nav-links" aria-label="Sections">
+      <a href="#how">How it works</a>
+      <a href="#agents">Agents</a>
+      <a href="#approval">Approval</a>
+      <a href="#logs">Logs</a>
+      <a href="#build">The build</a>
+      <a class="btn btn-primary btn-sm" href="#top" data-replay><i data-lucide="play"></i>Watch a run</a>
+    </nav>
+  </div>
+</header>
+
+<main id="top">
+  <!-- ================= HERO ================= -->
+  <section class="hero" aria-labelledby="hero-title">
+    <div class="wrap">
+      <div class="hero-grid">
+        <div class="hero-title">
+          <p class="overline">A visual AI-agent workflow platform</p>
+          <h1 id="hero-title">Your pipeline,<br><span class="quiet">one canvas.</span></h1>
+        </div>
+        <div class="hero-side">
+          <p class="lede">Drag AI agents onto a canvas, connect them into a chain and press Run. Research becomes an article, the article becomes a video, and the video reaches YouTube and your inbox — nothing goes public until you approve it.</p>
+          <div class="hero-cta">
+            <a class="btn btn-run" href="#demo" data-replay><i data-lucide="play"></i>Watch a run</a>
+            <a class="btn btn-secondary" href="#how">How it works</a>
+          </div>
+        </div>
+      </div>
+
+      <!-- Live example run -->
+      <div class="demo" id="demo" role="region" aria-label="Example run of a five-step workflow">
+        <div class="run-head" data-run="queued">
+          <div class="run-title">
+            <strong>Run #14</strong>
+            <span class="crumb">Solar energy explainer</span>
+          </div>
+          <div class="run-meta">
+            <span class="chip" id="run-chip"><i data-lucide="clock"></i><span>Queued</span></span>
+            <span class="mono" id="run-time">0:00</span>
+          </div>
+          <div class="run-progress">
+            <div class="bar" aria-hidden="true"><span id="run-bar"></span></div>
+            <span class="mono" style="font-size:12px;color:var(--muted)" id="run-count">0 of 5</span>
+          </div>
+          <div class="run-actions">
+            <span class="burst" id="burst" aria-hidden="true"></span>
+            <span class="speed">Example run · sped up</span>
+            <button class="btn btn-secondary btn-sm" type="button" id="replay" data-replay-btn><i data-lucide="rotate-ccw"></i>Replay</button>
+          </div>
+        </div>
+        <div class="canvas" id="canvas">
+          <svg class="edges" id="edges" aria-hidden="true"></svg>
+          <div class="chain" id="chain"></div>
+        </div>
+        <div class="log-strip">
+          <p class="overline"><span>Execution log</span><span class="mono" style="letter-spacing:0;text-transform:none;font-weight:400">execution_logs · run_7f3c2a</span></p>
+          <ol class="log-lines mono" id="log-lines"></ol>
+        </div>
+        <p class="sr-only" aria-live="polite" id="live-polite"></p>
+        <p class="sr-only" aria-live="assertive" id="live-assertive"></p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= WHY ================= -->
+  <section class="section" id="why" aria-labelledby="why-title">
+    <div class="wrap">
+      <div class="section-head">
+        <div class="h">
+          <p class="overline">The problem</p>
+          <h2 class="h2" id="why-title">Five tools and an afternoon of copy and paste.</h2>
+        </div>
+        <p class="lede">One blog post with a video means searching, writing, editing, uploading and emailing — by hand, one tab at a time. When a step fails, nobody notices until the end.</p>
+      </div>
+
+      <div class="compare">
+        <div class="compare-row">
+          <div>
+            <h3>By hand</h3>
+            <p class="note">Every handoff is you.</p>
+          </div>
+          <div class="manual">
+            <span class="tool">Search engine<small>research</small></span><span class="paste">copy · paste</span>
+            <span class="tool">Document editor<small>write</small></span><span class="paste">export</span>
+            <span class="tool">Video editor<small>produce</small></span><span class="paste">upload</span>
+            <span class="tool">YouTube Studio<small>publish</small></span><span class="paste">copy link</span>
+            <span class="tool">Email client<small>distribute</small></span>
+          </div>
+        </div>
+        <div class="compare-row">
+          <div>
+            <h3>With Isnad</h3>
+            <p class="note">Every handoff is checked.</p>
+          </div>
+          <div class="chained" aria-label="Researcher, Writer, Video, Publisher, Email connected in a chain">
+            <span class="link"><i data-lucide="telescope"></i>Researcher</span><span class="wire"></span>
+            <span class="link"><i data-lucide="pen-line"></i>Writer</span><span class="wire"></span>
+            <span class="link"><i data-lucide="clapperboard"></i>Video</span><span class="wire"></span>
+            <span class="link"><i data-lucide="cloud-upload"></i>Publisher <span class="gate" title="Requires approval">‖</span></span><span class="wire"></span>
+            <span class="link"><i data-lucide="mail"></i>Email <span class="gate" title="Requires approval">‖</span></span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= HOW ================= -->
+  <section class="section" id="how" aria-labelledby="how-title">
+    <div class="wrap">
+      <div class="section-head">
+        <div class="h">
+          <p class="overline">How it works</p>
+          <h2 class="h2" id="how-title">Build the chain once. Run it whenever you need it.</h2>
+        </div>
+        <p class="lede">No code, no scripts. If you can describe your process in a sentence, you can draw it.</p>
+      </div>
+      <ol class="steps">
+        <li><span class="step-n">01</span><h3>Drag</h3><p>Pick the agents you need from the palette and drop them on the canvas.</p></li>
+        <li><span class="step-n">02</span><h3>Connect</h3><p>Draw a line from one agent to the next. Isnad refuses connections that can't work, and tells you why.</p></li>
+        <li><span class="step-n">03</span><h3>Configure</h3><p>Click an agent to set its topic, length, voice or destination. Every form builds itself from the agent.</p></li>
+        <li><span class="step-n">04</span><h3>Run</h3><p>Each agent lights up as it works and hands its result to the next. Leave the page — it keeps going.</p></li>
+        <li><span class="step-n">05</span><h3>Approve</h3><p>Before anything is published or sent, you preview it and decide.</p></li>
+      </ol>
+    </div>
+  </section>
+
+  <!-- ================= AGENTS ================= -->
+  <section class="section" id="agents" aria-labelledby="agents-title">
+    <div class="wrap">
+      <div class="section-head">
+        <div class="h">
+          <p class="overline">The agents</p>
+          <h2 class="h2" id="agents-title">Six agents. Each does one job well.</h2>
+        </div>
+        <p class="lede">Every agent takes a checked input and returns a checked output, so the next one always gets what it expects.</p>
+      </div>
+
+      <div class="family">
+        <div class="family-label"><p class="overline">Create</p><p>Make the content.</p></div>
+        <div class="agents">
+          <article class="agent" data-family="create">
+            <div class="agent-top"><span class="tile"><i data-lucide="telescope"></i></span></div>
+            <h3>Researcher</h3>
+            <p>Searches the web on your topic and gathers notes with their sources.</p>
+            <dl class="io"><div><dt>in</dt><dd>topic, num_sources</dd></div><div><dt>out</dt><dd>notes[], sources[]</dd></div></dl>
+          </article>
+          <article class="agent" data-family="create">
+            <div class="agent-top"><span class="tile"><i data-lucide="pen-line"></i></span></div>
+            <h3>Writer</h3>
+            <p>Turns the notes into an article in the length, style and format you choose.</p>
+            <dl class="io"><div><dt>in</dt><dd>notes, length, style, format</dd></div><div><dt>out</dt><dd>article_md, title, summary</dd></div></dl>
+          </article>
+          <article class="agent" data-family="create">
+            <div class="agent-top"><span class="tile"><i data-lucide="image"></i></span></div>
+            <h3>Image</h3>
+            <p>Creates a thumbnail and images to go with the article.</p>
+            <dl class="io"><div><dt>in</dt><dd>prompt or article title</dd></div><div><dt>out</dt><dd>image files</dd></div></dl>
+          </article>
+          <article class="agent" data-family="create">
+            <div class="agent-top"><span class="tile"><i data-lucide="clapperboard"></i></span></div>
+            <h3>Video</h3>
+            <p>Narrates the script and assembles slides into a playable MP4.</p>
+            <dl class="io"><div><dt>in</dt><dd>script, voice, resolution</dd></div><div><dt>out</dt><dd>mp4, duration</dd></div></dl>
+          </article>
+        </div>
+      </div>
+
+      <div class="family">
+        <div class="family-label"><p class="overline">Distribute</p><p>Send it out — always after your approval.</p></div>
+        <div class="agents">
+          <article class="agent" data-family="distribute">
+            <div class="agent-top"><span class="tile"><i data-lucide="cloud-upload"></i></span><span class="chip" data-tone="approval"><i data-lucide="hand"></i>Needs approval</span></div>
+            <h3>Publisher</h3>
+            <p>Uploads to YouTube or Google Drive with your title, description and tags.</p>
+            <dl class="io"><div><dt>in</dt><dd>file, platform, metadata</dd></div><div><dt>out</dt><dd>remote_url, platform_id</dd></div></dl>
+          </article>
+          <article class="agent" data-family="distribute">
+            <div class="agent-top"><span class="tile"><i data-lucide="mail"></i></span><span class="chip" data-tone="approval"><i data-lucide="hand"></i>Needs approval</span></div>
+            <h3>Email</h3>
+            <p>Sends the links and files to your recipient list through Gmail.</p>
+            <dl class="io"><div><dt>in</dt><dd>recipients, subject, body, links</dd></div><div><dt>out</dt><dd>message_id, sent_at</dd></div></dl>
+          </article>
+          <article class="agent agent-yours">
+            <div class="agent-top"><span class="tile"><i data-lucide="puzzle"></i></span></div>
+            <h3>The seventh agent</h3>
+            <p>Agents are plug-ins. Drop a new folder in, restart, and it appears in the palette with a working settings form. The test we hold ourselves to: nothing outside that folder changes.</p>
+<pre class="diff" aria-label="Example git diff for adding a new agent"><b>$ git diff --stat main</b>
+ agents/reverser/manifest.json       | 14 <span class="add">++++++++++++++</span>
+ agents/reverser/agent.py            | 22 <span class="add">++++++++++++++++++++++</span>
+ agents/reverser/tests/test_agent.py | 18 <span class="add">++++++++++++++++++</span>
+ 3 files changed, 54 insertions(+)</pre>
+          </article>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= STATUS ================= -->
+  <section class="section" id="status" aria-labelledby="status-title">
+    <div class="wrap">
+      <div class="section-head">
+        <div class="h">
+          <p class="overline">See every handoff</p>
+          <h2 class="h2" id="status-title">Color means state.</h2>
+        </div>
+        <p class="lede">The canvas stays black and white until something happens. When a step turns a color, it's telling you something — always with an icon and a word, never color alone.</p>
+      </div>
+
+      <div class="status-grid">
+        <ul class="states">
+          <li><span><span class="chip"><i data-lucide="circle-dashed"></i>Pending</span></span><p>Waiting for the step before it.</p></li>
+          <li><span><span class="chip" data-tone="running"><i data-lucide="loader-circle" class="spin"></i>Running</span></span><p>Working right now.</p></li>
+          <li><span><span class="chip" data-tone="retrying"><i data-lucide="rotate-cw"></i>Retrying 2/3</span></span><p>Something failed. Trying again on its own.</p></li>
+          <li><span><span class="chip" data-tone="approval"><i data-lucide="hand"></i>Needs approval</span></span><p>Waiting for you before publishing or sending.</p></li>
+          <li><span><span class="chip" data-tone="success"><i data-lucide="circle-check"></i>Done</span></span><p>Finished, output checked and saved.</p></li>
+          <li><span><span class="chip" data-tone="failed"><i data-lucide="circle-x"></i>Failed</span></span><p>Couldn't finish after 3 retries. The run stops and says why.</p></li>
+          <li><span><span class="chip" data-tone="skipped"><i data-lucide="circle-slash"></i>Skipped</span></span><p>Never ran, because an earlier step failed.</p></li>
+        </ul>
+
+        <div class="retry-card">
+          <h3>When a step fails, Isnad waits a little longer each time.</h3>
+          <p>Retries back off exponentially — <span class="formula">2^attempt + jitter</span> seconds — so a busy service gets room to recover. After the third retry, the run halts and every step after it is marked skipped.</p>
+          <div class="timeline-scroll">
+            <div class="timeline" role="img" aria-label="Retry timeline from 0 to 16 seconds: attempt 1 at 0 seconds fails, wait about 2 seconds, attempt 2 at 2 seconds, wait about 4 seconds, attempt 3 at 6 seconds, wait about 8 seconds, attempt 4 at 14 seconds fails and the run halts.">
+              <div class="tl-axis"></div>
+              <div class="tl-tick" style="left:0%"><span>0s</span></div>
+              <div class="tl-tick" style="left:25%"><span>4s</span></div>
+              <div class="tl-tick" style="left:50%"><span>8s</span></div>
+              <div class="tl-tick" style="left:75%"><span>12s</span></div>
+              <div class="tl-tick" style="left:100%"><span>16s</span></div>
+              <div class="tl-wait" style="left:0.8%;width:11.4%">~2s</div>
+              <div class="tl-wait" style="left:13.3%;width:23.4%">~4s</div>
+              <div class="tl-wait" style="left:38.3%;width:48.4%">~8s</div>
+              <div class="tl-attempt" style="left:0%"><span class="lbl">Attempt 1</span><span class="sub">failed</span><span class="dot"></span></div>
+              <div class="tl-attempt" style="left:12.5%"><span class="lbl">2</span><span class="sub">retry 1</span><span class="dot"></span></div>
+              <div class="tl-attempt" style="left:37.5%"><span class="lbl">3</span><span class="sub">retry 2</span><span class="dot"></span></div>
+              <div class="tl-attempt final" style="left:87.5%"><span class="lbl">4</span><span class="sub">retry 3 · halt</span><span class="dot"></span></div>
+            </div>
+          </div>
+          <div class="retry-foot">
+            <span><b style="color:var(--text);font-weight:500">retry_count ≤ 3</b> — enforced in the database</span>
+            <span>Every agent gets retries without writing retry code</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= APPROVAL ================= -->
+  <section class="section" id="approval" aria-labelledby="approval-title">
+    <div class="wrap split">
+      <div>
+        <p class="overline">Human in the loop</p>
+        <h2 class="h2" id="approval-title" style="margin-top:16px">Nothing goes public without you.</h2>
+        <p class="lede" style="margin-top:20px">Publishing and email steps stop and wait. You see the article, watch the video and check exactly where it's going — then decide.</p>
+        <ul class="points">
+          <li><i data-lucide="eye"></i><div><strong>Preview the real thing</strong><span>The same article, video and PDF that will be uploaded — not a summary.</span></div></li>
+          <li><i data-lucide="map-pin"></i><div><strong>See the destination</strong><span>Platform, account, visibility and title, before a single byte leaves.</span></div></li>
+          <li><i data-lucide="file-check"></i><div><strong>Every decision is recorded</strong><span>Who approved or rejected, when, and why — kept with the run.</span></div></li>
+        </ul>
+      </div>
+
+      <div>
+        <div class="approve-card" id="approve-card">
+          <div class="ap-head">
+            <span class="gate-mark" aria-hidden="true">‖</span>
+            <div>
+              <h3>Review before publishing</h3>
+              <p>Publisher is waiting for your approval. Nothing has been uploaded yet.</p>
+            </div>
+          </div>
+          <div class="ap-body">
+            <div class="ap-preview">
+              <div class="ap-tabs" aria-hidden="true"><span aria-current="true">Article</span><span>Video</span><span>PDF</span></div>
+              <span class="generated">✦ Generated</span>
+              <h4>The Future of Solar Energy in Saudi Arabia</h4>
+              <p>Saudi Arabia receives some of the strongest sunlight on Earth, and the country has set out to turn that resource into a major share of its electricity. This article looks at where solar stands today, the projects under way, and what changes for households and businesses.</p>
+              <p style="font-size:13px">Sources (5) · 3m 04s video · 4-page PDF</p>
+            </div>
+            <div class="ap-dest">
+              <p class="overline">Where it's going</p>
+              <dl>
+                <div><dt>Platform</dt><dd>YouTube</dd></div>
+                <div><dt>Account</dt><dd class="mono" style="font-size:12px">demo@isnad.local</dd></div>
+                <div><dt>Visibility</dt><dd>Unlisted</dd></div>
+                <div><dt>Tags</dt><dd>solar, saudi arabia, energy</dd></div>
+              </dl>
+              <p class="then">Then: <b style="color:var(--text);font-weight:500">Email</b> to 3 recipients — also needs approval.</p>
+            </div>
+          </div>
+          <div class="ap-foot">
+            <label for="ap-note">Note <span style="color:var(--muted);font-weight:400">— optional to approve, required to reject</span></label>
+            <textarea id="ap-note" rows="1" placeholder="Why did you decide this?" aria-describedby="ap-msg"></textarea>
+            <div class="ap-actions">
+              <button class="btn btn-danger-2" type="button" id="ap-reject">Reject…</button>
+              <button class="btn btn-primary" type="button" id="ap-approve"><i data-lucide="check"></i>Approve and publish to YouTube</button>
+            </div>
+            <p class="ap-msg" id="ap-msg" role="status"></p>
+          </div>
+        </div>
+        <p class="example-tag">Example approval — try both buttons.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= LOGS ================= -->
+  <section class="section" id="logs" aria-labelledby="logs-title">
+    <div class="wrap">
+      <div class="section-head">
+        <div class="h">
+          <p class="overline">Execution logs</p>
+          <h2 class="h2" id="logs-title">Every step, every attempt, on the record.</h2>
+        </div>
+        <p class="lede">When something breaks, the log says what happened in plain words and what to do next. No stack traces.</p>
+      </div>
+
+      <div class="table-scroll">
+        <table class="logs">
+          <caption class="sr-only">Example execution log for a run where Publisher failed after three retries</caption>
+          <thead>
+            <tr><th scope="col">Step</th><th scope="col">Status</th><th scope="col">Started</th><th scope="col" style="text-align:right">Duration</th><th scope="col" style="text-align:right">Retries</th><th scope="col">Error</th></tr>
+          </thead>
+          <tbody>
+            <tr><td>1 · Researcher</td><td><span class="chip" data-tone="success"><i data-lucide="circle-check"></i>Done</span></td><td class="t">16:05:02</td><td class="num">18.4 s</td><td class="num">0</td><td class="t">—</td></tr>
+            <tr><td>2 · Writer</td><td><span class="chip" data-tone="success"><i data-lucide="circle-check"></i>Done</span></td><td class="t">16:05:21</td><td class="num">42.1 s</td><td class="num">1</td><td class="t">—</td></tr>
+            <tr><td>3 · Video</td><td><span class="chip" data-tone="success"><i data-lucide="circle-check"></i>Done</span></td><td class="t">16:06:04</td><td class="num">2m 38s</td><td class="num">0</td><td class="t">—</td></tr>
+            <tr class="is-open"><td>4 · Publisher</td><td><span class="chip" data-tone="failed"><i data-lucide="circle-x"></i>Failed</span></td><td class="t">16:09:40</td><td class="num">22.3 s</td><td class="num">3</td><td class="err">Google connection expired</td></tr>
+            <tr class="expanded"><td colspan="6">
+              <ol class="attempts">
+                <li><b>Attempt 1</b> · 16:09:40 · 2.1 s · invalid_grant: Token has been revoked</li>
+                <li><b>Attempt 2</b> · 16:09:44 · 1.9 s · retry 1 of 3 after ~2s</li>
+                <li><b>Attempt 3</b> · 16:09:50 · 2.0 s · retry 2 of 3 after ~4s</li>
+                <li><b>Attempt 4</b> · 16:10:00 · 2.0 s · retry 3 of 3 after ~8s — run halted</li>
+              </ol>
+              <p class="fix">Your Google connection has expired or was removed. <a href="#approval">Reconnect Google</a>, then run again.</p>
+            </td></tr>
+            <tr><td>5 · Email</td><td><span class="chip" data-tone="skipped"><i data-lucide="circle-slash"></i>Skipped</span></td><td class="t">—</td><td class="num">—</td><td class="num">—</td><td class="t">Skipped because Publisher failed</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="logs-foot">
+        <span>Example log. Exports as CSV with <code>started_at</code>, <code>duration_ms</code>, <code>retry_count</code> and <code>error_message</code> in ISO 8601 UTC.</span>
+        <span>One row per step, updated as it runs.</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= BUILD ================= -->
+  <section class="section" id="build" aria-labelledby="build-title">
+    <div class="wrap">
+      <div class="section-head">
+        <div class="h">
+          <p class="overline">The build</p>
+          <h2 class="h2" id="build-title">Twelve weeks, four people, one chain.</h2>
+        </div>
+        <p class="lede">Isnad is a graduation project at King Faisal University, built and tested in the open during Milestone 3.</p>
+      </div>
+
+      <div class="weeks-scroll" tabindex="0" aria-label="Milestone 3 schedule, weeks 1 to 12">
+        <ol class="weeks">
+          <li class="now"><span class="wk">W1</span><h3>Foundations and decisions</h3><span class="date">13–19 Sep</span><span class="now-tag">We're here</span></li>
+          <li><span class="wk">W2</span><h3>Skeleton runs end to end</h3><span class="date">20–26 Sep</span></li>
+          <li><span class="wk">W3</span><h3>Researcher and Writer</h3><span class="date">27 Sep–3 Oct</span></li>
+          <li><span class="wk">W4</span><h3>PDF and DOCX export</h3><span class="date">4–10 Oct</span></li>
+          <li class="key"><span class="wk">W5</span><h3>Video pipeline</h3><span class="date">11–17 Oct</span></li>
+          <li><span class="wk">W6</span><h3>YouTube and Drive</h3><span class="date">18–24 Oct</span></li>
+          <li class="key"><span class="wk">W7</span><h3>Email and the approval gate</h3><span class="date">25–31 Oct</span></li>
+          <li class="key"><span class="wk">W8</span><h3>Full pipeline · feature freeze</h3><span class="date">1–7 Nov</span></li>
+          <li><span class="wk">W9</span><h3>Hardening and fault injection</h3><span class="date">8–14 Nov</span></li>
+          <li><span class="wk">W10</span><h3>Testing · 50+ run campaign</h3><span class="date">15–21 Nov</span></li>
+          <li class="key"><span class="wk">W11</span><h3>Deployment and usability sessions</h3><span class="date">22–28 Nov</span></li>
+          <li><span class="wk">W12</span><h3>Report and submission</h3><span class="date">29 Nov–5 Dec</span></li>
+        </ol>
+      </div>
+
+      <div class="team">
+        <div><strong>Ahmed Saleh Almutairi</strong><span>Canvas and every screen</span><code>frontend</code></div>
+        <div><strong>Hasan Ahmed Almutawa</strong><span>API and orchestrator</span><code>api · worker</code></div>
+        <div><strong>Zain Shehab Albandari</strong><span>Agents, adapters and exporters</span><code>agents · adapters · exporters</code></div>
+        <div><strong>Mohammed Abdullah Bajaba</strong><span>Database, Docker, CI and deployment</span><code>db</code></div>
+      </div>
+      <div class="credits">
+        <span>Supervisor <b>Dr. Hasan Alkahtani</b></span>
+        <span>Committee <b>Dr. Asrar Alhaque</b></span>
+        <span>College of Computer Sciences and Information Technology · Department of Computer Science</span>
+      </div>
+      <div class="stack" aria-label="Technology stack">
+        <span>React 18</span><span>React Flow</span><span>FastAPI</span><span>Celery + Redis</span><span>PostgreSQL · Supabase</span><span>OpenAI</span><span>FFmpeg</span><span>Docker Compose</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= CLOSING ================= -->
+  <section class="band" aria-labelledby="band-title">
+    <canvas id="lines" aria-hidden="true"></canvas>
+    <div class="wrap">
+      <p class="overline" style="color:var(--band-muted)">Launching with Milestone 3 · December 2026</p>
+      <h2 id="band-title">Start your chain.</h2>
+      <p>Research, writing, video, publishing and email, from one canvas you can watch — and a gate that waits for you.</p>
+      <div class="hero-cta">
+        <a class="btn btn-run" href="#demo" data-replay><i data-lucide="play"></i>Watch a run again</a>
+        <a class="btn btn-ghost" href="#agents" style="border:1px solid var(--band-line)">Meet the agents</a>
+      </div>
+    </div>
+  </section>
+</main>
+
+<footer>
+  <div class="wrap">
+    <a class="brand" href="#top" aria-label="Back to top">
+      <svg viewBox="0 0 64 24" fill="none" aria-hidden="true"><line x1="11" y1="12" x2="27" y2="12" stroke="currentColor" stroke-width="2"/><line x1="37" y1="12" x2="53" y2="12" stroke="currentColor" stroke-width="2"/><circle cx="6" cy="12" r="4" stroke="currentColor" stroke-width="2"/><circle cx="32" cy="12" r="4" stroke="currentColor" stroke-width="2"/><circle cx="58" cy="12" r="5" fill="#D7FF3A"/></svg>
+      isnad
+    </a>
+    <span>King Faisal University · CCSIT · Graduation Project 2026</span>
+    <span>Isnad (إسناد) — a chain of transmission. Working name.</span>
+  </div>
+</footer>
+
+<script>
+(function () {
+  const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  // Every icon on this page is decorative — the label is always in the text beside it — so they
+  // are hidden from screen readers rather than announced as unlabelled graphics.
+  const icons = () => {
+    if (!window.lucide) return;
+    window.lucide.createIcons({ icons: window.lucide.icons, attrs: { "stroke-width": 1.75, "aria-hidden": "true", focusable: "false" } });
+  };
+
+  /* ---------------- Example run ---------------- */
+  const STEPS = [
+    { id: "researcher", name: "Researcher", icon: "telescope",    family: "create",     summary: "Solar energy in Saudi Arabia · 5 sources" },
+    { id: "writer",     name: "Writer",     icon: "pen-line",     family: "create",     summary: "Medium · Informative · Blog post" },
+    { id: "video",      name: "Video",      icon: "clapperboard", family: "create",     summary: "720p · English (US) narration" },
+    { id: "publisher",  name: "Publisher",  icon: "cloud-upload", family: "distribute", summary: "YouTube · Unlisted", gate: true },
+    { id: "email",      name: "Email",      icon: "mail",         family: "distribute", summary: "3 recipients · links + PDF", gate: true },
+  ];
+  const META = {
+    pending:           { label: "Pending",        icon: "circle-dashed" },
+    running:           { label: "Running",        icon: "loader-circle", spin: true },
+    retrying:          { label: "Retrying",       icon: "rotate-cw" },
+    awaiting_approval: { label: "Needs approval", icon: "hand" },
+    success:           { label: "Done",           icon: "circle-check" },
+  };
+  const RUN_META = {
+    queued:            { label: "Queued",         icon: "clock",        tone: "" },
+    running:           { label: "Running",        icon: "loader-circle", tone: "running", spin: true },
+    awaiting_approval: { label: "Needs approval", icon: "hand",         tone: "approval" },
+    succeeded:         { label: "Succeeded",      icon: "circle-check", tone: "success" },
+  };
+
+  const chain = document.getElementById("chain");
+  const canvas = document.getElementById("canvas");
+  const edgesSvg = document.getElementById("edges");
+  const runHead = document.querySelector(".run-head");
+  const runChip = document.getElementById("run-chip");
+  const runTime = document.getElementById("run-time");
+  const runBar = document.getElementById("run-bar");
+  const runCount = document.getElementById("run-count");
+  const logLines = document.getElementById("log-lines");
+  const livePolite = document.getElementById("live-polite");
+  const liveAssert = document.getElementById("live-assertive");
+  const burst = document.getElementById("burst");
+
+  const state = {};
+  const nodes = {};
+  let simSeconds = 0, clock = null, token = 0, wall = new Date(2026, 8, 14, 16, 5, 0);
+
+  function fmtClock(s) { const m = Math.floor(s / 60); return m + ":" + String(Math.floor(s % 60)).padStart(2, "0"); }
+  function fmtDur(s) { return s < 60 ? s.toFixed(1) + " s" : Math.floor(s / 60) + "m " + String(Math.round(s % 60)).padStart(2, "0") + "s"; }
+  function stamp() { const d = new Date(wall.getTime() + simSeconds * 1000); return [d.getHours(), d.getMinutes(), d.getSeconds()].map(n => String(n).padStart(2, "0")).join(":"); }
+
+  function render() {
+    chain.innerHTML = "";
+    STEPS.forEach((s, i) => {
+      const el = document.createElement("article");
+      el.className = "node";
+      el.dataset.family = s.family;
+      el.dataset.status = "pending";
+      el.setAttribute("aria-label", s.name + ", step " + (i + 1) + " of " + STEPS.length);
+      el.innerHTML =
+        '<div class="node-head"><span class="tile"><i data-lucide="' + s.icon + '"></i></span>' +
+        '<div style="min-width:0"><p class="node-name">' + s.name + '</p><p class="node-type">Step ' + (i + 1) + ' of ' + STEPS.length + '</p></div></div>' +
+        '<p class="node-summary">' + s.summary + '</p>' +
+        '<div class="node-foot"><span class="chip"></span>' + (s.gate ? '<span class="gate" title="Requires approval">‖</span>' : '') + '<span class="time mono">—</span></div>';
+      chain.appendChild(el);
+      nodes[s.id] = el;
+      state[s.id] = "pending";
+      setChip(s.id, "pending");
+    });
+    icons();
+    requestAnimationFrame(drawEdges);
+  }
+
+  function setChip(id, status, extraLabel) {
+    const m = META[status];
+    const chip = nodes[id].querySelector(".chip");
+    chip.innerHTML = '<i data-lucide="' + m.icon + '"' + (m.spin ? ' class="spin"' : "") + '></i><span>' + (extraLabel || m.label) + "</span>";
+  }
+
+  function setStrip(id, kind, html) {
+    const el = nodes[id];
+    let strip = el.querySelector(".node-strip");
+    if (!kind) { if (strip) strip.remove(); return null; }
+    if (!strip) { strip = document.createElement("div"); strip.className = "node-strip"; el.appendChild(strip); }
+    strip.dataset.kind = kind;
+    strip.innerHTML = html;
+    return strip;
+  }
+
+  function setStatus(id, status, opts) {
+    opts = opts || {};
+    state[id] = status;
+    nodes[id].dataset.status = status;
+    setChip(id, status, opts.label);
+    if (opts.time !== undefined) nodes[id].querySelector(".time").textContent = opts.time;
+    icons();
+    updateEdges();
+    updateRun();
+    const name = STEPS.find(s => s.id === id).name;
+    if (status === "awaiting_approval") liveAssert.textContent = name + " is waiting for your approval.";
+    else livePolite.textContent = name + ": " + (opts.label || META[status].label).toLowerCase();
+  }
+
+  function setRun(status) {
+    const m = RUN_META[status];
+    runHead.dataset.run = status;
+    runChip.dataset.tone = m.tone;
+    runChip.innerHTML = '<i data-lucide="' + m.icon + '"' + (m.spin ? ' class="spin"' : "") + '></i><span>' + m.label + "</span>";
+    icons();
+  }
+
+  function updateRun() {
+    const done = STEPS.filter(s => state[s.id] === "success").length;
+    runBar.style.width = (done / STEPS.length * 100) + "%";
+    runCount.textContent = done + " of " + STEPS.length;
+  }
+
+  function log(agent, status, detail, cls) {
+    const li = document.createElement("li");
+    li.innerHTML = '<span>' + stamp() + '</span>  <b>' + agent.padEnd(10, " ") + '</b>  <span class="' + (cls || "") + '">' + status.padEnd(17, " ") + '</span>  ' + detail;
+    logLines.appendChild(li);
+    while (logLines.children.length > 5) logLines.removeChild(logLines.firstChild);
+  }
+
+  function drawEdges() {
+    const c = canvas.getBoundingClientRect();
+    edgesSvg.setAttribute("viewBox", "0 0 " + c.width + " " + c.height);
+    let html = "";
+    for (let i = 0; i < STEPS.length - 1; i++) {
+      const a = nodes[STEPS[i].id].getBoundingClientRect();
+      const b = nodes[STEPS[i + 1].id].getBoundingClientRect();
+      let d, x1, y1, x2, y2;
+      if (Math.abs(a.top - b.top) < 8) {
+        x1 = a.right - c.left; y1 = a.top + a.height / 2 - c.top;
+        x2 = b.left - c.left;  y2 = b.top + b.height / 2 - c.top;
+        d = "M" + x1 + " " + y1 + " H" + x2;
+      } else if (Math.abs(a.left - b.left) < 8) {
+        x1 = a.left + a.width / 2 - c.left; y1 = a.bottom - c.top;
+        x2 = b.left + b.width / 2 - c.left; y2 = b.top - c.top;
+        d = "M" + x1 + " " + y1 + " V" + y2;
+      } else {
+        x1 = a.left + a.width / 2 - c.left; y1 = a.bottom - c.top;
+        x2 = b.left + b.width / 2 - c.left; y2 = b.top - c.top;
+        const my = (y1 + y2) / 2, r = 8, dir = x2 < x1 ? -1 : 1;
+        d = "M" + x1 + " " + y1 + " V" + (my - r) + " Q" + x1 + " " + my + " " + (x1 + dir * r) + " " + my +
+            " H" + (x2 - dir * r) + " Q" + x2 + " " + my + " " + x2 + " " + (my + r) + " V" + y2;
+      }
+      html += '<path data-i="' + i + '" d="' + d + '"></path><circle cx="' + x1 + '" cy="' + y1 + '" r="4"></circle><circle cx="' + x2 + '" cy="' + y2 + '" r="4"></circle>';
+    }
+    edgesSvg.innerHTML = html;
+    updateEdges();
+  }
+
+  function updateEdges() {
+    edgesSvg.querySelectorAll("path").forEach(p => {
+      const i = +p.dataset.i;
+      const src = state[STEPS[i].id], dst = state[STEPS[i + 1].id];
+      p.classList.toggle("completed", src === "success" && dst === "success");
+      p.classList.toggle("active", src === "success" && (dst === "running" || dst === "retrying" || dst === "awaiting_approval"));
+    });
+  }
+
+  if ("ResizeObserver" in window) new ResizeObserver(() => drawEdges()).observe(canvas);
+  else window.addEventListener("resize", drawEdges);
+
+  const sleep = (ms, t) => new Promise((res, rej) => setTimeout(() => (t === token ? res() : rej("stale")), ms));
+
+  function startClock(t) {
+    clearInterval(clock);
+    clock = setInterval(() => {
+      if (t !== token) return clearInterval(clock);
+      if (runHead.dataset.run === "running") simSeconds += 1.2;
+      runTime.textContent = fmtClock(simSeconds);
+      STEPS.forEach(s => {
+        const n = nodes[s.id];
+        if (state[s.id] === "running" || state[s.id] === "retrying") {
+          n._t = (n._t || 0) + 1.2;
+          n.querySelector(".time").textContent = fmtClock(n._t);
+        }
+      });
+    }, 100);
+  }
+
+  function waitForApproval(id, t, label) {
+    return new Promise((res, rej) => {
+      const strip = setStrip(id, "approval", '<span>Your turn</span><button class="btn btn-primary btn-sm" type="button"><i data-lucide="check"></i>' + label + '</button>');
+      icons();
+      const btn = strip.querySelector("button");
+      btn.addEventListener("click", () => { if (t !== token) return rej("stale"); setStrip(id, null); res(); }, { once: true });
+    });
+  }
+
+  async function run(fast) {
+    const t = ++token;
+    simSeconds = 0;
+    logLines.innerHTML = "";
+    render();
+    setRun("queued");
+    runTime.textContent = "0:00";
+    startClock(t);
+    try {
+      await sleep(fast ? 200 : 900, t);
+      setRun("running");
+
+      setStatus("researcher", "running"); log("researcher", "running", "dispatched", "s-running");
+      await sleep(1900, t);
+      setStatus("researcher", "success", { time: fmtDur(18.4) }); log("researcher", "success", "duration_ms=18400 retry_count=0", "s-success");
+
+      setStatus("writer", "running");
+      await sleep(1300, t);
+      for (let s = 2; s > 0; s--) {
+        setStatus("writer", "retrying", { label: "Retrying 1/3" });
+        setStrip("writer", "retry", '<i data-lucide="rotate-cw" style="width:13px;height:13px"></i><span>Attempt 1 failed · next in ~' + s + 's</span>');
+        icons();
+        if (s === 2) log("writer", "retrying", "rate_limit_exceeded · retry 1 of 3", "s-retrying");
+        await sleep(1000, t);
+      }
+      setStrip("writer", null);
+      setStatus("writer", "running");
+      await sleep(1500, t);
+      setStatus("writer", "success", { time: fmtDur(42.1) }); log("writer", "success", "duration_ms=42100 retry_count=1", "s-success");
+
+      setStatus("video", "running");
+      setStrip("video", "render", "<span>Rendering slides and narration…</span>");
+      await sleep(3200, t);
+      setStrip("video", null);
+      setStatus("video", "success", { time: fmtDur(158) }); log("video", "success", "duration_ms=158000 mp4 3:04", "s-success");
+
+      setStatus("publisher", "running");
+      await sleep(600, t);
+      setStatus("publisher", "awaiting_approval"); log("publisher", "awaiting_approval", "parked before upload", "s-approval");
+      setRun("awaiting_approval");
+      await waitForApproval("publisher", t, "Approve");
+      log("publisher", "running", "approved by demo@isnad.local", "s-running");
+      setRun("running");
+      setStatus("publisher", "running");
+      await sleep(1600, t);
+      setStatus("publisher", "success", { time: fmtDur(12.7) });
+      setStrip("publisher", "link", '<i data-lucide="external-link" style="width:13px;height:13px"></i><span class="mono">youtu.be/example</span>'); icons();
+      log("publisher", "success", "remote_url=youtu.be/example", "s-success");
+
+      setStatus("email", "running");
+      await sleep(500, t);
+      setStatus("email", "awaiting_approval"); log("email", "awaiting_approval", "parked before send", "s-approval");
+      setRun("awaiting_approval");
+      await waitForApproval("email", t, "Approve");
+      setRun("running");
+      setStatus("email", "running");
+      await sleep(1100, t);
+      setStatus("email", "success", { time: fmtDur(3.2) }); log("email", "success", "message_id=18c2… sent to 3", "s-success");
+
+      setRun("succeeded");
+      livePolite.textContent = "Run finished. 4 files are ready.";
+      if (!reduceMotion) { burst.classList.remove("go"); void burst.offsetWidth; burst.classList.add("go"); }
+    } catch (e) { /* replaced by a newer run */ }
+  }
+
+  document.querySelectorAll("[data-replay], [data-replay-btn]").forEach(el => el.addEventListener("click", () => run(true)));
+
+  /* ---------------- Approval example ---------------- */
+  const note = document.getElementById("ap-note");
+  const msg = document.getElementById("ap-msg");
+  const now = () => new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: false });
+  document.getElementById("ap-approve").addEventListener("click", () => {
+    note.removeAttribute("aria-invalid");
+    msg.className = "ap-msg ok";
+    msg.textContent = "Approved by you at " + now() + (note.value.trim() ? " · “" + note.value.trim() + "”" : "") + ". Publisher is uploading now.";
+  });
+  document.getElementById("ap-reject").addEventListener("click", () => {
+    if (!note.value.trim()) {
+      note.setAttribute("aria-invalid", "true");
+      msg.className = "ap-msg err";
+      msg.textContent = "Add a note to reject — it's kept with the run.";
+      note.focus();
+      return;
+    }
+    note.removeAttribute("aria-invalid");
+    msg.className = "ap-msg err";
+    msg.textContent = "Rejected by you at " + now() + " · “" + note.value.trim() + "”. The run stopped; nothing was uploaded.";
+  });
+
+  /* ---------------- Closing band: P-02 Handoff Lines ---------------- */
+  const lc = document.getElementById("lines");
+  const ctx = lc.getContext("2d");
+  let phase = 0, raf = null;
+  function paintLines() {
+    const r = lc.getBoundingClientRect(), dpr = Math.min(window.devicePixelRatio || 1, 2);
+    if (lc.width !== Math.round(r.width * dpr)) { lc.width = Math.round(r.width * dpr); lc.height = Math.round(r.height * dpr); }
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, r.width, r.height);
+    const stroke = getComputedStyle(document.documentElement).getPropertyValue("--band-fg").trim() || "#FAFAF8";
+    ctx.strokeStyle = stroke;
+    ctx.lineWidth = 1;
+    const count = 34, startX = r.width * 0.42;
+    for (let i = 0; i < count; i++) {
+      ctx.globalAlpha = 0.05 + 0.20 * (i / count);
+      ctx.beginPath();
+      const baseY = r.height * 0.12 + i * 8;
+      for (let x = startX; x <= r.width + 10; x += 6) {
+        const k = (x - startX) / (r.width - startX);
+        const y = baseY + Math.sin(k * 5.2 + i * 0.07 + phase) * (14 + 26 * k) + k * k * 60;
+        x === startX ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+      }
+      ctx.stroke();
+    }
+    ctx.globalAlpha = 1;
+  }
+  function loop() { phase += 0.004; paintLines(); raf = requestAnimationFrame(loop); }
+  paintLines();
+  if (!reduceMotion && "IntersectionObserver" in window) {
+    new IntersectionObserver(([e]) => {
+      if (e.isIntersecting && !raf) loop();
+      else if (!e.isIntersecting && raf) { cancelAnimationFrame(raf); raf = null; }
+    }).observe(lc);
+  }
+  window.addEventListener("resize", paintLines);
+
+  icons();
+  run(false);
+})();
+</script>
