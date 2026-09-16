@@ -44,6 +44,11 @@
   --color-on-accent: var(--neutral-950);
   /* Volt as *text* — only ever on a neutral ground, so it needs a per-theme value (§04). */
   --color-accent-text: var(--volt-700);
+  /* Distribute agents carry the brand pairing from §08 — Ink tile, Volt icon — in BOTH themes.
+     Deliberately not --color-surface-inverse: that flips with the theme, and in dark it put Volt
+     on Paper at 1.1:1. The tile is a brand mark, not a themed surface. */
+  --color-agent-distribute-bg: var(--neutral-950);
+  --color-agent-distribute-fg: var(--volt-500);
   --color-interactive: var(--blue-600);
   --color-interactive-hover: var(--blue-700);
   --color-focus: var(--blue-600);
