@@ -35,7 +35,11 @@ jobs:
         run: source .venv/bin/activate && lint-imports
       - name: Grep tests from GP-plan Part 2
         run: |
-          ! grep -rn "from agents\|import agents" api/src worker/src
+          # GP-plan Part 2: api and worker must not import the C4 agents package.
+          # Anchored to the start of an import statement, or it also matches
+          # `from api.routers import agents` (C2's own catalogue router) and the line in
+          # api/__init__.py that documents this very rule.
+          ! grep -rnE '^[[:space:]]*(from|import)[[:space:]]+agents([.[:space:]]|$)' api/src worker/src
       - name: Agent shape (every agent folder has a valid manifest and entry point)
         run: source .venv/bin/activate && python scripts/validate_manifests.py
 
