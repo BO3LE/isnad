@@ -189,6 +189,16 @@ Four rules that are new in this document:
 3. **There is no Save button.** Every change autosaves into the workflow's existing 800 ms debounce, and the footer says so. A Save button implies work can be lost.
 4. **Secrets are never text fields.** The Google account is a picker holding a reference, never a pasted token — and no secret ever appears in the form, the graph or the URL.
 
+#### The rule that makes inheriting actually work
+
+**The form must never write a default into a step's settings.** This sounds like an implementation detail. It is not — it is the difference between the product working and not.
+
+Image's "what should the image show?" has a default of *nothing*, meaning *inherit the article title*. If simply opening the drawer wrote that empty default into the saved settings, the orchestrator's last line — `data.update(node.configuration)` — would lay that emptiness over Writer's title, and `ImageInput` rejects an empty prompt. Every Writer → Image chain would break, **caused by nothing but opening the drawer to look**.
+
+So: settings hold only what the user has actually chosen. A field the user clears is *removed*, not stored as empty. That is what makes "leave it empty to inherit" true rather than a figure of speech, and it is why the saved graph for the seeded templates is as short as it is.
+
+The same rule keeps client and server agreeing on the word "missing": `/validate` treats `null`, `""` and `[]` as missing, and so does the form.
+
 **Validation timing** (§17.2), which is deliberately three-tier:
 
 | When | What is checked |
