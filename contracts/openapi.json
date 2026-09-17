@@ -9,6 +9,42 @@
         "title": "AgentFamily",
         "type": "string"
       },
+      "AgentInput": {
+        "additionalProperties": false,
+        "description": "One thing an agent needs to run, and where it may come from.",
+        "properties": {
+          "accepts": {
+            "description": "Output names an earlier step may supply this under, in the order the agent prefers them",
+            "items": {
+              "type": "string"
+            },
+            "title": "Accepts",
+            "type": "array"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "required": {
+            "description": "The step cannot run without it",
+            "title": "Required",
+            "type": "boolean"
+          },
+          "settable": {
+            "description": "The user can type it in the step's settings; otherwise only an earlier step can supply it",
+            "title": "Settable",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "name",
+          "accepts",
+          "required",
+          "settable"
+        ],
+        "title": "AgentInput",
+        "type": "object"
+      },
       "AgentManifest": {
         "additionalProperties": false,
         "properties": {
@@ -52,6 +88,14 @@
             "title": "Input Type",
             "type": "string"
           },
+          "inputs": {
+            "description": "What the agent needs. Filled from its input model at runtime.",
+            "items": {
+              "$ref": "#/components/schemas/AgentInput"
+            },
+            "title": "Inputs",
+            "type": "array"
+          },
           "name": {
             "description": "Unique agent_type",
             "maxLength": 64,
@@ -63,6 +107,14 @@
             "description": "Model name in contracts.agent_io",
             "title": "Output Type",
             "type": "string"
+          },
+          "outputs": {
+            "description": "What the agent hands on. Filled from its output model at runtime.",
+            "items": {
+              "$ref": "#/components/schemas/AgentOutput"
+            },
+            "title": "Outputs",
+            "type": "array"
           },
           "requires_approval": {
             "default": false,
@@ -91,6 +143,27 @@
           "output_type"
         ],
         "title": "AgentManifest",
+        "type": "object"
+      },
+      "AgentOutput": {
+        "additionalProperties": false,
+        "description": "One thing an agent hands on to the steps after it.",
+        "properties": {
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "title": {
+            "description": "What a person calls it, e.g. 'article'",
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "title"
+        ],
+        "title": "AgentOutput",
         "type": "object"
       },
       "ApprovalDecision": {
