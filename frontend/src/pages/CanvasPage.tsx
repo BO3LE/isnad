@@ -30,7 +30,7 @@ import { Tooltip } from "@/design-system/components/Tooltip";
 import { useToast } from "@/design-system/components/toast-context";
 import { NotFoundState } from "@/pages/NotFoundPage";
 import { ApiError, endpoints, type AgentManifest, type ValidationResult, type WorkflowOut } from "@/lib/api";
-import { GRID, configSummary, graphsEqual, refuseConnection, snapToGrid, stepNumbers, toWorkflowGraph } from "@/lib/graph";
+import { GRID, configSummary, graphsEqual, refuseConnection, snapPosition, snapToGrid, stepNumbers, toWorkflowGraph } from "@/lib/graph";
 
 // P-04 · Workflow Canvas (FRONTEND-PAGES-PLAN.md) · DESIGN-SYSTEM.md §15, §21 S-03.
 // The configuration drawer (S-04) and the validation panel (§15.5) are Part 3c; this is the canvas
@@ -84,7 +84,7 @@ function CanvasPageInner() {
     const loadedNodes = (data.graph?.nodes ?? []).map((node) => ({
       id: node.id,
       type: "agent",
-      position: { x: node.position?.x ?? 0, y: node.position?.y ?? 0 },
+      position: snapPosition(node.position),
       data: {
         agentType: node.agent_type,
         title: node.agent_type,
@@ -98,7 +98,8 @@ function CanvasPageInner() {
     setNodes(loadedNodes);
     setEdges(loadedEdges);
     // Normalise through the same function the autosave comparison uses, or the first comparison
-    // always differs and the canvas saves a graph nobody touched.
+    // always differs and the canvas saves a graph nobody touched. The baseline holds the snapped
+    // positions, so an off-grid stored graph is only rewritten when the user actually edits it.
     savedGraph.current = toWorkflowGraph(loadedNodes as unknown as Parameters<typeof toWorkflowGraph>[0], loadedEdges);
     history.reset();
   }, [workflow.data, setNodes, setEdges, history]);

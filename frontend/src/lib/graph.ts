@@ -17,6 +17,15 @@ export function snapToGrid(value: number, grid: number = GRID): number {
 }
 
 /**
+ * A stored position placed on the grid. React Flow's snapToGrid only snaps a node once it moves —
+ * selecting or nudging it counts — so a graph saved off-grid (the seeds sit at y=120) would shift
+ * on the first click and autosave a move the user never made. Snapping on load avoids that.
+ */
+export function snapPosition(position: { x?: number | null; y?: number | null } | null | undefined, grid: number = GRID) {
+  return { x: snapToGrid(position?.x ?? 0, grid), y: snapToGrid(position?.y ?? 0, grid) };
+}
+
+/**
  * §15.3 — "A node can't connect to itself; a connection that would create a cycle is refused."
  *
  * Structural rules only. Type compatibility is deliberately not decided here: the catalog's

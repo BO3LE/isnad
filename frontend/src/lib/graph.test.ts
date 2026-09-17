@@ -1,4 +1,4 @@
-import { configSummary, graphsEqual, refuseConnection, snapToGrid, stepNumbers } from "./graph";
+import { configSummary, graphsEqual, refuseConnection, snapPosition, snapToGrid, stepNumbers } from "./graph";
 
 const edge = (source: string, target: string) => ({ id: `${source}-${target}`, source, target });
 
@@ -63,6 +63,24 @@ describe("snapToGrid", () => {
     expect(snapToGrid(7)).toBe(0);
     expect(snapToGrid(9)).toBe(16);
     expect(snapToGrid(-9)).toBe(-16);
+  });
+});
+
+describe("snapPosition", () => {
+  it("puts a seeded off-grid position on the grid", () => {
+    // The seeds place steps at y=120; 120 / 16 = 7.5, so React Flow's own rounding of a click's
+    // sub-pixel jitter could land it on 112 or 128. Once it is on the grid, a click leaves it there.
+    expect(snapPosition({ x: 80, y: 120 })).toEqual({ x: 80, y: 128 });
+  });
+
+  it("is stable, so a snapped graph never looks edited", () => {
+    const once = snapPosition({ x: 333, y: 120 });
+    expect(snapPosition(once)).toEqual(once);
+  });
+
+  it("treats a missing position as the origin", () => {
+    expect(snapPosition(undefined)).toEqual({ x: 0, y: 0 });
+    expect(snapPosition({ x: null, y: 40 })).toEqual({ x: 0, y: 48 });
   });
 });
 
