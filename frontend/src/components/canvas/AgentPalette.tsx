@@ -49,7 +49,7 @@ export function AgentPalette({ catalog, loading, error, onRetry, onAdd, disabled
 
   if (collapsed) {
     return (
-      <aside className="flex w-14 shrink-0 flex-col items-center gap-1 border-r border-border bg-surface py-2" aria-label="Agents">
+      <aside className="hidden w-14 shrink-0 flex-col items-center gap-1 border-r border-border bg-surface py-2 md:flex" aria-label="Agents">
         <IconButton label="Expand the agent palette" icon={<PanelLeftOpen size={16} aria-hidden />} onClick={() => setCollapsed(false)} />
         {matches.map((agent) => (
           <Tooltip key={agent.name} content={agent.title} placement="bottom">
@@ -71,7 +71,8 @@ export function AgentPalette({ catalog, loading, error, onRetry, onAdd, disabled
   }
 
   return (
-    <aside className="flex w-[264px] shrink-0 flex-col border-r border-border bg-surface" aria-label="Agents">
+        // Hidden on phones, as in the prototype: the canvas there is for reviewing and settings.
+    <aside className="hidden w-[264px] shrink-0 flex-col border-r border-border bg-surface md:flex" aria-label="Agents">
       <div className="flex items-center gap-2 border-b border-border p-3">
         <div className="flex-1">
           <SearchInput label="Search agents" value={search} onValueChange={setSearch} placeholder="Search agents" />

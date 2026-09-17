@@ -6,6 +6,7 @@ import ReactFlow, {
   Background,
   BackgroundVariant,
   Controls,
+  MarkerType,
   MiniMap,
   ReactFlowProvider,
   addEdge,
@@ -14,13 +15,16 @@ import ReactFlow, {
   useReactFlow,
   type Connection,
   type Edge,
+  type EdgeTypes,
   type Node,
   type NodeTypes,
 } from "reactflow";
 import { AppShell } from "@/components/app/AppShell";
-import { AgentNode, type AgentNodeData } from "@/components/canvas/AgentNode";
+import { AgentNode, type AgentNodeData, type ConnectHint, type StepData } from "@/components/canvas/AgentNode";
 import { AGENT_DRAG_TYPE, AgentPalette } from "@/components/canvas/AgentPalette";
 import { CanvasStatusBar } from "@/components/canvas/CanvasStatusBar";
+import { HandoverEdge, type HandoverEdgeData } from "@/components/canvas/HandoverEdge";
+import { StepDrawer } from "@/components/canvas/StepDrawer";
 import { useGraphHistory } from "@/components/canvas/useGraphHistory";
 import { agentTitle } from "@/design-system/agents/agentMeta";
 import { Button } from "@/design-system/components/Button";
@@ -30,14 +34,33 @@ import { Tooltip } from "@/design-system/components/Tooltip";
 import { useToast } from "@/design-system/components/toast-context";
 import { NotFoundState } from "@/pages/NotFoundPage";
 import { ApiError, endpoints, type AgentManifest, type ValidationResult, type WorkflowOut } from "@/lib/api";
-import { GRID, configSummary, graphsEqual, refuseConnection, snapPosition, snapToGrid, stepNumbers, toWorkflowGraph } from "@/lib/graph";
+import { useAuth } from "@/lib/auth";
+import { GRID, graphsEqual, refuseConnection, snapPosition, snapToGrid, stepNumbers, toWorkflowGraph } from "@/lib/graph";
+import { describeStep, handover, type StepHandover } from "@/lib/handover";
+import { missingSettings, summarise, type Configuration } from "@/lib/schema";
 
-// P-04 · Workflow Canvas (FRONTEND-PAGES-PLAN.md) · DESIGN-SYSTEM.md §15, §21 S-03.
-// The configuration drawer (S-04) and the validation panel (§15.5) are Part 3c; this is the canvas
-// itself — palette, nodes, edges, autosave, undo/redo and the status bar.
+// P-04 · Workflow Canvas (FRONTEND-PAGES-PLAN.md) · DESIGN-SYSTEM.md §15, §21 S-03 · UX-SPEC §4.
+// The canvas teaches: each step says what it is set to do and what it still needs, each connection
+// names what crosses it, and a step's settings drawer says where every value comes from. All of it
+// is worked out from the catalog — no agent is named anywhere in this file (AT-12).
 
 const AUTOSAVE_DELAY = 800; // §15.4
+const NODE_WIDTH = 248; // §15.2
+const STEP_GAP = 320; // the seeds' spacing: a node and room for the handover label
+
+/** Right of the rightmost step, moved down until it overlaps nothing. */
+function nextFreeSpot(taken: { x: number; y: number }[]) {
+  const last = taken.reduce((a, b) => (b.x > a.x ? b : a));
+  const spot = { x: snapToGrid(last.x + STEP_GAP), y: snapToGrid(last.y) };
+  while (taken.some((p) => Math.abs(p.x - spot.x) < NODE_WIDTH && Math.abs(p.y - spot.y) < 128)) spot.y += 160;
+  return spot;
+}
 const nodeTypes: NodeTypes = { agent: AgentNode };
+const edgeTypes: EdgeTypes = { handover: HandoverEdge };
+const EDGE_DEFAULTS = {
+  type: "handover",
+  markerEnd: { type: MarkerType.ArrowClosed, width: 16, height: 16 },
+} as const;
 
 type SaveState = { kind: "idle" } | { kind: "saving" } | { kind: "saved"; at: number } | { kind: "error" };
 
@@ -46,17 +69,21 @@ function CanvasPageInner() {
   const navigate = useNavigate();
   const toast = useToast();
   const queryClient = useQueryClient();
-  const { screenToFlowPosition, getViewport, fitView } = useReactFlow();
+  const { screenToFlowPosition, getViewport, fitView, setCenter } = useReactFlow();
 
-  const [nodes, setNodes, onNodesChange] = useNodesState<AgentNodeData>([]);
+  const userEmail = useAuth((state) => state.email);
+  const [nodes, setNodes, onNodesChange] = useNodesState<StepData>([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState([]);
   const [save, setSave] = useState<SaveState>({ kind: "idle" });
   const [validation, setValidation] = useState<ValidationResult | null>(null);
   const [zoom, setZoom] = useState(1);
   const [name, setName] = useState("");
   const [editingName, setEditingName] = useState(false);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [connectingFrom, setConnectingFrom] = useState<string | null>(null);
+  const [hovered, setHovered] = useState<string | null>(null);
 
-  const history = useGraphHistory<AgentNodeData>({ nodes: [], edges: [] });
+  const history = useGraphHistory<StepData>({ nodes: [], edges: [] });
   const loadedGraph = useRef<string>("");
   // The graph as the server has it, normalised through toWorkflowGraph. Comparing against the raw
   // payload instead made every page open look like an edit — the canvas PUT on load, every time.
@@ -70,7 +97,10 @@ function CanvasPageInner() {
     enabled: Boolean(workflowId),
     retry: (count, error) => !(error instanceof ApiError && error.status === 404) && count < 1,
   });
-  const catalog = useQuery({ queryKey: ["catalog"], queryFn: endpoints.catalog });
+  const catalog = useQuery({
+    queryKey: ["catalog"],
+    queryFn: endpoints.catalog,
+  });
 
   const agents: AgentManifest[] = useMemo(() => catalog.data ?? [], [catalog.data]);
 
@@ -81,63 +111,104 @@ function CanvasPageInner() {
     loadedGraph.current = data.id;
     setName(data.name);
 
-    const loadedNodes = (data.graph?.nodes ?? []).map((node) => ({
+    const loadedNodes: Node<StepData>[] = (data.graph?.nodes ?? []).map((node) => ({
       id: node.id,
       type: "agent",
       position: snapPosition(node.position),
       data: {
         agentType: node.agent_type,
-        title: node.agent_type,
-        summary: configSummary(node.configuration as Record<string, unknown>),
         requiresApproval: node.requires_approval ?? false,
-        configuration: (node.configuration ?? {}) as Record<string, unknown>,
-      } as AgentNodeData & { configuration: Record<string, unknown> },
+        configuration: (node.configuration ?? {}) as Configuration,
+      },
     }));
-    const loadedEdges = (data.graph?.edges ?? []).map((edge) => ({ id: edge.id, source: edge.source, target: edge.target }));
+    const loadedEdges: Edge[] = (data.graph?.edges ?? []).map((edge) => ({
+      id: edge.id,
+      source: edge.source,
+      target: edge.target,
+      ...EDGE_DEFAULTS,
+    }));
 
     setNodes(loadedNodes);
     setEdges(loadedEdges);
     // Normalise through the same function the autosave comparison uses, or the first comparison
     // always differs and the canvas saves a graph nobody touched. The baseline holds the snapped
     // positions, so an off-grid stored graph is only rewritten when the user actually edits it.
-    savedGraph.current = toWorkflowGraph(loadedNodes as unknown as Parameters<typeof toWorkflowGraph>[0], loadedEdges);
+    savedGraph.current = toWorkflowGraph(loadedNodes, loadedEdges);
     history.reset();
   }, [workflow.data, setNodes, setEdges, history]);
 
   // Titles and icons come from the catalog, which may arrive after the graph.
   const steps = useMemo(() => stepNumbers(nodes.map((n) => n.id), edges), [nodes, edges]);
   const issuesByNode = useMemo(() => {
-    const map = new Map<string, number>();
+    const map = new Map<string, ValidationResult["issues"]>();
     for (const issue of validation?.issues ?? []) {
-      if (issue.node_id) map.set(issue.node_id, (map.get(issue.node_id) ?? 0) + 1);
+      if (issue.node_id) map.set(issue.node_id, [...(map.get(issue.node_id) ?? []), issue]);
     }
     return map;
   }, [validation]);
 
-  const decorated = useMemo(
+  // UX-SPEC §2 — for every step, where each of its values will come from.
+  const handovers = useMemo(() => {
+    const stepList = nodes.map((n) => ({ id: n.id, agentType: n.data.agentType, configuration: n.data.configuration }));
+    return new Map<string, StepHandover>(stepList.map((step) => [step.id, describeStep(step, stepList, edges, agents)]));
+  }, [nodes, edges, agents]);
+
+  const typeOf = useCallback((id: string) => nodes.find((n) => n.id === id)?.data.agentType ?? "", [nodes]);
+
+  const decorated: Node<AgentNodeData>[] = useMemo(
     () =>
       nodes.map((node) => {
         const manifest = agents.find((a) => a.name === node.data.agentType);
+        const missing = missingSettings(node.data.configuration, manifest?.config_schema).map((f) => f.key.replace(/_/g, " "));
+        const problems = [
+          ...(manifest && missing.length > 0 ? [`Missing: ${missing.join(", ")}`] : []),
+          ...(handovers.get(node.id)?.needs ?? []),
+        ];
+        let connectHint: ConnectHint | undefined;
+        if (connectingFrom && connectingFrom !== node.id && agents.length > 0) {
+          const items = handover(typeOf(connectingFrom), node.data.agentType, agents);
+          connectHint = items.length > 0 ? { kind: "takes", items } : { kind: "nothing", from: agentTitle(typeOf(connectingFrom), agents) };
+        }
         return {
           ...node,
+          selected: node.id === selectedId,
           data: {
             ...node.data,
+            requiresApproval: manifest?.requires_approval === true || node.data.requiresApproval,
             title: agentTitle(node.data.agentType, agents),
             icon: manifest?.icon,
             family: manifest?.family,
-            step: steps.get(node.id),
-            issueCount: issuesByNode.get(node.id) ?? 0,
+            // Only a connected step has a place in the chain (UX-SPEC §4.2).
+            step: edges.some((e) => e.source === node.id || e.target === node.id) ? steps.get(node.id) : undefined,
+            summary: summarise(node.data.configuration, manifest?.config_schema),
+            problems,
+            issueCount: issuesByNode.get(node.id)?.length ?? 0,
+            connectHint,
           },
         };
       }),
-    [nodes, agents, steps, issuesByNode],
+    [nodes, edges, agents, steps, issuesByNode, handovers, connectingFrom, selectedId, typeOf],
+  );
+
+  // UX-SPEC §4.3 — each connection names what crosses it.
+  const decoratedEdges: Edge<HandoverEdgeData>[] = useMemo(
+    () =>
+      agents.length === 0
+        ? edges
+        : edges.map((edge) => ({
+            ...edge,
+            ...EDGE_DEFAULTS,
+            data: {
+              items: handover(typeOf(edge.source), typeOf(edge.target), agents),
+              targetTitle: agentTitle(typeOf(edge.target), agents),
+              emphasised: [edge.id, edge.source, edge.target].some((id) => id === hovered || id === selectedId),
+            },
+          })),
+    [edges, agents, typeOf, hovered, selectedId],
   );
 
   // ---------------------------------------------------------------- autosave (§15.4)
-  const graph = useMemo(
-    () => toWorkflowGraph(nodes as unknown as Parameters<typeof toWorkflowGraph>[0], edges),
-    [nodes, edges],
-  );
+  const graph = useMemo(() => toWorkflowGraph(nodes, edges), [nodes, edges]);
 
   const persist = useCallback(async () => {
     setSave({ kind: "saving" });
@@ -162,39 +233,51 @@ function CanvasPageInner() {
 
   // ---------------------------------------------------------------- editing
   const snapshot = useCallback(() => ({ nodes, edges }), [nodes, edges]);
+  const dragStart = useRef<ReturnType<typeof snapshot> | null>(null);
 
   const addNode = useCallback(
     (agentType: string, at?: { x: number; y: number }) => {
       const manifest = agents.find((a) => a.name === agentType);
-      const viewport = getViewport();
-      const box = wrapper.current?.getBoundingClientRect();
-      const centre =
-        at ??
-        screenToFlowPosition({
+      let position: { x: number; y: number };
+      if (at) {
+        position = { x: snapToGrid(at.x), y: snapToGrid(at.y) };
+      } else if (nodes.length > 0) {
+        // From the palette: after the chain's last step, where it reads as "next", then shown.
+        position = nextFreeSpot(nodes.map((n) => n.position));
+        reveal.current = position;
+      } else {
+        const box = wrapper.current?.getBoundingClientRect();
+        const centre = screenToFlowPosition({
           x: (box?.left ?? 0) + (box?.width ?? 800) / 2,
           y: (box?.top ?? 0) + (box?.height ?? 600) / 2,
         });
-      void viewport;
+        position = {
+          x: snapToGrid(centre.x - NODE_WIDTH / 2),
+          y: snapToGrid(centre.y - 48),
+        };
+      }
 
       history.commit(snapshot());
+      const id = crypto.randomUUID();
       setNodes((current) => [
         ...current,
         {
-          id: crypto.randomUUID(),
+          id,
           type: "agent",
-          position: { x: snapToGrid(centre.x), y: snapToGrid(centre.y) },
+          position,
           data: {
             agentType,
-            title: manifest?.title ?? agentType,
-            summary: "",
             // D-08: Distribute agents always require approval, and the catalog is what says so.
             requiresApproval: manifest?.requires_approval ?? false,
+            // Empty on purpose: a new step holds only what the user chooses (UX-SPEC §4.5).
             configuration: {},
-          } as AgentNodeData & { configuration: Record<string, unknown> },
+          },
         },
       ]);
+      // A new step opens its settings, so the next thing the user sees is what it needs.
+      setSelectedId(id);
     },
-    [agents, getViewport, screenToFlowPosition, history, snapshot, setNodes],
+    [agents, nodes, screenToFlowPosition, history, snapshot, setNodes],
   );
 
   const onConnect = useCallback(
@@ -203,12 +286,20 @@ function CanvasPageInner() {
       if (!source || !target) return;
 
       const refusal = refuseConnection(edges, source, target);
-      if (refusal === "cycle") return toast({ variant: "error", message: "That connection would create a loop." });
-      if (refusal === "self") return toast({ variant: "error", message: "A step can't feed itself." });
+      if (refusal === "cycle")
+        return toast({
+          variant: "error",
+          message: "That connection would create a loop.",
+        });
+      if (refusal === "self")
+        return toast({
+          variant: "error",
+          message: "A step can't feed itself.",
+        });
       if (refusal === "duplicate") return;
 
       history.commit(snapshot());
-      setEdges((current) => addEdge({ ...connection, id: `${source}-${target}` }, current));
+      setEdges((current) => addEdge({ ...connection, id: `${source}-${target}`, ...EDGE_DEFAULTS }, current));
     },
     [edges, history, snapshot, setEdges, toast],
   );
@@ -223,8 +314,14 @@ function CanvasPageInner() {
     [addNode, screenToFlowPosition],
   );
 
+  const updateStep = useCallback(
+    (id: string, patch: Partial<StepData>) =>
+      setNodes((current) => current.map((node) => (node.id === id ? { ...node, data: { ...node.data, ...patch } } : node))),
+    [setNodes],
+  );
+
   const applySnapshot = useCallback(
-    (next: { nodes: Node<AgentNodeData>[]; edges: Edge[] } | null) => {
+    (next: { nodes: Node<StepData>[]; edges: Edge[] } | null) => {
       if (!next) return;
       setNodes(next.nodes);
       setEdges(next.edges);
@@ -244,6 +341,24 @@ function CanvasPageInner() {
     document.addEventListener("keydown", onKeyDown);
     return () => document.removeEventListener("keydown", onKeyDown);
   }, [history, snapshot, applySnapshot]);
+
+  const closeDrawer = useCallback(() => setSelectedId(null), []);
+
+  // Show a step added from the palette. Wait a frame so the settings drawer, which opens at the
+  // same time, has already narrowed the canvas — otherwise the step is centred behind it.
+  const reveal = useRef<{ x: number; y: number } | null>(null);
+  useEffect(() => {
+    const target = reveal.current;
+    if (!target) return;
+    reveal.current = null;
+    const frame = window.requestAnimationFrame(() =>
+      setCenter(target.x + NODE_WIDTH / 2, target.y + 48, {
+        zoom: getViewport().zoom,
+        duration: 200,
+      }),
+    );
+    return () => window.cancelAnimationFrame(frame);
+  }, [nodes, setCenter, getViewport]);
 
   // ---------------------------------------------------------------- actions
   const validate = useMutation({
@@ -286,6 +401,8 @@ function CanvasPageInner() {
     );
   }
 
+  const selectedStep = decorated.find((node) => node.id === selectedId && handovers.has(node.id));
+
   const saveLabel =
     save.kind === "saving"
       ? "Saving…"
@@ -311,24 +428,32 @@ function CanvasPageInner() {
       }
       actions={
         <div className="flex items-center gap-2">
-          <Tooltip content="Undo (⌘Z)">
-            <IconButton
-              label="Undo"
-              icon={<Undo2 size={16} aria-hidden />}
-              disabled={!history.canUndo}
-              onClick={() => applySnapshot(history.undo(snapshot()))}
-            />
-          </Tooltip>
-          <Tooltip content="Redo (⌘⇧Z)">
-            <IconButton
-              label="Redo"
-              icon={<Redo2 size={16} aria-hidden />}
-              disabled={!history.canRedo}
-              onClick={() => applySnapshot(history.redo(snapshot()))}
-            />
-          </Tooltip>
-          <Button icon={<ShieldCheck size={16} aria-hidden />} loading={validate.isPending} onClick={() => validate.mutate()}>
-            Validate
+          <div className="hidden items-center gap-2 sm:flex">
+            <Tooltip content="Undo (⌘Z)">
+              <IconButton
+                label="Undo"
+                icon={<Undo2 size={16} aria-hidden />}
+                disabled={!history.canUndo}
+                onClick={() => applySnapshot(history.undo(snapshot()))}
+              />
+            </Tooltip>
+            <Tooltip content="Redo (⌘⇧Z)">
+              <IconButton
+                label="Redo"
+                icon={<Redo2 size={16} aria-hidden />}
+                disabled={!history.canRedo}
+                onClick={() => applySnapshot(history.redo(snapshot()))}
+              />
+            </Tooltip>
+          </div>
+          <Button
+            icon={<ShieldCheck size={16} aria-hidden />}
+            aria-label="Validate"
+            loading={validate.isPending}
+            onClick={() => validate.mutate()}
+            className="gap-2"
+          >
+            <span className="hidden sm:inline">Validate</span>
           </Button>
           <Button variant="accent" icon={<Play size={16} aria-hidden />} loading={run.isPending} onClick={() => run.mutate()}>
             Run
@@ -338,7 +463,7 @@ function CanvasPageInner() {
     >
       {/* The inline-editable name lives in the breadcrumb slot on the real top bar (§15.4); until the
           breadcrumb supports editing it sits here, above the canvas, so renaming is still possible. */}
-      <div className="flex min-h-0 flex-1">
+      <div className="relative flex min-h-0 flex-1">
         <AgentPalette
           catalog={agents}
           loading={catalog.isPending}
@@ -381,24 +506,50 @@ function CanvasPageInner() {
             ) : (
               <ReactFlow
                 nodes={decorated}
-                edges={edges}
+                edges={decoratedEdges}
                 nodeTypes={nodeTypes}
+                edgeTypes={edgeTypes}
+                onNodeClick={(_event, node) => setSelectedId(node.id)}
+                onPaneClick={() => setSelectedId(null)}
+                onNodeMouseEnter={(_event, node) => setHovered(node.id)}
+                onNodeMouseLeave={() => setHovered(null)}
+                onEdgeMouseEnter={(_event, edge) => setHovered(edge.id)}
+                onEdgeMouseLeave={() => setHovered(null)}
+                onConnectStart={(_event, params) => setConnectingFrom(params.handleType === "source" ? params.nodeId : null)}
+                onConnectEnd={() => setConnectingFrom(null)}
                 onNodesChange={onNodesChange}
                 onEdgesChange={onEdgesChange}
                 onConnect={onConnect}
-                onNodeDragStart={() => history.commit(snapshot())}
+                onNodeDragStart={() => {
+                  dragStart.current = snapshot();
+                }}
+                onNodeDragStop={() => {
+                  // A click counts as a drag to React Flow; only a real move is worth an undo step.
+                  const before = dragStart.current;
+                  dragStart.current = null;
+                  if (before && !graphsEqual(toWorkflowGraph(before.nodes, before.edges), graph)) history.commit(before);
+                }}
                 onMove={(_event, viewport) => setZoom(viewport.zoom)}
                 onInit={() => fitView({ padding: 0.2, maxZoom: 1 })}
                 snapToGrid
                 snapGrid={[GRID, GRID]}
                 deleteKeyCode={["Backspace", "Delete"]}
-                onNodesDelete={() => history.commit(snapshot())}
+                onNodesDelete={(deleted) => {
+                  history.commit(snapshot());
+                  if (deleted.some((node) => node.id === selectedId)) setSelectedId(null);
+                }}
                 proOptions={{ hideAttribution: true }}
                 fitView
               >
                 <Background variant={BackgroundVariant.Dots} gap={GRID} size={1} color="var(--color-canvas-dot)" />
                 <Controls showInteractive />
-                <MiniMap pannable className="hidden xl:block" />
+                <MiniMap
+                  pannable
+                  className="hidden xl:block"
+                  style={{ background: "var(--color-surface)" }}
+                  nodeColor="var(--color-border-strong)"
+                  maskColor="rgb(11 11 10 / 0.12)"
+                />
               </ReactFlow>
             )}
 
@@ -427,6 +578,23 @@ function CanvasPageInner() {
             mockAgents
           />
         </div>
+
+        {selectedStep && (
+          <StepDrawer
+            stepId={selectedStep.id}
+            data={selectedStep.data}
+            manifest={agents.find((a) => a.name === selectedStep.data.agentType)}
+            catalog={agents}
+            handover={handovers.get(selectedStep.id)!}
+            issues={issuesByNode.get(selectedStep.id) ?? []}
+            saveLabel={saveLabel}
+            userEmail={userEmail}
+            onBeginEdit={() => history.commit(snapshot())}
+            onConfigurationChange={(configuration) => updateStep(selectedStep.id, { configuration })}
+            onApprovalChange={(requiresApproval) => updateStep(selectedStep.id, { requiresApproval })}
+            onClose={closeDrawer}
+          />
+        )}
       </div>
     </AppShell>
   );
