@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Play, Redo2, ShieldCheck, Undo2 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { useParams } from "react-router-dom";
 import ReactFlow, {
   Background,
   BackgroundVariant,
@@ -24,7 +24,10 @@ import { AgentNode, type AgentNodeData, type ConnectHint, type StepData } from "
 import { AGENT_DRAG_TYPE, AgentPalette } from "@/components/canvas/AgentPalette";
 import { CanvasStatusBar } from "@/components/canvas/CanvasStatusBar";
 import { HandoverEdge, type HandoverEdgeData } from "@/components/canvas/HandoverEdge";
+import { ApprovalDialog } from "@/components/canvas/ApprovalDialog";
+import { RunBar } from "@/components/canvas/RunBar";
 import { StepDrawer } from "@/components/canvas/StepDrawer";
+import { useCanvasRun } from "@/components/canvas/useCanvasRun";
 import { useGraphHistory } from "@/components/canvas/useGraphHistory";
 import { agentTitle } from "@/design-system/agents/agentMeta";
 import { Button } from "@/design-system/components/Button";
@@ -33,7 +36,8 @@ import { Spinner } from "@/design-system/components/Progress";
 import { Tooltip } from "@/design-system/components/Tooltip";
 import { useToast } from "@/design-system/components/toast-context";
 import { NotFoundState } from "@/pages/NotFoundPage";
-import { ApiError, endpoints, type AgentManifest, type ValidationResult, type WorkflowOut } from "@/lib/api";
+import { TERMINAL_RUN_STATUSES } from "@/design-system/status/statusMeta";
+import { ApiError, endpoints, type AgentManifest, type NodeStatus, type ValidationResult, type WorkflowOut } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { GRID, graphsEqual, refuseConnection, snapPosition, snapToGrid, stepNumbers, toWorkflowGraph } from "@/lib/graph";
 import { chainTail, describeStep, handover, suggestNext, type StepHandover } from "@/lib/handover";
@@ -48,6 +52,13 @@ const AUTOSAVE_DELAY = 800; // §15.4
 const NODE_WIDTH = 248; // §15.2
 const DRAWER_WIDTH = 400; // §17.6
 const STEP_GAP = 320; // the seeds' spacing: a node and room for the handover label
+
+/** During a run, a connection carries work once its source is done and its target has taken over. */
+function edgeFlow(source: NodeStatus | undefined, target: NodeStatus | undefined): "active" | "done" | "idle" {
+  if (source !== "success") return "idle";
+  if (target === "running" || target === "retrying" || target === "awaiting_approval") return "active";
+  return target === "success" ? "done" : "idle";
+}
 
 /** Right of `after`, moved down until it overlaps nothing. */
 function nextFreeSpot(after: { x: number; y: number }, taken: { x: number; y: number }[]) {
@@ -67,7 +78,6 @@ type SaveState = { kind: "idle" } | { kind: "saving" } | { kind: "saved"; at: nu
 
 function CanvasPageInner() {
   const { workflowId = "" } = useParams();
-  const navigate = useNavigate();
   const toast = useToast();
   const queryClient = useQueryClient();
   const { screenToFlowPosition, getViewport, fitView, setCenter } = useReactFlow();
@@ -104,6 +114,12 @@ function CanvasPageInner() {
   });
 
   const agents: AgentManifest[] = useMemo(() => catalog.data ?? [], [catalog.data]);
+
+  // UX-SPEC §6 — the canvas is where a run is watched. While one is showing, editing is paused.
+  const canvasRun = useCanvasRun(workflowId);
+  const runMode = canvasRun.runId !== null;
+  const runActive = runMode && !(canvasRun.run && TERMINAL_RUN_STATUSES.has(canvasRun.run.status));
+  const [reviewing, setReviewing] = useState(false);
 
   // ---------------------------------------------------------------- load
   useEffect(() => {
@@ -148,6 +164,8 @@ function CanvasPageInner() {
     return map;
   }, [validation]);
 
+  const runNodes = useMemo(() => new Map((canvasRun.run?.nodes ?? []).map((n) => [n.node_id, n])), [canvasRun.run]);
+
   // UX-SPEC §2 — for every step, where each of its values will come from.
   const handovers = useMemo(() => {
     const stepList = nodes.map((n) => ({ id: n.id, agentType: n.data.agentType, configuration: n.data.configuration }));
@@ -185,10 +203,16 @@ function CanvasPageInner() {
             problems,
             issueCount: issuesByNode.get(node.id)?.length ?? 0,
             connectHint,
+            ...(runMode && {
+              status: canvasRun.shown[node.id] ?? "pending",
+              readOnly: true,
+              runMessage: runNodes.get(node.id)?.error_message ?? undefined,
+              retryCount: runNodes.get(node.id)?.retry_count,
+            }),
           },
         };
       }),
-    [nodes, edges, agents, steps, issuesByNode, handovers, connectingFrom, selectedId, typeOf],
+    [nodes, edges, agents, steps, issuesByNode, handovers, connectingFrom, selectedId, typeOf, runMode, canvasRun.shown, runNodes],
   );
 
   // UX-SPEC §4.3 — each connection names what crosses it.
@@ -203,9 +227,10 @@ function CanvasPageInner() {
               items: handover(typeOf(edge.source), typeOf(edge.target), agents),
               targetTitle: agentTitle(typeOf(edge.target), agents),
               emphasised: [edge.id, edge.source, edge.target].some((id) => id === hovered || id === selectedId),
+              flow: runMode ? edgeFlow(canvasRun.shown[edge.source], canvasRun.shown[edge.target]) : undefined,
             },
           })),
-    [edges, agents, typeOf, hovered, selectedId],
+    [edges, agents, typeOf, hovered, selectedId, runMode, canvasRun.shown],
   );
 
   // ---------------------------------------------------------------- autosave (§15.4)
@@ -345,16 +370,26 @@ function CanvasPageInner() {
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
       const target = event.target as HTMLElement | null;
-      if (target?.matches("input, textarea, select, [contenteditable='true']")) return;
+      if (runMode || target?.matches("input, textarea, select, [contenteditable='true']")) return;
       if (!(event.metaKey || event.ctrlKey) || event.key.toLowerCase() !== "z") return;
       event.preventDefault();
       applySnapshot(event.shiftKey ? history.redo(snapshot()) : history.undo(snapshot()));
     }
     document.addEventListener("keydown", onKeyDown);
     return () => document.removeEventListener("keydown", onKeyDown);
-  }, [history, snapshot, applySnapshot]);
+  }, [history, snapshot, applySnapshot, runMode]);
 
   const closeDrawer = useCallback(() => setSelectedId(null), []);
+
+  /** Steps after this one that will also wait for a person. */
+  const laterGates = (stepId: string) => {
+    const order = canvasRun.run?.nodes?.map((n) => n.node_id) ?? [];
+    return order
+      .slice(order.indexOf(stepId) + 1)
+      .map((id) => decorated.find((n) => n.id === id))
+      .filter((n) => n?.data.requiresApproval)
+      .map((n) => n!.data.title);
+  };
 
   // Show a step added from the palette. Wait until the settings drawer, which opens at the same
   // time, has narrowed the canvas — otherwise the step is centred behind it.
@@ -385,14 +420,55 @@ function CanvasPageInner() {
   });
 
   const run = useMutation({
-    mutationFn: () => endpoints.run(workflowId),
-    onSuccess: (created) => navigate(`/runs/${created.run_id}`),
+    mutationFn: async () => {
+      // Run what is on the screen, not what the last autosave managed to send.
+      if (!graphsEqual(graph, savedGraph.current)) {
+        window.clearTimeout(saveTimer.current);
+        await endpoints.saveWorkflow(workflowId, { graph });
+        savedGraph.current = graph;
+      }
+      return endpoints.run(workflowId);
+    },
+    onSuccess: (created) => {
+      setSelectedId(null);
+      canvasRun.start(created.run_id);
+    },
     onError: (error) =>
       toast({
         variant: "error",
         message: error instanceof ApiError ? error.message : "Couldn't start the run.",
       }),
   });
+
+  const cancelRun = useMutation({
+    mutationFn: () => endpoints.cancel(canvasRun.runId!),
+    onSuccess: () => canvasRun.refresh(),
+    onError: (error) => toast({ variant: "error", message: error instanceof ApiError ? error.message : "Couldn't cancel the run." }),
+  });
+
+  const waitingNode = canvasRun.run?.nodes?.find((n) => n.status === "awaiting_approval" && canvasRun.shown[n.node_id] === "awaiting_approval");
+  const waitingStep = waitingNode ? nodes.find((n) => n.id === waitingNode.node_id) : undefined;
+
+  const decide = useMutation({
+    mutationFn: ({ decision, note }: { decision: "approve" | "reject"; note?: string }) =>
+      endpoints.approve(canvasRun.runId!, waitingNode!.node_id, decision, note),
+    onSuccess: () => {
+      setReviewing(false);
+      canvasRun.refresh();
+    },
+    onError: (error) => toast({ variant: "error", message: error instanceof ApiError ? error.message : "Couldn't record your decision." }),
+  });
+
+  // §16.6 — a user in another tab still notices.
+  useEffect(() => {
+    const base = name || "Untitled workflow";
+    const prefix =
+      canvasRun.status === "awaiting_approval" ? "✋ Needs approval · " : runActive ? "● Running · " : "";
+    document.title = `${prefix}${base} · Isnad`;
+    return () => {
+      document.title = "Isnad";
+    };
+  }, [name, canvasRun.status, runActive]);
 
   function commitName() {
     setEditingName(false);
@@ -442,7 +518,7 @@ function CanvasPageInner() {
       }
       actions={
         <div className="flex items-center gap-2">
-          <div className="hidden items-center gap-2 sm:flex">
+          <div className={`hidden items-center gap-2 ${runMode ? "" : "sm:flex"}`}>
             <Tooltip content="Undo (⌘Z)">
               <IconButton
                 label="Undo"
@@ -464,13 +540,20 @@ function CanvasPageInner() {
             icon={<ShieldCheck size={16} aria-hidden />}
             aria-label="Validate"
             loading={validate.isPending}
+            disabled={runMode}
             onClick={() => validate.mutate()}
             className="gap-2"
           >
             <span className="hidden sm:inline">Validate</span>
           </Button>
-          <Button variant="accent" icon={<Play size={16} aria-hidden />} loading={run.isPending} onClick={() => run.mutate()}>
-            Run
+          <Button
+            variant="accent"
+            icon={<Play size={16} aria-hidden />}
+            loading={run.isPending || (runActive && canvasRun.status !== "awaiting_approval")}
+            disabled={runMode}
+            onClick={() => run.mutate()}
+          >
+            {canvasRun.status === "awaiting_approval" ? "Waiting for you" : runActive ? "Running" : "Run"}
           </Button>
         </div>
       }
@@ -486,6 +569,8 @@ function CanvasPageInner() {
           onAdd={(agentType) => addNode(agentType)}
           after={tailType ? agentTitle(tailType, agents) : null}
           suggestions={suggestions}
+          disabled={runMode}
+          disabledReason="Editing is paused while this workflow runs."
         />
 
         <div className="flex min-w-0 flex-1 flex-col">
@@ -525,7 +610,13 @@ function CanvasPageInner() {
                 edges={decoratedEdges}
                 nodeTypes={nodeTypes}
                 edgeTypes={edgeTypes}
-                onNodeClick={(_event, node) => setSelectedId(node.id)}
+                onNodeClick={(_event, node) => {
+                  if (!runMode) setSelectedId(node.id);
+                  else if (node.id === waitingStep?.id) setReviewing(true);
+                }}
+                nodesDraggable={!runMode}
+                nodesConnectable={!runMode}
+                edgesFocusable={!runMode}
                 onPaneClick={() => setSelectedId(null)}
                 onNodeMouseEnter={(_event, node) => setHovered(node.id)}
                 onNodeMouseLeave={() => setHovered(null)}
@@ -549,7 +640,7 @@ function CanvasPageInner() {
                 onInit={() => fitView(FIT_VIEW)}
                 snapToGrid
                 snapGrid={[GRID, GRID]}
-                deleteKeyCode={["Backspace", "Delete"]}
+                deleteKeyCode={runMode ? null : ["Backspace", "Delete"]}
                 onNodesDelete={(deleted) => {
                   history.commit(snapshot());
                   if (deleted.some((node) => node.id === selectedId)) setSelectedId(null);
@@ -589,6 +680,18 @@ function CanvasPageInner() {
             )}
           </div>
 
+          {runMode ? (
+            <RunBar
+              run={canvasRun.run}
+              status={canvasRun.status}
+              shown={canvasRun.shown}
+              titleOf={(id) => agentTitle(typeOf(id), agents)}
+              onCancel={() => cancelRun.mutate()}
+              cancelling={cancelRun.isPending}
+              onReview={() => setReviewing(true)}
+              onExit={canvasRun.exit}
+            />
+          ) : (
           <CanvasStatusBar
             steps={nodes.length}
             validation={{
@@ -596,13 +699,33 @@ function CanvasPageInner() {
               count: validation?.issues?.length ?? 0,
               onOpen: () => validate.mutate(),
             }}
-            lastRun={null}
+            lastRun={
+              canvasRun.lastRun
+                ? { id: canvasRun.lastRun.id, status: canvasRun.lastRun.status, createdAt: canvasRun.lastRun.created_at }
+                : null
+            }
             zoom={zoom}
             mockAgents
           />
+          )}
         </div>
 
-        {selectedStep && (
+        {waitingStep && (
+          <ApprovalDialog
+            open={reviewing}
+            onClose={() => setReviewing(false)}
+            stepTitle={agentTitle(waitingStep.data.agentType, agents)}
+            manifest={agents.find((a) => a.name === waitingStep.data.agentType)}
+            configuration={waitingStep.data.configuration}
+            handover={handovers.get(waitingStep.id)}
+            laterGates={laterGates(waitingStep.id)}
+            deciding={decide.isPending}
+            onApprove={() => decide.mutate({ decision: "approve" })}
+            onReject={(note) => decide.mutate({ decision: "reject", note })}
+          />
+        )}
+
+        {selectedStep && !runMode && (
           <StepDrawer
             stepId={selectedStep.id}
             data={selectedStep.data}
