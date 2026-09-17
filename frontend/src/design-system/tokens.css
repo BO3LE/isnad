@@ -137,6 +137,16 @@
   --shadow-4: 0 16px 48px rgb(0 0 0 / 0.6);
 }
 
+/* A run's current handover: the dashes travel from one step to the next (§16.4). */
+@keyframes handover-flow {
+  from {
+    stroke-dashoffset: 32;
+  }
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
