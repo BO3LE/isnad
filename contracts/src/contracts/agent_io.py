@@ -6,6 +6,9 @@ result is validated against the agent's input model. Field aliases below let an
 agent accept the name an upstream agent uses (e.g. Video reads Writer's
 `article_md` as its `script`).
 
+Output field titles are the names a person sees on the canvas ("Researcher hands on notes ·
+sources"); they are published through `/agents/catalog` with each agent's inputs.
+
 `*Config` models are what the user fills in on the canvas. Their JSON Schema is
 published through `/agents/catalog` and builds the configuration drawer.
 """
@@ -46,8 +49,8 @@ class ResearchInput(_In):
 
 
 class ResearchOutput(_Out):
-    notes: list[str]
-    sources: list[Source]
+    notes: list[str] = Field(title="notes")
+    sources: list[Source] = Field(title="sources")
 
 
 # ---------------------------------------------------------------- Writer
@@ -71,9 +74,9 @@ class WriteInput(_In):
 
 
 class WriteOutput(_Out):
-    title: str = Field(min_length=1, max_length=200)
-    summary: str = Field(min_length=1)
-    article_md: str = Field(min_length=1)
+    title: str = Field(min_length=1, max_length=200, title="title")
+    summary: str = Field(min_length=1, title="summary")
+    article_md: str = Field(min_length=1, title="article")
 
 
 # ---------------------------------------------------------------- Image
@@ -92,7 +95,7 @@ class ImageInput(_In):
 
 
 class ImageOutput(_Out):
-    image_paths: list[str] = Field(min_length=1)
+    image_paths: list[str] = Field(min_length=1, title="images")
 
 
 # ---------------------------------------------------------------- Video
@@ -109,8 +112,8 @@ class VideoInput(_In):
 
 
 class VideoOutput(_Out):
-    video_path: str
-    duration_seconds: float = Field(ge=0)
+    video_path: str = Field(title="video")
+    duration_seconds: float = Field(ge=0, title="duration")
 
 
 # ---------------------------------------------------------------- Publisher
@@ -135,9 +138,9 @@ class PublishInput(_In):
 
 
 class PublishOutput(_Out):
-    platform: Literal["youtube", "drive"]
-    remote_url: str
-    platform_id: str
+    platform: Literal["youtube", "drive"] = Field(title="platform")
+    remote_url: str = Field(title="link")
+    platform_id: str = Field(title="upload id")
 
 
 # ---------------------------------------------------------------- Email
@@ -172,9 +175,9 @@ class EmailInput(_In):
 
 
 class EmailOutput(_Out):
-    message_id: str
-    sent_at: datetime
-    recipients: list[str]
+    message_id: str = Field(title="message id")
+    sent_at: datetime = Field(title="sent time")
+    recipients: list[str] = Field(title="recipients")
 
 
 def _check_emails(value: list[str]) -> list[str]:
