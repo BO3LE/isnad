@@ -9,7 +9,8 @@ agent accept the name an upstream agent uses (e.g. Video reads Writer's
 Output field titles are the names a person sees on the canvas ("Researcher hands on notes ·
 sources"); they are published through `/agents/catalog` with each agent's inputs.
 
-`*Config` models are what the user fills in on the canvas. Their JSON Schema is
+`*Config` models are what the user fills in on the canvas. `x-enum-labels` gives an option the
+name a person reads ("YouTube", not "youtube"); `format: email` lets the form check an address. Their JSON Schema is
 published through `/agents/catalog` and builds the configuration drawer.
 """
 
@@ -60,9 +61,9 @@ Format = Literal["blog_post", "article", "video_script"]
 
 
 class WriteConfig(_Config):
-    length: Length = Field("medium", title="Length")
+    length: Length = Field("medium", title="Length", description="Short ≈ 400 words · Medium ≈ 800 · Long ≈ 1500")
     style: Style = Field("informative", title="Style")
-    format: Format = Field("blog_post", title="Format")
+    format: Format = Field("blog_post", title="Format", description="Pick Video script when a Video step follows.")
 
 
 class WriteInput(_In):
@@ -85,7 +86,11 @@ class ImageConfig(_Config):
         None, title="What should the image show?", description="Leave empty to use the article title."
     )
     count: int = Field(1, ge=1, le=4, title="Number of images")
-    aspect: Literal["landscape", "square"] = Field("landscape", title="Shape")
+    aspect: Literal["landscape", "square"] = Field(
+        "landscape",
+        title="Shape",
+        json_schema_extra={"x-enum-labels": {"landscape": "Landscape 16:9", "square": "Square 1:1"}},
+    )
 
 
 class ImageInput(_In):
@@ -118,13 +123,19 @@ class VideoOutput(_Out):
 
 # ---------------------------------------------------------------- Publisher
 class PublishConfig(_Config):
-    platform: Literal["youtube", "drive"] = Field("youtube", title="Publish to")
+    platform: Literal["youtube", "drive"] = Field(
+        "youtube",
+        title="Publish to",
+        json_schema_extra={"x-enum-labels": {"youtube": "YouTube", "drive": "Google Drive"}},
+    )
     credential_id: str | None = Field(
         None, title="Google account", json_schema_extra={"x-widget": "credential", "x-provider": "google"}
     )
     title: str | None = Field(None, max_length=100, title="Title", description="Leave empty to use the article title.")
     tags: list[str] = Field(default_factory=list, title="Tags")
-    privacy: Literal["unlisted", "private", "public"] = Field("unlisted", title="Visibility")
+    privacy: Literal["unlisted", "private", "public"] = Field(
+        "unlisted", title="Visibility", description="Unlisted by default, so nothing becomes public by accident."
+    )
 
 
 class PublishInput(_In):
@@ -145,7 +156,9 @@ class PublishOutput(_Out):
 
 # ---------------------------------------------------------------- Email
 class EmailConfig(_Config):
-    recipients: list[str] = Field(min_length=1, title="To")
+    recipients: list[str] = Field(
+        min_length=1, title="To", json_schema_extra={"items": {"type": "string", "format": "email"}}
+    )
     subject: str | None = Field(
         None, max_length=150, title="Subject", description="Leave empty to use the article title."
     )

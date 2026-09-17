@@ -6,9 +6,11 @@ from pydantic import ValidationError
 
 from contracts.agent import describe_inputs, describe_outputs
 from contracts.agent_io import (
+    EmailConfig,
     EmailInput,
     ImageConfig,
     ImageInput,
+    PublishConfig,
     PublishInput,
     VideoConfig,
     VideoInput,
@@ -89,6 +91,13 @@ def test_outputs_carry_human_names():
         ("summary", "summary"),
         ("article_md", "article"),
     ]
+
+
+def test_config_schemas_carry_what_the_form_shows():
+    publish = PublishConfig.model_json_schema()["properties"]
+    assert publish["platform"]["x-enum-labels"] == {"youtube": "YouTube", "drive": "Google Drive"}
+    # The form checks each address itself, without knowing it is looking at the Email agent.
+    assert EmailConfig.model_json_schema()["properties"]["recipients"]["items"]["format"] == "email"
 
 
 def test_email_recipients_are_checked():
