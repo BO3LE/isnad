@@ -93,16 +93,6 @@ export function stepNumbers(nodeIds: string[], edges: FlowEdgeLike[]): Map<strin
   return steps;
 }
 
-/** A short "Medium · Informative · Blog post" line from the node's configuration (§15.2). */
-export function configSummary(configuration: Record<string, unknown> | null | undefined, limit = 3): string {
-  if (!configuration) return "";
-  return Object.values(configuration)
-    .filter((value) => value !== null && value !== undefined && value !== "" && !Array.isArray(value))
-    .slice(0, limit)
-    .map((value) => (typeof value === "boolean" ? (value ? "Yes" : "No") : String(value)))
-    .join(" · ");
-}
-
 /** Distribute agents always require approval (D-08), whatever the graph says. */
 export function approvalIsLocked(agentType: string, catalog: AgentManifest[]): boolean {
   return catalog.find((a) => a.name === agentType)?.requires_approval === true;
