@@ -51,9 +51,14 @@ def normalise_url(url: str, *, async_driver: bool = False) -> str:
 
 def make_engine(url: str, **kwargs: object) -> Engine:
     kwargs.setdefault("pool_pre_ping", True)
-    kwargs.setdefault("pool_size", 5)
-    kwargs.setdefault("max_overflow", 5)
-    kwargs.setdefault("pool_recycle", 1800)  # recycle before Supabase's idle-connection timeout
+    # pool_size / max_overflow only make sense for QueuePool (the default). A caller that
+    # passes poolclass=NullPool (Alembic's env.py does, for the one-shot migration
+    # connection) must NOT get these — NullPool doesn't accept sizing kwargs at all and
+    # create_engine() raises TypeError if they're present alongside it.
+    if "poolclass" not in kwargs:
+        kwargs.setdefault("pool_size", 5)
+        kwargs.setdefault("max_overflow", 5)
+        kwargs.setdefault("pool_recycle", 1800)  # recycle before Supabase's idle-connection timeout
     return create_engine(normalise_url(url), **kwargs)
 
 
@@ -83,9 +88,10 @@ def make_async_engine(url: str, **kwargs: object) -> AsyncEngine:
     connect_args = dict(kwargs.pop("connect_args", {}) or {})
     connect_args.setdefault("prepare_threshold", None)  # never use server-side prepares (pgbouncer txn mode)
     kwargs.setdefault("pool_pre_ping", True)
-    kwargs.setdefault("pool_size", 5)
-    kwargs.setdefault("max_overflow", 10)
-    kwargs.setdefault("pool_recycle", 1800)
+    if "poolclass" not in kwargs:
+        kwargs.setdefault("pool_size", 5)
+        kwargs.setdefault("max_overflow", 10)
+        kwargs.setdefault("pool_recycle", 1800)
     return create_async_engine(normalise_url(url, async_driver=True), connect_args=connect_args, **kwargs)
 
 
