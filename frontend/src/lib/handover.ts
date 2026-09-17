@@ -176,3 +176,61 @@ export function handover(sourceType: string, targetType: string, catalog: AgentM
   const wanted = new Set((target?.inputs ?? []).flatMap((input) => input.accepts));
   return (source?.outputs ?? []).filter((o) => wanted.has(o.name)).map((o) => o.title);
 }
+
+/**
+ * The catalog in the order a chain is built: an agent comes after every agent whose output it
+ * reads (Researcher → Writer → Video → Publisher → Email). Ties, and any loop, fall back to title.
+ */
+export function chainOrder(catalog: AgentManifest[]): AgentManifest[] {
+  const byTitle = [...catalog].sort((a, b) => a.title.localeCompare(b.title));
+  const feeds = (a: AgentManifest, b: AgentManifest) => a.name !== b.name && handover(a.name, b.name, catalog).length > 0;
+  const placed: AgentManifest[] = [];
+  const remaining = [...byTitle];
+  while (remaining.length > 0) {
+    const next = remaining.find((b) => !remaining.some((a) => feeds(a, b) && !feeds(b, a))) ?? remaining[0]!;
+    placed.push(next);
+    remaining.splice(remaining.indexOf(next), 1);
+  }
+  return placed;
+}
+
+export interface Suggestion {
+  agent: AgentManifest;
+  /** "Takes article from Writer", "Starts a chain". */
+  reason: string;
+}
+
+/** Agents that can do something with what `after` hands on — or, on an empty canvas, a starting point. */
+export function suggestNext(after: string | null, catalog: AgentManifest[], limit = 3): Suggestion[] {
+  const ordered = chainOrder(catalog);
+  if (after === null) {
+    // A start needs nothing an earlier step would have to supply, and makes something others use.
+    return ordered
+      .filter((agent) => (agent.inputs ?? []).every((input) => !input.required || input.settable))
+      .filter((agent) => catalog.some((other) => other.name !== agent.name && handover(agent.name, other.name, catalog).length > 0))
+      .slice(0, limit)
+      .map((agent) => ({ agent, reason: "Starts a chain" }));
+  }
+  const source = manifestOf(catalog, after);
+  return ordered
+    .filter((agent) => agent.name !== after)
+    .map((agent) => ({ agent, items: handover(after, agent.name, catalog), agentInputs: agent.inputs ?? [] }))
+    .filter(({ items }) => items.length > 0)
+    // Prefer agents that *need* what this step makes over ones that could merely use it.
+    .sort((a, b) => Number(needsFrom(b.agentInputs, after, catalog)) - Number(needsFrom(a.agentInputs, after, catalog)))
+    .slice(0, limit)
+    .map(({ agent, items }) => ({ agent, reason: `Takes ${items.join(" and ")} from ${source?.title ?? after}` }));
+}
+
+function needsFrom(inputs: AgentInput[], sourceType: string, catalog: AgentManifest[]): boolean {
+  const outputs = new Set((manifestOf(catalog, sourceType)?.outputs ?? []).map((o) => o.name));
+  return inputs.some((input) => input.required && !input.settable && input.accepts.some((name) => outputs.has(name)));
+}
+
+/** The step a click in the palette adds after: the selected one, else the end of the chain. */
+export function chainTail(stepIds: string[], edges: FlowEdgeLike[], selected: string | null): string | null {
+  if (selected && stepIds.includes(selected)) return selected;
+  const order = runOrder(stepIds, edges);
+  const ends = order.filter((id) => !edges.some((e) => e.source === id));
+  return ends.at(-1) ?? order.at(-1) ?? null;
+}

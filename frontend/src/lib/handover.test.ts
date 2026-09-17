@@ -1,5 +1,5 @@
 import type { AgentManifest } from "./api";
-import { availableTo, describeStep, handover, runOrder, type StepLike } from "./handover";
+import { availableTo, chainOrder, chainTail, describeStep, handover, runOrder, suggestNext, type StepLike } from "./handover";
 import live from "@/test/catalog.json";
 
 const catalog = live as unknown as AgentManifest[];
@@ -108,5 +108,36 @@ describe("run order", () => {
     const image = step("i", "image");
     const available = availableTo("i", [first, second, image], [edge("w1", "w2"), edge("w2", "i")], catalog);
     expect(available.get("title")?.stepId).toBe("w2");
+  });
+});
+
+describe("the palette's order and suggestions", () => {
+  it("lists agents in the order a chain is built", () => {
+    expect(chainOrder(catalog).map((a) => a.name)).toEqual(["researcher", "writer", "image", "video", "publisher", "email"]);
+  });
+
+  it("an empty canvas starts with Researcher", () => {
+    expect(suggestNext(null, catalog).map((s) => s.agent.name)).toEqual(["researcher"]);
+  });
+
+  it("after Researcher comes Writer, because Writer needs the notes", () => {
+    expect(suggestNext("researcher", catalog)).toEqual([expect.objectContaining({ reason: "Takes notes and sources from Researcher" })]);
+    expect(suggestNext("researcher", catalog)[0]?.agent.name).toBe("writer");
+  });
+
+  it("after Writer, the steps that need its article come first", () => {
+    const names = suggestNext("writer", catalog).map((s) => s.agent.name);
+    expect(names[0]).toBe("video");
+    expect(names).toHaveLength(3);
+  });
+
+  it("after Video comes Publisher", () => {
+    expect(suggestNext("video", catalog).map((s) => s.agent.name)).toEqual(["publisher"]);
+  });
+
+  it("adds after the selected step, else the end of the chain", () => {
+    expect(chainTail(["r", "w", "v", "p"], links, null)).toBe("p");
+    expect(chainTail(["r", "w", "v", "p"], links, "w")).toBe("w");
+    expect(chainTail([], [], null)).toBeNull();
   });
 });

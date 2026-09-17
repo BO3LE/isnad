@@ -148,6 +148,8 @@ export function SchemaField({ field, value, onChange, onBeginEdit, fallback, cou
                 aria-describedby={describedBy}
                 invalid={invalid}
                 value={typeof value === "string" ? value : ""}
+                // A default reads as a default: shown, not written (UX-SPEC §4.5 rule 2).
+                placeholder={typeof field.default === "string" ? field.default : undefined}
                 maxLength={field.maxLength}
                 onChange={(event) => change(event.target.value)}
                 onBlur={(event) => blurCheck(event.target.value)}

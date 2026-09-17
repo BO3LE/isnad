@@ -36,7 +36,7 @@ import { NotFoundState } from "@/pages/NotFoundPage";
 import { ApiError, endpoints, type AgentManifest, type ValidationResult, type WorkflowOut } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { GRID, graphsEqual, refuseConnection, snapPosition, snapToGrid, stepNumbers, toWorkflowGraph } from "@/lib/graph";
-import { describeStep, handover, type StepHandover } from "@/lib/handover";
+import { chainTail, describeStep, handover, suggestNext, type StepHandover } from "@/lib/handover";
 import { missingSettings, summarise, type Configuration } from "@/lib/schema";
 
 // P-04 · Workflow Canvas (FRONTEND-PAGES-PLAN.md) · DESIGN-SYSTEM.md §15, §21 S-03 · UX-SPEC §4.
@@ -46,15 +46,16 @@ import { missingSettings, summarise, type Configuration } from "@/lib/schema";
 
 const AUTOSAVE_DELAY = 800; // §15.4
 const NODE_WIDTH = 248; // §15.2
+const DRAWER_WIDTH = 400; // §17.6
 const STEP_GAP = 320; // the seeds' spacing: a node and room for the handover label
 
-/** Right of the rightmost step, moved down until it overlaps nothing. */
-function nextFreeSpot(taken: { x: number; y: number }[]) {
-  const last = taken.reduce((a, b) => (b.x > a.x ? b : a));
-  const spot = { x: snapToGrid(last.x + STEP_GAP), y: snapToGrid(last.y) };
+/** Right of `after`, moved down until it overlaps nothing. */
+function nextFreeSpot(after: { x: number; y: number }, taken: { x: number; y: number }[]) {
+  const spot = { x: snapToGrid(after.x + STEP_GAP), y: snapToGrid(after.y) };
   while (taken.some((p) => Math.abs(p.x - spot.x) < NODE_WIDTH && Math.abs(p.y - spot.y) < 128)) spot.y += 160;
   return spot;
 }
+const FIT_VIEW = { padding: 0.2, maxZoom: 1 };
 const nodeTypes: NodeTypes = { agent: AgentNode };
 const edgeTypes: EdgeTypes = { handover: HandoverEdge };
 const EDGE_DEFAULTS = {
@@ -235,15 +236,21 @@ function CanvasPageInner() {
   const snapshot = useCallback(() => ({ nodes, edges }), [nodes, edges]);
   const dragStart = useRef<ReturnType<typeof snapshot> | null>(null);
 
+  // The step a palette click adds after, and what fits there.
+  const tailId = useMemo(() => chainTail(nodes.map((n) => n.id), edges, selectedId), [nodes, edges, selectedId]);
+  const tailType = nodes.find((n) => n.id === tailId)?.data.agentType ?? null;
+  const suggestions = useMemo(() => suggestNext(tailType, agents), [tailType, agents]);
+
   const addNode = useCallback(
     (agentType: string, at?: { x: number; y: number }) => {
       const manifest = agents.find((a) => a.name === agentType);
+      const tail = at ? undefined : nodes.find((n) => n.id === tailId);
       let position: { x: number; y: number };
       if (at) {
         position = { x: snapToGrid(at.x), y: snapToGrid(at.y) };
-      } else if (nodes.length > 0) {
-        // From the palette: after the chain's last step, where it reads as "next", then shown.
-        position = nextFreeSpot(nodes.map((n) => n.position));
+      } else if (tail) {
+        // From the palette: after the selected step (or the chain's end), where it reads as "next".
+        position = nextFreeSpot(tail.position, nodes.map((n) => n.position));
         reveal.current = position;
       } else {
         const box = wrapper.current?.getBoundingClientRect();
@@ -255,6 +262,7 @@ function CanvasPageInner() {
           x: snapToGrid(centre.x - NODE_WIDTH / 2),
           y: snapToGrid(centre.y - 48),
         };
+        reveal.current = position;
       }
 
       history.commit(snapshot());
@@ -274,10 +282,14 @@ function CanvasPageInner() {
           },
         },
       ]);
+      // Added after a step it can take something from: connect them, so a chain is built by clicking.
+      if (tail && handover(tail.data.agentType, agentType, agents).length > 0) {
+        setEdges((current) => addEdge({ id: `${tail.id}-${id}`, source: tail.id, target: id, ...EDGE_DEFAULTS }, current));
+      }
       // A new step opens its settings, so the next thing the user sees is what it needs.
       setSelectedId(id);
     },
-    [agents, nodes, screenToFlowPosition, history, snapshot, setNodes],
+    [agents, nodes, tailId, screenToFlowPosition, history, snapshot, setNodes, setEdges],
   );
 
   const onConnect = useCallback(
@@ -344,20 +356,22 @@ function CanvasPageInner() {
 
   const closeDrawer = useCallback(() => setSelectedId(null), []);
 
-  // Show a step added from the palette. Wait a frame so the settings drawer, which opens at the
-  // same time, has already narrowed the canvas — otherwise the step is centred behind it.
+  // Show a step added from the palette. Wait until the settings drawer, which opens at the same
+  // time, has narrowed the canvas — otherwise the step is centred behind it.
   const reveal = useRef<{ x: number; y: number } | null>(null);
   useEffect(() => {
     const target = reveal.current;
     if (!target) return;
-    reveal.current = null;
-    const frame = window.requestAnimationFrame(() =>
-      setCenter(target.x + NODE_WIDTH / 2, target.y + 48, {
-        zoom: getViewport().zoom,
-        duration: 200,
-      }),
-    );
-    return () => window.cancelAnimationFrame(frame);
+    // React Flow re-measures the pane from a ResizeObserver, a little after the drawer opens.
+    // Cleared only once it has run: React Flow updates the nodes again as the new step mounts.
+    const timer = window.setTimeout(() => {
+      reveal.current = null;
+      const { zoom } = getViewport();
+      // Below lg the drawer floats over the canvas; aim left of it so the step stays in view.
+      const covered = window.matchMedia("(max-width: 1023px)").matches ? DRAWER_WIDTH / 2 / zoom : 0;
+      setCenter(target.x + NODE_WIDTH / 2 + covered, target.y + 48, { zoom, duration: 200 });
+    }, 80);
+    return () => window.clearTimeout(timer);
   }, [nodes, setCenter, getViewport]);
 
   // ---------------------------------------------------------------- actions
@@ -470,6 +484,8 @@ function CanvasPageInner() {
           error={catalog.isError}
           onRetry={() => catalog.refetch()}
           onAdd={(agentType) => addNode(agentType)}
+          after={tailType ? agentTitle(tailType, agents) : null}
+          suggestions={suggestions}
         />
 
         <div className="flex min-w-0 flex-1 flex-col">
@@ -530,7 +546,7 @@ function CanvasPageInner() {
                   if (before && !graphsEqual(toWorkflowGraph(before.nodes, before.edges), graph)) history.commit(before);
                 }}
                 onMove={(_event, viewport) => setZoom(viewport.zoom)}
-                onInit={() => fitView({ padding: 0.2, maxZoom: 1 })}
+                onInit={() => fitView(FIT_VIEW)}
                 snapToGrid
                 snapGrid={[GRID, GRID]}
                 deleteKeyCode={["Backspace", "Delete"]}
@@ -540,6 +556,7 @@ function CanvasPageInner() {
                 }}
                 proOptions={{ hideAttribution: true }}
                 fitView
+                fitViewOptions={FIT_VIEW}
               >
                 <Background variant={BackgroundVariant.Dots} gap={GRID} size={1} color="var(--color-canvas-dot)" />
                 <Controls showInteractive />
@@ -559,7 +576,13 @@ function CanvasPageInner() {
                 <div className="grid justify-items-center gap-2 text-center">
                   <p className="text-heading-lg text-text">Start your chain</p>
                   <p className="max-w-[40ch] text-body-md text-text-muted">
-                    Drag <strong className="font-medium text-text">Researcher</strong> from the left to begin.
+                    {suggestions[0] ? (
+                      <>
+                        Click <strong className="font-medium text-text">{suggestions[0].agent.title}</strong> on the left to begin.
+                      </>
+                    ) : (
+                      "Add an agent from the left to begin."
+                    )}
                   </p>
                 </div>
               </div>

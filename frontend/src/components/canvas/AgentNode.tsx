@@ -96,9 +96,9 @@ export const AgentNode = memo(function AgentNode({ data, selected }: NodeProps<A
         <p className="line-clamp-2 border-t border-border px-3 py-2 text-body-sm text-text-muted">
           {data.summary.join(" · ")}
         </p>
-      ) : (
+      ) : Object.keys(data.configuration).length === 0 ? (
         <p className="border-t border-border px-3 py-2 text-body-sm text-text-subtle">Default settings</p>
-      )}
+      ) : null}
 
       {(statusMeta || data.requiresApproval || invalid) && (
         <div className="flex items-center gap-2 border-t border-border px-3 py-2">

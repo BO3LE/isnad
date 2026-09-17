@@ -150,34 +150,52 @@ test("a field left empty says where its value comes from; taking it over and giv
   expect(configOf(puts.at(-1)!, "publish")).toEqual({ platform: "youtube", privacy: "unlisted" });
 });
 
-test("a new step says what it still needs, and connecting it fills that in", async ({ page }) => {
+test("the palette suggests what fits next, and a click adds it already connected", async ({ page }) => {
+  const step = await openSeededWorkflow(page, []);
+  const palette = page.getByRole("complementary", { name: "Agents" });
+
+  await expect(palette).toContainText("Click to add after Publisher");
+  const suggested = palette.getByRole("region", { name: "Suggested next" });
+  await expect(suggested).toContainText("Takes link from Publisher");
+  await suggested.getByRole("button", { name: /^Email/ }).click();
+
+  const email = step("Email");
+  await expect(email).toContainText("Step 5");
+  await expect(email).toContainText("Missing: recipients");
+  const drawer = page.getByRole("complementary", { name: "Email settings" });
+  await expect(drawer).toContainText("From Publisher · link");
+  await expect(drawer.getByText("From Writer · title")).toBeVisible();
+
+  await drawer.getByRole("button", { name: "Send it to me (demo@gp.local)" }).click();
+  await expect(email).not.toContainText("Missing");
+});
+
+test("a loose step says what it needs, and drawing a connection shows what it would take", async ({ page }) => {
   const step = await openSeededWorkflow(page, []);
 
-  await page.getByRole("button", { name: /^Email/ }).click();
-  const email = step("Email");
-  await expect(email).toContainText("Missing: recipients");
-  await expect(email).toContainText("Missing: subject — or add a Writer before it");
-  await expect(email).not.toContainText("Step");
+  // Nothing Publisher makes is useful to Image, so it is added but left unconnected.
+  const palette = page.getByRole("complementary", { name: "Agents" });
+  await palette.getByRole("region", { name: "Create" }).getByRole("button", { name: /^Image/ }).click();
+  const image = step("Image");
+  await expect(image).toContainText("Missing: prompt — or add a Writer before it");
+  await expect(image).not.toContainText("Step");
 
-  const drawer = page.getByRole("complementary", { name: "Email settings" });
-  await drawer.getByRole("button", { name: "Send it to me (demo@gp.local)" }).click();
-  await expect(email).not.toContainText("Missing: recipients");
-
-  // Connect Publisher → Email by dragging between their handles, once the view has settled on
-  // the new step.
-  await expect(email).toBeInViewport({ ratio: 1 });
+  await expect(image).toBeInViewport({ ratio: 1 });
   await page.waitForTimeout(300);
-  const from = (await step("publish").locator(".react-flow__handle-right").boundingBox())!;
-  const to = (await email.locator(".react-flow__handle-left").boundingBox())!;
+  await page.getByRole("button", { name: "Close settings" }).click();
+  await page.getByRole("button", { name: "Fit View" }).click();
+  await page.waitForTimeout(300);
+
+  const from = (await step("write").locator(".react-flow__handle-right").boundingBox())!;
+  const to = (await image.locator(".react-flow__handle-left").boundingBox())!;
   await page.mouse.move(from.x + from.width / 2, from.y + from.height / 2);
   await page.mouse.down();
   await page.mouse.move(to.x + to.width / 2, to.y + to.height / 2, { steps: 10 });
-  // While dragging, the target says what it would take.
-  await expect(email).toContainText("Takes link");
+  // While dragging, each possible target says what it would take.
+  await expect(image).toContainText("Takes title");
+  await expect(step("research")).toContainText("Can't use anything from Writer");
   await page.mouse.up();
 
-  await expect(email).toContainText("Step 5");
-  await expect(email).not.toContainText("Missing");
-  await expect(drawer).toContainText("From Publisher · link");
-  await expect(drawer.getByText("From Writer · title")).toBeVisible();
+  await expect(image).toContainText("Step 3");
+  await expect(image).not.toContainText("Missing");
 });
