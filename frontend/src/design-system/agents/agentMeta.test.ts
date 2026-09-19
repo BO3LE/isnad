@@ -1,33 +1,42 @@
-import { Clapperboard, Mail, Puzzle, Telescope, UploadCloud } from "lucide-react";
-import { agentFamily, agentIcon, agentTileClass, agentTitle, manifestFor } from "./agentMeta";
+import dynamicIconImports from "lucide-react/dynamicIconImports";
+import { Clapperboard, Mail, Telescope, UploadCloud } from "lucide-react";
+import { agentFamily, agentTileClass, agentTitle, bundledGlyph, glyphKey, manifestFor } from "./agentMeta";
 import catalog from "@/test/catalog.json";
 import type { AgentManifest } from "@/lib/api";
 
 const agents = catalog as unknown as AgentManifest[];
 
-describe("agentIcon", () => {
+describe("an agent's glyph", () => {
   it("uses the glyph the manifest asked for", () => {
-    expect(agentIcon("telescope")).toBe(Telescope);
-    expect(agentIcon("clapperboard")).toBe(Clapperboard);
+    expect(bundledGlyph("telescope")).toBe(Telescope);
+    expect(bundledGlyph("clapperboard")).toBe(Clapperboard);
   });
 
   it("forgives the spellings a manifest might be written with", () => {
-    expect(agentIcon("Telescope")).toBe(Telescope);
-    expect(agentIcon(" cloud_upload ")).toBe(UploadCloud);
+    expect(bundledGlyph("Telescope")).toBe(Telescope);
+    expect(bundledGlyph(" cloud_upload ")).toBe(UploadCloud);
   });
 
-  it("gives an unknown or absent icon a placeholder rather than a blank", () => {
-    expect(agentIcon("not-a-real-icon")).toBe(Puzzle);
-    expect(agentIcon(null)).toBe(Puzzle);
-    expect(agentIcon(undefined)).toBe(Puzzle);
+  it("draws every agent in the live catalog from its own manifest, out of the bundle", () => {
+    // These are drawn constantly, so they must not cost a request.
+    for (const agent of agents) expect(bundledGlyph(agent.icon)).toBeDefined();
+    expect(bundledGlyph(agents.find((a) => a.name === "publisher")!.icon)).toBe(UploadCloud);
+    expect(bundledGlyph(agents.find((a) => a.name === "email")!.icon)).toBe(Mail);
   });
 
-  it("draws every agent in the live catalog from its own manifest", () => {
-    // AT-12: the six are not special-cased anywhere, so each must resolve through its manifest
-    // alone. A seventh agent that publishes a known icon name gets it the same way.
-    for (const agent of agents) expect(agentIcon(agent.icon)).not.toBe(Puzzle);
-    expect(agentIcon(agents.find((a) => a.name === "publisher")!.icon)).toBe(UploadCloud);
-    expect(agentIcon(agents.find((a) => a.name === "email")!.icon)).toBe(Mail);
+  it("can fetch any Lucide name, not only the ones the six agents happen to use", () => {
+    // AT-12: otherwise "an agent picks its own icon" would mean "picks one already picked" — the
+    // same per-agent hard-coding under a different key.
+    for (const name of ["languages", "database", "bot", "file-spreadsheet", "megaphone"]) {
+      expect(bundledGlyph(name)).toBeUndefined();
+      expect(dynamicIconImports[glyphKey(name) as keyof typeof dynamicIconImports]).toBeTypeOf("function");
+    }
+  });
+
+  it("has nothing to draw for a name that is not an icon", () => {
+    expect(bundledGlyph("not-a-real-icon")).toBeUndefined();
+    expect(dynamicIconImports[glyphKey("not-a-real-icon") as keyof typeof dynamicIconImports]).toBeUndefined();
+    expect(bundledGlyph(null)).toBeUndefined();
   });
 });
 
