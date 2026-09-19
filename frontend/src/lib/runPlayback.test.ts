@@ -82,11 +82,27 @@ describe("stepError", () => {
     expect(stepError("[attempt 3] Writer is missing input: notes")).toEqual({ text: "Writer is missing input: notes", rejected: false });
   });
 
+  it("reads the attempt that actually stopped the step, not the whole retry history", () => {
+    // worker/store.py appends a line per attempt instead of replacing the message.
+    expect(stepError("[attempt 1] Upload timed out\n[attempt 2] Upload timed out\n[attempt 3] YouTube refused the file")).toEqual({
+      text: "YouTube refused the file",
+      rejected: false,
+    });
+  });
+
   it("recognises a rejection as the user's decision", () => {
     expect(stepError("[attempt 1] Rejected by reviewer.")).toEqual({ text: "Rejected by reviewer.", rejected: true });
   });
 
+  it("still recognises a rejection after a step had already failed once", () => {
+    expect(stepError("[attempt 1] Upload timed out\n[attempt 2] Rejected by reviewer.")).toEqual({
+      text: "Rejected by reviewer.",
+      rejected: true,
+    });
+  });
+
   it("has nothing to say without a message", () => {
     expect(stepError(null)).toBeNull();
+    expect(stepError("   ")).toBeNull();
   });
 });

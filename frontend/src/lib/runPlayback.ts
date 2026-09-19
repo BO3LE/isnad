@@ -58,13 +58,21 @@ export function countDone(shown: Shown): number {
 const REJECTED_MESSAGE = "Rejected by reviewer.";
 
 /**
- * A step's error as a person should read it. The worker's store prefixes every message with
- * "[attempt N] " (worker/store.py) — bookkeeping, not wording — and a rejection is the user's own
- * decision, never a failure (UX-SPEC §7).
+ * A step's error as a person should read it. The worker's store does not replace a step's message,
+ * it appends a line per attempt, each prefixed "[attempt N] " (worker/store.py) — bookkeeping, not
+ * wording. The last line is what actually stopped the step; the earlier tries are retry history,
+ * which the log viewer owns. Reading only the last line also keeps a rejection recognisable when
+ * the step had already failed once, so the user's own decision never reads as a failure
+ * (UX-SPEC §7).
  */
 export function stepError(message: string | null | undefined): { text: string; rejected: boolean } | null {
   if (!message) return null;
-  const text = message.replace(/^\[attempt \d+\]\s*/, "");
+  const attempts = message
+    .split("\n")
+    .map((line) => line.replace(/^\[attempt \d+\]\s*/, "").trim())
+    .filter((line) => line.length > 0);
+  const text = attempts[attempts.length - 1];
+  if (text === undefined) return null;
   return { text, rejected: text === REJECTED_MESSAGE };
 }
 
