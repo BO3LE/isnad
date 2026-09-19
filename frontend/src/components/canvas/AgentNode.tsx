@@ -87,7 +87,7 @@ export const AgentNode = memo(function AgentNode({ data, selected }: NodeProps<A
       <Handle type="target" position={Position.Left} isConnectable={!data.readOnly} className={data.readOnly ? HIDDEN_HANDLE : HANDLE} />
 
       <div className="flex items-start gap-2.5 p-3">
-        <AgentIcon agentType={data.agentType} icon={data.icon} family={data.family} />
+        <AgentIcon icon={data.icon} family={data.family} />
         <div className="min-w-0 flex-1">
           <p className="truncate text-body-md font-medium text-text" title={data.title}>
             {data.title}

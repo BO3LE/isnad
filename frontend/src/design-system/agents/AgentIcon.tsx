@@ -5,7 +5,6 @@ const SIZES = { sm: "h-6 w-6 rounded-xs", md: "h-8 w-8 rounded-sm", lg: "h-10 w-
 const GLYPH = { sm: 14, md: 16, lg: 20 } as const;
 
 export interface AgentIconProps {
-  agentType: string;
   /** From the manifest, so a new agent can pick its own icon without a frontend change (AT-12). */
   icon?: string | null;
   family?: string | null;
@@ -13,10 +12,10 @@ export interface AgentIconProps {
   className?: string;
 }
 
-export function AgentIcon({ agentType, icon, family, size = "md", className = "" }: AgentIconProps) {
-  const Glyph = agentIcon(agentType, icon);
+export function AgentIcon({ icon, family, size = "md", className = "" }: AgentIconProps) {
+  const Glyph = agentIcon(icon);
   return (
-    <span aria-hidden className={`grid shrink-0 place-items-center ${SIZES[size]} ${agentTileClass(agentFamily(agentType, family))} ${className}`}>
+    <span aria-hidden className={`grid shrink-0 place-items-center ${SIZES[size]} ${agentTileClass(agentFamily(family))} ${className}`}>
       <Glyph size={GLYPH[size]} strokeWidth={1.75} />
     </span>
   );

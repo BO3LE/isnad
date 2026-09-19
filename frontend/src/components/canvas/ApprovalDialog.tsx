@@ -145,7 +145,7 @@ export function ApprovalDialog({
 
         <section className="grid gap-3 rounded-md border border-border p-4" aria-labelledby="approval-destination">
           <div className="flex items-center gap-2">
-            {manifest && <AgentIcon agentType={manifest.name} icon={manifest.icon} family={manifest.family} size="sm" />}
+            {manifest && <AgentIcon icon={manifest.icon} family={manifest.family} size="sm" />}
             <h3 id="approval-destination" className="text-overline uppercase text-text-muted">
               Where this goes
             </h3>

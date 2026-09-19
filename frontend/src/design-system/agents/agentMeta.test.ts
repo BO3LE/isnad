@@ -1,46 +1,70 @@
-import { Mail, Puzzle, Telescope } from "lucide-react";
-import { agentFamily, agentIcon, agentTileClass } from "./agentMeta";
+import { Clapperboard, Mail, Puzzle, Telescope, UploadCloud } from "lucide-react";
+import { agentFamily, agentIcon, agentTileClass, agentTitle, manifestFor } from "./agentMeta";
+import catalog from "@/test/catalog.json";
+import type { AgentManifest } from "@/lib/api";
 
-describe("agent icons (§08)", () => {
-  it("maps the six built-in agents", () => {
-    expect(agentIcon("researcher")).toBe(Telescope);
-    expect(agentIcon("email")).toBe(Mail);
+const agents = catalog as unknown as AgentManifest[];
+
+describe("agentIcon", () => {
+  it("uses the glyph the manifest asked for", () => {
+    expect(agentIcon("telescope")).toBe(Telescope);
+    expect(agentIcon("clapperboard")).toBe(Clapperboard);
   });
 
-  // AT-12: a seventh agent must appear with no frontend edit at all.
-  describe("an agent the frontend has never heard of", () => {
-    it("falls back to a neutral icon rather than breaking", () => {
-      expect(agentIcon("translator")).toBe(Puzzle);
-    });
-
-    it("uses the icon its manifest names, when that names a Lucide icon we ship", () => {
-      expect(agentIcon("scout", "telescope")).toBe(Telescope);
-      expect(agentIcon("scout", "Telescope")).toBe(Telescope);
-    });
-
-    it("still falls back when the manifest names an icon we do not have", () => {
-      expect(agentIcon("scout", "not-a-real-icon")).toBe(Puzzle);
-    });
-
-    it("defaults to the Create family, and honours the manifest when it says otherwise", () => {
-      expect(agentFamily("translator")).toBe("create");
-      expect(agentFamily("broadcaster", "distribute")).toBe("distribute");
-      expect(agentFamily("broadcaster", "nonsense")).toBe("create");
-    });
+  it("forgives the spellings a manifest might be written with", () => {
+    expect(agentIcon("Telescope")).toBe(Telescope);
+    expect(agentIcon(" cloud_upload ")).toBe(UploadCloud);
   });
 
-  it("puts the built-in distribute agents in the distribute family", () => {
-    expect(agentFamily("publisher")).toBe("distribute");
-    expect(agentFamily("email")).toBe("distribute");
-    expect(agentFamily("writer")).toBe("create");
+  it("gives an unknown or absent icon a placeholder rather than a blank", () => {
+    expect(agentIcon("not-a-real-icon")).toBe(Puzzle);
+    expect(agentIcon(null)).toBe(Puzzle);
+    expect(agentIcon(undefined)).toBe(Puzzle);
   });
 
-  // The Ink-tile/Volt-icon pairing is a brand mark, so it must NOT be built from a theme-flipping
-  // token: surface-inverse became Paper in dark and put Volt on white at 1.1:1.
-  it("builds the distribute tile from theme-independent tokens", () => {
-    const distribute = agentTileClass("distribute");
-    expect(distribute).toContain("bg-agent-distribute");
-    expect(distribute).not.toContain("surface-inverse");
+  it("draws every agent in the live catalog from its own manifest", () => {
+    // AT-12: the six are not special-cased anywhere, so each must resolve through its manifest
+    // alone. A seventh agent that publishes a known icon name gets it the same way.
+    for (const agent of agents) expect(agentIcon(agent.icon)).not.toBe(Puzzle);
+    expect(agentIcon(agents.find((a) => a.name === "publisher")!.icon)).toBe(UploadCloud);
+    expect(agentIcon(agents.find((a) => a.name === "email")!.icon)).toBe(Mail);
+  });
+});
+
+describe("agentFamily", () => {
+  it("takes the manifest's word", () => {
+    expect(agentFamily("distribute")).toBe("distribute");
+    expect(agentFamily("create")).toBe("create");
+  });
+
+  it("treats an agent that does not say as one that creates", () => {
+    expect(agentFamily(null)).toBe("create");
+    expect(agentFamily("nonsense")).toBe("create");
+  });
+
+  it("reads every family from the catalog, not from the agent's name", () => {
+    expect(agentFamily(agents.find((a) => a.name === "publisher")!.family)).toBe("distribute");
+    expect(agentFamily(agents.find((a) => a.name === "email")!.family)).toBe("distribute");
+    expect(agentFamily(agents.find((a) => a.name === "writer")!.family)).toBe("create");
+  });
+});
+
+describe("the agent tile", () => {
+  it("gives distribute agents the heavier tile", () => {
+    expect(agentTileClass("distribute")).toContain("bg-agent-distribute");
     expect(agentTileClass("create")).toContain("bg-bg-sunken");
+  });
+});
+
+describe("looking an agent up", () => {
+  it("finds a manifest by type and survives one that is missing", () => {
+    expect(manifestFor("writer", agents)?.title).toBe("Writer");
+    expect(manifestFor("translator", agents)).toBeUndefined();
+    expect(manifestFor("writer", undefined)).toBeUndefined();
+  });
+
+  it("falls back to the raw type so an unknown agent still reads sensibly", () => {
+    expect(agentTitle("writer", agents)).toBe("Writer");
+    expect(agentTitle("translator", agents)).toBe("translator");
   });
 });
