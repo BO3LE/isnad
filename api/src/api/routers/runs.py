@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from pathlib import PurePosixPath
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -8,9 +9,16 @@ from sqlalchemy.orm import Session
 
 from api.deps import get_current_user, get_enqueuer, get_session, owned
 from api.queue import Enqueuer
-from api.schemas import ApprovalRequest, RunCreated
-from contracts.run import TERMINAL_RUN_STATUSES, LogEntry, NodeState, NodeStatus, RunState, RunStatus
-from db.models import Approval, ExecutionLog, ExecutionRun, User, Workflow
+from api.schemas import ApprovalRequest, RunCreated, RunOutput
+from contracts.run import (
+    TERMINAL_RUN_STATUSES,
+    LogEntry,
+    NodeState,
+    NodeStatus,
+    RunState,
+    RunStatus,
+)
+from db.models import AgentOutput, Approval, ExecutionLog, ExecutionRun, User, Workflow
 
 router = APIRouter(prefix="/runs", tags=["runs"])
 
@@ -61,6 +69,40 @@ def _state(session: Session, run: ExecutionRun) -> RunState:
 @router.get("/{run_id}", response_model=RunState)
 def get_run(run_id: UUID, user: User = Depends(get_current_user), session: Session = Depends(get_session)):
     return _state(session, _load(session, user, run_id))
+
+
+@router.get("/{run_id}/outputs", response_model=list[RunOutput])
+def run_outputs(
+    run_id: UUID,
+    user: User = Depends(get_current_user),
+    session: Session = Depends(get_session),
+):
+    """What this run produced, in the order the steps ran.
+
+    The worker already records every output; this exposes them so a person can see, download and
+    approve the actual article, image and video rather than being told a file exists somewhere.
+    """
+    _load(session, user, run_id)
+    rows = session.execute(
+        select(AgentOutput, ExecutionLog.node_id, ExecutionLog.agent_type)
+        .join(ExecutionLog, ExecutionLog.id == AgentOutput.log_id)
+        .where(ExecutionLog.run_id == run_id)
+        .order_by(ExecutionLog.position_order, AgentOutput.created_at, AgentOutput.id)
+    ).all()
+    return [
+        RunOutput(
+            id=output.id,
+            node_id=node_id,
+            agent_type=agent_type,
+            kind=output.output_type,
+            # There is no filename column: a stored file is named by the last segment of its path.
+            filename=PurePosixPath(output.storage_path).name if output.storage_path else None,
+            mime_type=output.mime_type,
+            bytes=output.bytes,
+            created_at=output.created_at,
+        )
+        for output, node_id, agent_type in rows
+    ]
 
 
 @router.get("/{run_id}/logs", response_model=list[LogEntry])

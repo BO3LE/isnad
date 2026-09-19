@@ -37,6 +37,11 @@ class RunStatus(StrEnum):
 
 TERMINAL_RUN_STATUSES = frozenset({RunStatus.SUCCEEDED, RunStatus.FAILED, RunStatus.CANCELLED})
 
+# A run the reviewer stopped is recorded as a failed node carrying this message (worker halts on a
+# reject decision). It lives here so the worker that writes it and the API that reads it cannot
+# drift apart: a rejection is a person's decision, and must never be reported as a failure.
+REJECTED_BY_REVIEWER = "Rejected by reviewer."
+
 
 class ApprovalDecision(StrEnum):
     APPROVE = "approve"

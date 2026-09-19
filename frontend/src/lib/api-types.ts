@@ -198,6 +198,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/runs/{run_id}/outputs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Run Outputs
+         * @description What this run produced, in the order the steps ran.
+         *
+         *     The worker already records every output; this exposes them so a person can see, download and
+         *     approve the actual article, image and video rather than being told a file exists somewhere.
+         */
+        get: operations["run_outputs_runs__run_id__outputs_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/workflows": {
         parameters: {
             query?: never;
@@ -554,6 +577,40 @@ export interface components {
             run_id: string;
             status: components["schemas"]["RunStatus"];
         };
+        /**
+         * RunOutput
+         * @description One thing a run produced. `id` is what GET /outputs/{id} turns into a download URL.
+         */
+        RunOutput: {
+            /** Agent Type */
+            agent_type: string;
+            /** Bytes */
+            bytes?: number | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Filename */
+            filename?: string | null;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "text" | "file" | "url";
+            /** Mime Type */
+            mime_type?: string | null;
+            /**
+             * Node Id
+             * Format: uuid
+             */
+            node_id: string;
+        };
         /** RunState */
         RunState: {
             /** Completed At */
@@ -605,6 +662,8 @@ export interface components {
              * Format: uuid
              */
             id: string;
+            /** Reason */
+            reason?: "rejected" | null;
             status: components["schemas"]["RunStatus"];
         };
         /** TokenResponse */
@@ -996,6 +1055,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["RunCreated"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    run_outputs_runs__run_id__outputs_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RunOutput"][];
                 };
             };
             /** @description Validation Error */

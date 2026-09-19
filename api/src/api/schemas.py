@@ -34,6 +34,9 @@ class RunSummary(BaseModel):
     status: RunStatus
     created_at: datetime
     completed_at: datetime | None = None
+    # A failed run and a run a person stopped look identical from the outside, so the list called
+    # both "Failed". Present only when the run ended for a reason the status cannot express.
+    reason: Literal["rejected"] | None = None
 
 
 class WorkflowCreate(BaseModel):
@@ -91,3 +94,16 @@ class OutputLink(BaseModel):
     id: UUID
     url: str
     expires_in: int
+
+
+class RunOutput(BaseModel):
+    """One thing a run produced. `id` is what GET /outputs/{id} turns into a download URL."""
+
+    id: UUID
+    node_id: UUID
+    agent_type: str
+    kind: Literal["text", "file", "url"]
+    filename: str | None = None
+    mime_type: str | None = None
+    bytes: int | None = None
+    created_at: datetime

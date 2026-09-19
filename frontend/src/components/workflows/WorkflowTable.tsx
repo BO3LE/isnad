@@ -5,7 +5,7 @@ import { Skeleton } from "@/design-system/components/Skeleton";
 import { IconButton } from "@/design-system/components/IconButton";
 import { Menu, type MenuItem } from "@/design-system/components/Menu";
 import { StatusChip } from "@/design-system/status/StatusChip";
-import { runStatusMeta } from "@/design-system/status/statusMeta";
+import { rejectedMeta, runStatusMeta } from "@/design-system/status/statusMeta";
 import { formatAbsoluteTime, formatRelativeTime } from "@/lib/format";
 import { manifestFor } from "@/design-system/agents/agentMeta";
 import type { AgentManifest, WorkflowSummary } from "@/lib/api";
@@ -70,7 +70,7 @@ export function WorkflowTable({
                 <td className="px-3 py-2.5">
                   {lastRun ? (
                     <span className="flex items-center gap-2">
-                      <StatusChip meta={runStatusMeta[lastRun.status]} />
+                      <StatusChip meta={lastRun.reason === "rejected" ? rejectedMeta : runStatusMeta[lastRun.status]} />
                       <span className="text-body-sm text-text-muted">
                         {formatRelativeTime(lastRun.completed_at ?? lastRun.created_at)}
                       </span>

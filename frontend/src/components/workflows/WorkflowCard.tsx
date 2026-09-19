@@ -5,7 +5,7 @@ import { Skeleton } from "@/design-system/components/Skeleton";
 import { IconButton } from "@/design-system/components/IconButton";
 import { Menu, type MenuItem } from "@/design-system/components/Menu";
 import { StatusChip } from "@/design-system/status/StatusChip";
-import { runStatusMeta } from "@/design-system/status/statusMeta";
+import { rejectedMeta, runStatusMeta } from "@/design-system/status/statusMeta";
 import { formatRelativeTime, pluralise } from "@/lib/format";
 import { manifestFor } from "@/design-system/agents/agentMeta";
 import type { AgentManifest, WorkflowSummary } from "@/lib/api";
@@ -64,7 +64,7 @@ export function WorkflowCard({
       <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-body-sm text-text-muted">
         {lastRun ? (
           <>
-            <StatusChip meta={runStatusMeta[lastRun.status]} />
+            <StatusChip meta={lastRun.reason === "rejected" ? rejectedMeta : runStatusMeta[lastRun.status]} />
             <span>{formatRelativeTime(lastRun.completed_at ?? lastRun.created_at)}</span>
           </>
         ) : (
