@@ -1,6 +1,7 @@
 import { ChevronRight } from "lucide-react";
 import { useState } from "react";
 import { AgentIcon } from "@/design-system/agents/AgentIcon";
+import { Skeleton } from "@/design-system/components/Skeleton";
 import { agentTitle, manifestFor } from "@/design-system/agents/agentMeta";
 import { StatusChip } from "@/design-system/status/StatusChip";
 import { nodeStatusMeta, rejectedMeta } from "@/design-system/status/statusMeta";
@@ -33,6 +34,10 @@ export function StepList({ steps, agents, actionFor }: StepListProps) {
   return (
     <ol className="grid gap-2">
       {steps.map((step, index) => {
+        // Until the catalog arrives the agent's own name and glyph are unknown. The placeholder
+        // glyph means "no agent is installed for this", and the raw type reads "publisher" where
+        // the product says "Publisher" — so neither is shown as if it were the answer.
+        const known = agents !== undefined;
         const manifest = manifestFor(step.agent_type, agents);
         const title = agentTitle(step.agent_type, agents);
         const error = stepError(step.error_message);
@@ -47,10 +52,14 @@ export function StepList({ steps, agents, actionFor }: StepListProps) {
               <span className="font-mono text-mono-sm text-text-muted" aria-hidden>
                 {index + 1}
               </span>
-              <AgentIcon icon={manifest?.icon} family={manifest?.family} size="sm" />
+              {known ? (
+                <AgentIcon icon={manifest?.icon} family={manifest?.family} size="sm" />
+              ) : (
+                <Skeleton className="h-6 w-6 rounded-xs" />
+              )}
               <span className="text-body-md font-medium text-text">
                 <span className="sr-only">Step {index + 1}: </span>
-                {title}
+                {known ? title : <Skeleton className="inline-block h-4 w-20 align-middle" />}
               </span>
               <StatusChip meta={error?.rejected ? rejectedMeta : nodeStatusMeta[step.status]} />
               {step.duration_ms != null && (
@@ -62,6 +71,7 @@ export function StepList({ steps, agents, actionFor }: StepListProps) {
                 <button
                   type="button"
                   aria-expanded={expanded}
+                  aria-controls={`step-detail-${step.node_id}`}
                   onClick={() => setOpen(expanded ? null : step.node_id)}
                   className="flex items-center gap-1 rounded-xs text-body-sm text-text-muted hover:text-text"
                 >
@@ -81,7 +91,10 @@ export function StepList({ steps, agents, actionFor }: StepListProps) {
             )}
 
             {expanded && (
-              <dl className="grid gap-1 border-t border-border px-4 py-3 text-body-sm sm:grid-cols-[auto_1fr] sm:gap-x-4">
+              <dl
+                id={`step-detail-${step.node_id}`}
+                className="grid gap-1 border-t border-border px-4 py-3 text-body-sm sm:grid-cols-[auto_1fr] sm:gap-x-4"
+              >
                 {tries && (
                   <>
                     <dt className="text-text-muted">Attempts</dt>

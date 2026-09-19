@@ -110,6 +110,12 @@ test("a seventh agent builds its own palette entry, node and settings form", asy
   await expect(palette.getByRole("region", { name: "CREATE" }).getByRole("button", { name: /Translator/ })).toBeVisible();
   await expect(palette.getByText("Turns an article into another language.")).toBeVisible();
 
+  // Its glyph is its own. Without this, a frontend that went back to a hard-coded table of the six
+  // would pass every other assertion here — the icon is the one thing only the manifest can supply.
+  const tile = palette.getByRole("button", { name: /Translator/ }).locator("svg").first();
+  await expect(tile).toHaveClass(/lucide-languages/);
+  await expect(tile).not.toHaveClass(/lucide-puzzle/);
+
   // It is on the canvas, titled from the manifest.
   const step = page.locator(".react-flow__node").filter({ hasText: "Translator" });
   await expect(step).toContainText("translator · Step 2");
