@@ -32,11 +32,14 @@ export function ValidationPanel({ result, titleOf, onGoToStep, onClose }: Valida
   // would restart the countdown each time, and the panel would outstay its two seconds.
   const close = useRef(onClose);
   close.current = onClose;
+  // `result` is here so that validating again restarts the two seconds — a fresh answer deserves a
+  // full confirmation. It is state, so its identity changes only when a new result actually
+  // arrives, unlike a handler recreated on every render.
   useEffect(() => {
     if (!ready) return;
     const timer = window.setTimeout(() => close.current(), READY_DISMISS_MS);
     return () => window.clearTimeout(timer);
-  }, [ready]);
+  }, [ready, result]);
 
   const heading = ready
     ? "Ready to run"
