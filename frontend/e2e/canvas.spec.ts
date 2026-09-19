@@ -294,15 +294,13 @@ test("two unset settings on one step list as two issues", async ({ page }) => {
       { code: "missing_config", severity: "error", node_id: "video", message: "Video is missing resolution." },
     ],
   });
-  const errors: string[] = [];
-  page.on("console", (message) => message.type() === "error" && errors.push(message.text()));
-
+  // That they are kept apart rather than colliding is guarded in ValidationPanel.test.tsx: React's
+  // duplicate-key warning is development-only, and these specs run against a production build.
   await page.getByRole("button", { name: "Validate" }).click();
   const panel = page.getByRole("region", { name: "Validation" });
   await expect(panel.getByRole("heading")).toHaveText("2 issues to fix before running");
   await expect(panel.getByRole("listitem")).toHaveCount(2);
   await expect(panel.getByRole("button", { name: "Go to Video" })).toHaveCount(2);
-  expect(errors.filter((text) => text.includes("same key"))).toEqual([]);
 });
 
 test("a workflow with nothing wrong says so, then gets out of the way", async ({ page }) => {
