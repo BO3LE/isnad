@@ -50,6 +50,7 @@ async function openSeededWorkflow(page: Page, puts: SavedGraph[]) {
     if (route.request().method() === "PUT") puts.push(route.request().postDataJSON() as SavedGraph);
     return route.fulfill({ json: workflow });
   });
+  await page.route(`http://api.mock/workflows/${WORKFLOW_ID}/runs`, (route) => route.fulfill({ json: [] }));
   await page.route(`http://api.mock/workflows/${WORKFLOW_ID}/validate`, (route) =>
     route.fulfill({ json: { valid: true, issues: [] } }),
   );
@@ -198,4 +199,113 @@ test("a loose step says what it needs, and drawing a connection shows what it wo
 
   await expect(image).toContainText("Step 3");
   await expect(image).not.toContainText("Missing");
+});
+
+// ---------------------------------------------------------------- run mode (UX-SPEC §6, §7)
+
+const RUN_ID = "00000000-0000-4000-8000-0000000000aa";
+type NodeStatus = "pending" | "running" | "awaiting_approval" | "success" | "failed" | "skipped";
+const runState = (status: string, statuses: NodeStatus[], error?: string) => ({
+  id: RUN_ID,
+  workflow_id: WORKFLOW_ID,
+  status,
+  created_at: new Date().toISOString(),
+  started_at: new Date().toISOString(),
+  completed_at: ["succeeded", "failed", "cancelled"].includes(status) ? new Date().toISOString() : null,
+  total_nodes: 4,
+  failed_nodes: statuses.filter((s) => s === "failed").length,
+  nodes: SEEDED.map((id, index) => ({
+    node_id: id,
+    agent_type: workflow.graph.nodes[index]!.agent_type,
+    status: statuses[index],
+    retry_count: 0,
+    started_at: statuses[index] === "pending" ? null : new Date().toISOString(),
+    error_message: statuses[index] === "failed" ? error : null,
+  })),
+});
+
+/** Opens the seeded workflow with a run the test controls: `server.state` is what GET /runs returns. */
+async function withRun(page: Page) {
+  const server = { state: runState("awaiting_approval", ["success", "success", "success", "awaiting_approval"]) as unknown };
+  const decisions: { decision: string; note?: string }[] = [];
+  const step = await openSeededWorkflow(page, []);
+  await page.route(`http://api.mock/workflows/${WORKFLOW_ID}/run`, (route) => route.fulfill({ status: 202, json: { run_id: RUN_ID, status: "queued" } }));
+  await page.route(`http://api.mock/runs/${RUN_ID}`, (route) => route.fulfill({ json: server.state }));
+  await page.route(`http://api.mock/runs/${RUN_ID}/nodes/publish/approve`, (route) => {
+    decisions.push(route.request().postDataJSON());
+    return route.fulfill({ status: 202, json: { run_id: RUN_ID, status: "queued" } });
+  });
+  await page.route(`http://api.mock/runs/${RUN_ID}/cancel`, (route) => {
+    server.state = runState("cancelled", ["success", "skipped", "skipped", "skipped"]);
+    return route.fulfill({ status: 202, json: server.state });
+  });
+  return { step, server, decisions };
+}
+
+test("a run plays on the canvas one handover at a time, then waits for approval", async ({ page }) => {
+  const { step, server, decisions } = await withRun(page);
+  const bar = page.getByRole("region", { name: "Run progress" });
+
+  await page.getByRole("button", { name: "Run", exact: true }).click();
+
+  // The worker finished three steps between polls; the canvas still shows each one working.
+  await expect(step("research")).toContainText("Running");
+  await expect(step("research")).toContainText("Done");
+  await expect(step("write")).toContainText("Running");
+  await expect(step("write")).toContainText("Done");
+  await expect(page.getByRole("complementary", { name: "Agents" })).toContainText("Editing is paused while this workflow runs.");
+
+  await expect(step("publish")).toContainText("Needs approval", { timeout: 10_000 });
+  await expect(bar).toContainText("Publisher is waiting for your approval. Nothing has been sent yet.");
+  await expect(bar).toContainText("3 of 4 steps");
+  await expect(page).toHaveTitle(/Needs approval/);
+
+  await bar.getByRole("button", { name: "Review" }).click();
+  const dialog = page.getByRole("dialog", { name: "Review before it goes out" });
+  await expect(dialog).toContainText("Nothing has been sent yet.");
+  await expect(dialog).toContainText("From Video · video");
+  await expect(dialog).toContainText("Unlisted");
+
+  server.state = runState("succeeded", ["success", "success", "success", "success"]);
+  await dialog.getByRole("button", { name: "Approve and send to YouTube" }).click();
+  expect(decisions).toEqual([{ decision: "approve" }]);
+
+  await expect(bar).toContainText("Run finished in", { timeout: 10_000 });
+  await expect(bar).toContainText("4 of 4 steps");
+  await bar.getByRole("button", { name: "Back to editing" }).click();
+  await expect(page.getByRole("complementary", { name: "Agents" })).toContainText("Click to add after Publisher");
+});
+
+test("rejecting needs a reason and never reads as a failure", async ({ page }) => {
+  const { step, server, decisions } = await withRun(page);
+  const bar = page.getByRole("region", { name: "Run progress" });
+  await page.getByRole("button", { name: "Run", exact: true }).click();
+  await bar.getByRole("button", { name: "Review" }).click({ timeout: 15_000 });
+
+  const dialog = page.getByRole("dialog", { name: "Review before it goes out" });
+  await dialog.getByRole("button", { name: "Reject…" }).click();
+  await dialog.getByRole("button", { name: "Reject and stop the run" }).click();
+  await expect(dialog).toContainText("Add a note — it's kept with the run.");
+  expect(decisions).toEqual([]);
+
+  server.state = runState("failed", ["success", "success", "success", "failed"], "[attempt 1] Rejected by reviewer.");
+  await dialog.getByLabel("Why are you rejecting this?").fill("Wrong thumbnail");
+  await dialog.getByRole("button", { name: "Reject and stop the run" }).click();
+  expect(decisions).toEqual([{ decision: "reject", note: "Wrong thumbnail" }]);
+
+  await expect(bar).toContainText("Rejected by you at Publisher", { timeout: 10_000 });
+  await expect(step("publish")).toContainText("You rejected this step. Nothing was sent.");
+  await expect(step("publish")).not.toContainText("Failed");
+});
+
+test("cancelling shows at once what was skipped", async ({ page }) => {
+  const { step, server } = await withRun(page);
+  server.state = runState("running", ["running", "pending", "pending", "pending"]);
+  const bar = page.getByRole("region", { name: "Run progress" });
+  await page.getByRole("button", { name: "Run", exact: true }).click();
+  await expect(step("research")).toContainText("Running");
+
+  await bar.getByRole("button", { name: "Cancel run" }).click();
+  await expect(bar).toContainText("Run cancelled. Steps that hadn't started were skipped.");
+  await expect(step("video")).toContainText("Skipped");
 });

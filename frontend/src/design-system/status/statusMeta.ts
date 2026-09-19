@@ -43,4 +43,7 @@ export const runStatusMeta: Record<RunStatus, StatusMeta> = {
   cancelled: { label: "Cancelled", tone: "cancelled", icon: Ban },
 };
 
+/** A person's "no" — shown apart from a technical failure (UX-SPEC §7). */
+export const rejectedMeta: StatusMeta = { label: "Rejected by you", tone: "cancelled", icon: Ban };
+
 export const TERMINAL_RUN_STATUSES: ReadonlySet<RunStatus> = new Set(["succeeded", "failed", "cancelled"]);
