@@ -39,7 +39,7 @@ The orchestrator merges **every upstream step's output**, then lays **the step's
 for earlier in order[:index]:
     if earlier.id in upstream_of[node.id]:
         data.update(outputs.get(earlier.id, {}))
-data.update(node.configuration)   # what the user typed wins
+data.update(node.configuration)  # what the user typed wins
 ```
 
 So in the drawer:
