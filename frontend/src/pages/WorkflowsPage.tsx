@@ -64,6 +64,9 @@ export function WorkflowsPage() {
   const [pendingDelete, setPendingDelete] = useState<WorkflowSummary | null>(null);
 
   const workflows = useQuery({ queryKey: ["workflows"], queryFn: endpoints.workflows });
+  // AT-12: the chain's icons come from what each agent published, not from its name. Shared cache
+  // with the canvas, so this costs nothing on a second visit.
+  const catalog = useQuery({ queryKey: ["catalog"], queryFn: endpoints.catalog, staleTime: 5 * 60_000 });
   const refresh = () => queryClient.invalidateQueries({ queryKey: ["workflows"] });
 
   const create = useMutation({
@@ -217,12 +220,12 @@ export function WorkflowsPage() {
             <ul className="grid list-none gap-6 p-0 sm:grid-cols-2 xl:grid-cols-3">
               {visible.map((workflow) => (
                 <li key={workflow.id}>
-                  <WorkflowCard workflow={workflow} actions={actionsFor(workflow)} />
+                  <WorkflowCard workflow={workflow} agents={catalog.data} actions={actionsFor(workflow)} />
                 </li>
               ))}
             </ul>
           ) : (
-            <WorkflowTable workflows={visible} actionsFor={actionsFor} />
+            <WorkflowTable workflows={visible} agents={catalog.data} actionsFor={actionsFor} />
           ))}
       </PageBody>
 

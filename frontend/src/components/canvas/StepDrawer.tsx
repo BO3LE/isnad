@@ -78,7 +78,7 @@ export function StepDrawer({
       className="absolute inset-y-0 right-0 z-drawer flex w-full max-w-[400px] flex-col border-l border-border bg-surface shadow-3 lg:static lg:w-[400px] lg:shadow-none"
     >
       <header className="flex h-16 shrink-0 items-center gap-3 border-b border-border px-4">
-        <AgentIcon agentType={data.agentType} icon={data.icon} family={data.family} size="lg" />
+        <AgentIcon icon={data.icon} family={data.family} size="lg" />
         <div className="min-w-0 flex-1">
           <h2 className="truncate text-heading-md text-text">{data.title}</h2>
           <p className="text-overline uppercase text-text-muted">

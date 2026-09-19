@@ -12,6 +12,7 @@ export type AgentManifest = Schemas["AgentManifest"];
 export type ValidationResult = Schemas["ValidationResult"];
 export type RunState = Schemas["RunState"];
 export type RunCreated = Schemas["RunCreated"];
+export type NodeState = Schemas["NodeState"];
 export type NodeStatus = Schemas["NodeStatus"];
 export type RunStatus = Schemas["RunStatus"];
 

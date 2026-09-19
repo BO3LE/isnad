@@ -6,12 +6,21 @@ import { Menu, type MenuItem } from "@/design-system/components/Menu";
 import { StatusChip } from "@/design-system/status/StatusChip";
 import { runStatusMeta } from "@/design-system/status/statusMeta";
 import { formatRelativeTime, pluralise } from "@/lib/format";
-import type { WorkflowSummary } from "@/lib/api";
+import { manifestFor } from "@/design-system/agents/agentMeta";
+import type { AgentManifest, WorkflowSummary } from "@/lib/api";
 
 // DESIGN-SYSTEM.md §14.8 workflow card + §21 S-02.
 const MAX_ICONS = 6;
 
-export function WorkflowCard({ workflow, actions }: { workflow: WorkflowSummary; actions: MenuItem[] }) {
+export function WorkflowCard({
+  workflow,
+  agents,
+  actions,
+}: {
+  workflow: WorkflowSummary;
+  agents?: AgentManifest[];
+  actions: MenuItem[];
+}) {
   const steps = workflow.agent_types?.length ?? 0;
   const shown = (workflow.agent_types ?? []).slice(0, MAX_ICONS);
   const overflow = steps - shown.length;
@@ -41,7 +50,7 @@ export function WorkflowCard({ workflow, actions }: { workflow: WorkflowSummary;
       {steps > 0 ? (
         <div className="flex items-center gap-1.5">
           {shown.map((type, index) => (
-            <AgentIcon key={`${type}-${index}`} agentType={type} size="sm" />
+            <AgentIcon key={`${type}-${index}`} {...manifestFor(type, agents)} size="sm" />
           ))}
           {overflow > 0 && <span className="text-caption text-text-muted">+{overflow}</span>}
         </div>

@@ -6,14 +6,17 @@ import { Menu, type MenuItem } from "@/design-system/components/Menu";
 import { StatusChip } from "@/design-system/status/StatusChip";
 import { runStatusMeta } from "@/design-system/status/statusMeta";
 import { formatAbsoluteTime, formatRelativeTime } from "@/lib/format";
-import type { WorkflowSummary } from "@/lib/api";
+import { manifestFor } from "@/design-system/agents/agentMeta";
+import type { AgentManifest, WorkflowSummary } from "@/lib/api";
 
 // DESIGN-SYSTEM.md §14.16 data table + §21 S-02 table view: name · steps · last run · last edited.
 export function WorkflowTable({
   workflows,
+  agents,
   actionsFor,
 }: {
   workflows: WorkflowSummary[];
+  agents?: AgentManifest[];
   actionsFor: (workflow: WorkflowSummary) => MenuItem[];
 }) {
   return (
@@ -53,7 +56,7 @@ export function WorkflowTable({
                 <td className="px-3 py-2.5">
                   <span className="flex items-center gap-1">
                     {steps.slice(0, 6).map((type, index) => (
-                      <AgentIcon key={`${type}-${index}`} agentType={type} size="sm" />
+                      <AgentIcon key={`${type}-${index}`} {...manifestFor(type, agents)} size="sm" />
                     ))}
                     {steps.length > 6 && <span className="text-caption text-text-muted">+{steps.length - 6}</span>}
                     {steps.length === 0 && <span className="text-body-sm text-text-subtle">—</span>}
