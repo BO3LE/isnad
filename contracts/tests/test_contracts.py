@@ -4,7 +4,20 @@ from uuid import uuid4
 import pytest
 from pydantic import ValidationError
 
-from contracts.agent_io import EmailInput, PublishInput, VideoInput, WriteInput
+from contracts.agent import describe_inputs, describe_outputs
+from contracts.agent_io import (
+    EmailConfig,
+    EmailInput,
+    ImageConfig,
+    ImageInput,
+    PublishConfig,
+    PublishInput,
+    VideoConfig,
+    VideoInput,
+    WriteConfig,
+    WriteInput,
+    WriteOutput,
+)
 from contracts.graph import CycleError, descendants, find_cycle, topological_order
 from contracts.manifest import AgentManifest
 from contracts.run import GraphEdge, GraphNode, Position, WorkflowGraph
@@ -54,6 +67,37 @@ def test_upstream_aliases_let_outputs_flow_into_inputs():
     assert publish.file_path == "runs/1/video.mp4" and publish.description == "Short"
     email = EmailInput.model_validate({**writer_out, "remote_url": "https://youtu.be/x", "recipients": ["a@b.co"]})
     assert email.links == ["https://youtu.be/x"] and email.subject == "Solar"
+
+
+def test_inputs_say_where_each_value_can_come_from():
+    video = {i.name: i for i in describe_inputs(VideoInput, VideoConfig)}
+    # Only an earlier step can supply the script, and it arrives as Writer's article.
+    assert video["script"].accepts == ["script", "article_md"]
+    assert video["script"].required and not video["script"].settable
+    assert video["voice"].settable and not video["voice"].required
+
+    image = {i.name: i for i in describe_inputs(ImageInput, ImageConfig)}
+    # Required, but the user may leave it empty and inherit the title instead.
+    assert image["prompt"].accepts == ["prompt", "title"]
+    assert image["prompt"].required and image["prompt"].settable
+
+    writer = {i.name: i for i in describe_inputs(WriteInput, WriteConfig)}
+    assert writer["notes"].required and not writer["notes"].settable
+
+
+def test_outputs_carry_human_names():
+    assert [(o.name, o.title) for o in describe_outputs(WriteOutput)] == [
+        ("title", "title"),
+        ("summary", "summary"),
+        ("article_md", "article"),
+    ]
+
+
+def test_config_schemas_carry_what_the_form_shows():
+    publish = PublishConfig.model_json_schema()["properties"]
+    assert publish["platform"]["x-enum-labels"] == {"youtube": "YouTube", "drive": "Google Drive"}
+    # The form checks each address itself, without knowing it is looking at the Email agent.
+    assert EmailConfig.model_json_schema()["properties"]["recipients"]["items"]["format"] == "email"
 
 
 def test_email_recipients_are_checked():

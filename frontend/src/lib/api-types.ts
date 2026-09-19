@@ -298,6 +298,29 @@ export interface components {
          * @enum {string}
          */
         AgentFamily: "create" | "distribute";
+        /**
+         * AgentInput
+         * @description One thing an agent needs to run, and where it may come from.
+         */
+        AgentInput: {
+            /**
+             * Accepts
+             * @description Output names an earlier step may supply this under, in the order the agent prefers them
+             */
+            accepts: string[];
+            /** Name */
+            name: string;
+            /**
+             * Required
+             * @description The step cannot run without it
+             */
+            required: boolean;
+            /**
+             * Settable
+             * @description The user can type it in the step's settings; otherwise only an earlier step can supply it
+             */
+            settable: boolean;
+        };
         /** AgentManifest */
         AgentManifest: {
             /**
@@ -322,6 +345,11 @@ export interface components {
              */
             input_type: string;
             /**
+             * Inputs
+             * @description What the agent needs. Filled from its input model at runtime.
+             */
+            inputs?: components["schemas"]["AgentInput"][];
+            /**
              * Name
              * @description Unique agent_type
              */
@@ -332,6 +360,11 @@ export interface components {
              */
             output_type: string;
             /**
+             * Outputs
+             * @description What the agent hands on. Filled from its output model at runtime.
+             */
+            outputs?: components["schemas"]["AgentOutput"][];
+            /**
              * Requires Approval
              * @description True for agents that send content out of the platform
              * @default false
@@ -341,6 +374,19 @@ export interface components {
             title: string;
             /** Version */
             version: string;
+        };
+        /**
+         * AgentOutput
+         * @description One thing an agent hands on to the steps after it.
+         */
+        AgentOutput: {
+            /** Name */
+            name: string;
+            /**
+             * Title
+             * @description What a person calls it, e.g. 'article'
+             */
+            title: string;
         };
         /**
          * ApprovalDecision
