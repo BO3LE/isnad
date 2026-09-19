@@ -1,0 +1,593 @@
+[
+  {
+    "name": "email",
+    "version": "0.1.0",
+    "title": "Email",
+    "description": "Sends the links and files to your recipients.",
+    "family": "distribute",
+    "icon": "mail",
+    "input_type": "EmailInput",
+    "output_type": "EmailOutput",
+    "requires_approval": true,
+    "config_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "recipients": {
+          "items": {
+            "format": "email",
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "To",
+          "type": "array"
+        },
+        "subject": {
+          "anyOf": [
+            {
+              "maxLength": 150,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Leave empty to use the article title.",
+          "title": "Subject"
+        },
+        "body": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Message"
+        }
+      },
+      "required": [
+        "recipients"
+      ],
+      "title": "EmailConfig",
+      "type": "object"
+    },
+    "inputs": [
+      {
+        "name": "recipients",
+        "accepts": [
+          "recipients"
+        ],
+        "required": true,
+        "settable": true
+      },
+      {
+        "name": "subject",
+        "accepts": [
+          "subject",
+          "title"
+        ],
+        "required": true,
+        "settable": true
+      },
+      {
+        "name": "body",
+        "accepts": [
+          "body",
+          "summary"
+        ],
+        "required": false,
+        "settable": true
+      },
+      {
+        "name": "links",
+        "accepts": [
+          "links",
+          "remote_url"
+        ],
+        "required": false,
+        "settable": false
+      }
+    ],
+    "outputs": [
+      {
+        "name": "message_id",
+        "title": "message id"
+      },
+      {
+        "name": "sent_at",
+        "title": "sent time"
+      },
+      {
+        "name": "recipients",
+        "title": "recipients"
+      }
+    ]
+  },
+  {
+    "name": "image",
+    "version": "0.1.0",
+    "title": "Image",
+    "description": "Creates a thumbnail and images for the content.",
+    "family": "create",
+    "icon": "image",
+    "input_type": "ImageInput",
+    "output_type": "ImageOutput",
+    "requires_approval": false,
+    "config_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "prompt": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Leave empty to use the article title.",
+          "title": "What should the image show?"
+        },
+        "count": {
+          "default": 1,
+          "maximum": 4,
+          "minimum": 1,
+          "title": "Number of images",
+          "type": "integer"
+        },
+        "aspect": {
+          "default": "landscape",
+          "enum": [
+            "landscape",
+            "square"
+          ],
+          "title": "Shape",
+          "type": "string",
+          "x-enum-labels": {
+            "landscape": "Landscape 16:9",
+            "square": "Square 1:1"
+          }
+        }
+      },
+      "title": "ImageConfig",
+      "type": "object"
+    },
+    "inputs": [
+      {
+        "name": "prompt",
+        "accepts": [
+          "prompt",
+          "title"
+        ],
+        "required": true,
+        "settable": true
+      },
+      {
+        "name": "count",
+        "accepts": [
+          "count"
+        ],
+        "required": false,
+        "settable": true
+      },
+      {
+        "name": "aspect",
+        "accepts": [
+          "aspect"
+        ],
+        "required": false,
+        "settable": true
+      }
+    ],
+    "outputs": [
+      {
+        "name": "image_paths",
+        "title": "images"
+      }
+    ]
+  },
+  {
+    "name": "publisher",
+    "version": "0.1.0",
+    "title": "Publisher",
+    "description": "Uploads to YouTube or Google Drive.",
+    "family": "distribute",
+    "icon": "cloud-upload",
+    "input_type": "PublishInput",
+    "output_type": "PublishOutput",
+    "requires_approval": true,
+    "config_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "platform": {
+          "default": "youtube",
+          "enum": [
+            "youtube",
+            "drive"
+          ],
+          "title": "Publish to",
+          "type": "string",
+          "x-enum-labels": {
+            "drive": "Google Drive",
+            "youtube": "YouTube"
+          }
+        },
+        "credential_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Google account",
+          "x-provider": "google",
+          "x-widget": "credential"
+        },
+        "title": {
+          "anyOf": [
+            {
+              "maxLength": 100,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Leave empty to use the article title.",
+          "title": "Title"
+        },
+        "tags": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Tags",
+          "type": "array"
+        },
+        "privacy": {
+          "default": "unlisted",
+          "description": "Unlisted by default, so nothing becomes public by accident.",
+          "enum": [
+            "unlisted",
+            "private",
+            "public"
+          ],
+          "title": "Visibility",
+          "type": "string"
+        }
+      },
+      "title": "PublishConfig",
+      "type": "object"
+    },
+    "inputs": [
+      {
+        "name": "file_path",
+        "accepts": [
+          "file_path",
+          "video_path"
+        ],
+        "required": true,
+        "settable": false
+      },
+      {
+        "name": "platform",
+        "accepts": [
+          "platform"
+        ],
+        "required": false,
+        "settable": true
+      },
+      {
+        "name": "credential_id",
+        "accepts": [
+          "credential_id"
+        ],
+        "required": false,
+        "settable": true
+      },
+      {
+        "name": "title",
+        "accepts": [
+          "title"
+        ],
+        "required": true,
+        "settable": true
+      },
+      {
+        "name": "description",
+        "accepts": [
+          "description",
+          "summary"
+        ],
+        "required": false,
+        "settable": false
+      },
+      {
+        "name": "tags",
+        "accepts": [
+          "tags"
+        ],
+        "required": false,
+        "settable": true
+      },
+      {
+        "name": "privacy",
+        "accepts": [
+          "privacy"
+        ],
+        "required": false,
+        "settable": true
+      }
+    ],
+    "outputs": [
+      {
+        "name": "platform",
+        "title": "platform"
+      },
+      {
+        "name": "remote_url",
+        "title": "link"
+      },
+      {
+        "name": "platform_id",
+        "title": "upload id"
+      }
+    ]
+  },
+  {
+    "name": "researcher",
+    "version": "0.1.0",
+    "title": "Researcher",
+    "description": "Finds sources on a topic and gathers notes.",
+    "family": "create",
+    "icon": "telescope",
+    "input_type": "ResearchInput",
+    "output_type": "ResearchOutput",
+    "requires_approval": false,
+    "config_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "topic": {
+          "description": "What should the Researcher look into?",
+          "maxLength": 300,
+          "minLength": 3,
+          "title": "Topic",
+          "type": "string"
+        },
+        "num_sources": {
+          "default": 5,
+          "maximum": 10,
+          "minimum": 1,
+          "title": "Number of sources",
+          "type": "integer",
+          "x-unit": "sources"
+        }
+      },
+      "required": [
+        "topic"
+      ],
+      "title": "ResearchConfig",
+      "type": "object"
+    },
+    "inputs": [
+      {
+        "name": "topic",
+        "accepts": [
+          "topic"
+        ],
+        "required": true,
+        "settable": true
+      },
+      {
+        "name": "num_sources",
+        "accepts": [
+          "num_sources"
+        ],
+        "required": false,
+        "settable": true
+      }
+    ],
+    "outputs": [
+      {
+        "name": "notes",
+        "title": "notes"
+      },
+      {
+        "name": "sources",
+        "title": "sources"
+      }
+    ]
+  },
+  {
+    "name": "video",
+    "version": "0.1.0",
+    "title": "Video",
+    "description": "Narrates a script and assembles a playable MP4.",
+    "family": "create",
+    "icon": "clapperboard",
+    "input_type": "VideoInput",
+    "output_type": "VideoOutput",
+    "requires_approval": false,
+    "config_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "voice": {
+          "default": "en",
+          "description": "Language code for narration, e.g. en, en-uk.",
+          "title": "Narration voice",
+          "type": "string"
+        },
+        "resolution": {
+          "default": "720p",
+          "enum": [
+            "720p",
+            "1080p"
+          ],
+          "title": "Resolution",
+          "type": "string"
+        }
+      },
+      "title": "VideoConfig",
+      "type": "object"
+    },
+    "inputs": [
+      {
+        "name": "script",
+        "accepts": [
+          "script",
+          "article_md"
+        ],
+        "required": true,
+        "settable": false
+      },
+      {
+        "name": "title",
+        "accepts": [
+          "title"
+        ],
+        "required": false,
+        "settable": false
+      },
+      {
+        "name": "voice",
+        "accepts": [
+          "voice"
+        ],
+        "required": false,
+        "settable": true
+      },
+      {
+        "name": "resolution",
+        "accepts": [
+          "resolution"
+        ],
+        "required": false,
+        "settable": true
+      }
+    ],
+    "outputs": [
+      {
+        "name": "video_path",
+        "title": "video"
+      },
+      {
+        "name": "duration_seconds",
+        "title": "duration"
+      }
+    ]
+  },
+  {
+    "name": "writer",
+    "version": "0.1.0",
+    "title": "Writer",
+    "description": "Turns research notes into an article.",
+    "family": "create",
+    "icon": "pen-line",
+    "input_type": "WriteInput",
+    "output_type": "WriteOutput",
+    "requires_approval": false,
+    "config_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "length": {
+          "default": "medium",
+          "description": "Short ≈ 400 words · Medium ≈ 800 · Long ≈ 1500",
+          "enum": [
+            "short",
+            "medium",
+            "long"
+          ],
+          "title": "Length",
+          "type": "string"
+        },
+        "style": {
+          "default": "informative",
+          "enum": [
+            "informative",
+            "persuasive",
+            "conversational",
+            "academic"
+          ],
+          "title": "Style",
+          "type": "string"
+        },
+        "format": {
+          "default": "blog_post",
+          "description": "Pick Video script when a Video step follows.",
+          "enum": [
+            "blog_post",
+            "article",
+            "video_script"
+          ],
+          "title": "Format",
+          "type": "string"
+        }
+      },
+      "title": "WriteConfig",
+      "type": "object"
+    },
+    "inputs": [
+      {
+        "name": "notes",
+        "accepts": [
+          "notes"
+        ],
+        "required": true,
+        "settable": false
+      },
+      {
+        "name": "sources",
+        "accepts": [
+          "sources"
+        ],
+        "required": false,
+        "settable": false
+      },
+      {
+        "name": "length",
+        "accepts": [
+          "length"
+        ],
+        "required": false,
+        "settable": true
+      },
+      {
+        "name": "style",
+        "accepts": [
+          "style"
+        ],
+        "required": false,
+        "settable": true
+      },
+      {
+        "name": "format",
+        "accepts": [
+          "format"
+        ],
+        "required": false,
+        "settable": true
+      }
+    ],
+    "outputs": [
+      {
+        "name": "title",
+        "title": "title"
+      },
+      {
+        "name": "summary",
+        "title": "summary"
+      },
+      {
+        "name": "article_md",
+        "title": "article"
+      }
+    ]
+  }
+]

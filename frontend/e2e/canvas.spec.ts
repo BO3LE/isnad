@@ -1,46 +1,53 @@
+import { readFileSync } from "node:fs";
 import { expect, test, type Page } from "@playwright/test";
 
-// Runs with the whole backend stopped: every API call is answered by page.route.
+// Runs with the whole backend stopped: every API call is answered by page.route. The catalog is
+// the real one, captured from GET /agents/catalog, so the canvas is tested against what the
+// agents actually publish.
 
 const WORKFLOW_ID = "00000000-0000-4000-8000-000000000001";
+const catalog = JSON.parse(readFileSync(new URL("../src/test/catalog.json", import.meta.url), "utf-8")) as unknown[];
 
-const manifest = (name: string, title: string) => ({
-  name,
-  title,
-  description: `${title} agent`,
-  family: "create",
-  icon: null,
-  input_type: "In",
-  output_type: "Out",
-  requires_approval: false,
-  version: "1.0.0",
-  config_schema: null,
+interface SavedGraph {
+  graph: { nodes: { id: string; position: { x: number; y: number }; configuration: Record<string, unknown> }[] };
+}
+
+// The seeded "Blog → Video → YouTube" chain. Seeds place steps at y=120, which is off the
+// canvas's 16 px grid (120 / 16 = 7.5).
+const node = (id: string, agent_type: string, x: number, configuration: Record<string, unknown> = {}) => ({
+  id,
+  agent_type,
+  position: { x, y: 120 },
+  configuration,
+  requires_approval: agent_type === "publisher",
 });
-
-// The seeds place steps at y=120, which is off the canvas's 16 px grid (120 / 16 = 7.5).
 const workflow = {
   id: WORKFLOW_ID,
-  name: "Blog post",
+  name: "Blog → Video → YouTube",
   status: "draft",
   created_at: "2026-09-14T10:00:00Z",
   updated_at: "2026-09-14T10:00:00Z",
   graph: {
     nodes: [
-      { id: "research", agent_type: "researcher", position: { x: 80, y: 120 }, configuration: { topic: "Solar" }, requires_approval: false },
-      { id: "write", agent_type: "writer", position: { x: 400, y: 120 }, configuration: {}, requires_approval: false },
+      node("research", "researcher", 0, { topic: "The future of solar energy", num_sources: 5 }),
+      node("write", "writer", 320, { length: "short", style: "conversational", format: "video_script" }),
+      node("video", "video", 640),
+      node("publish", "publisher", 960, { platform: "youtube", privacy: "unlisted" }),
     ],
-    edges: [{ id: "research-write", source: "research", target: "write" }],
+    edges: [
+      { id: "research-write", source: "research", target: "write" },
+      { id: "write-video", source: "write", target: "video" },
+      { id: "video-publish", source: "video", target: "publish" },
+    ],
   },
 };
 
-async function openSeededWorkflow(page: Page, puts: string[]) {
+async function openSeededWorkflow(page: Page, puts: SavedGraph[]) {
   await page.route("http://api.mock/auth/dev-login", (route) => route.fulfill({ json: { access_token: "t", token_type: "bearer" } }));
   await page.route("http://api.mock/workflows", (route) => route.fulfill({ json: [] }));
-  await page.route("http://api.mock/agents/catalog", (route) =>
-    route.fulfill({ json: [manifest("researcher", "Researcher"), manifest("writer", "Writer")] }),
-  );
+  await page.route("http://api.mock/agents/catalog", (route) => route.fulfill({ json: catalog }));
   await page.route(`http://api.mock/workflows/${WORKFLOW_ID}`, (route) => {
-    if (route.request().method() === "PUT") puts.push(route.request().postData() ?? "");
+    if (route.request().method() === "PUT") puts.push(route.request().postDataJSON() as SavedGraph);
     return route.fulfill({ json: workflow });
   });
   await page.route(`http://api.mock/workflows/${WORKFLOW_ID}/validate`, (route) =>
@@ -48,18 +55,25 @@ async function openSeededWorkflow(page: Page, puts: string[]) {
   );
 
   await page.goto("/login");
+  await page.getByLabel("Email").fill("demo@gp.local");
   await page.getByRole("button", { name: "Sign in" }).click();
   await expect(page.getByRole("heading", { name: "Workflows" })).toBeVisible();
   await page.goto(`/workflows/${WORKFLOW_ID}`);
 
-  const researcher = page.locator(".react-flow__node").filter({ hasText: "Researcher" });
-  await expect(researcher).toBeVisible();
-  return researcher;
+  // Seeded steps by id; a step added during the test by its title.
+  const step = (key: string) =>
+    SEEDED.includes(key) ? page.getByTestId(`rf__node-${key}`) : page.locator(".react-flow__node").filter({ hasText: key });
+  await expect(step("research")).toBeVisible();
+  return step;
 }
 
+const SEEDED = ["research", "write", "video", "publish"];
+const configOf = (put: SavedGraph, id: string) => put.graph.nodes.find((n) => n.id === id)?.configuration;
+
 test("opening, touching a step and validating never saves", async ({ page }) => {
-  const puts: string[] = [];
-  const researcher = await openSeededWorkflow(page, puts);
+  const puts: SavedGraph[] = [];
+  const step = await openSeededWorkflow(page, puts);
+  const researcher = step("research");
 
   // A click with a pixel of hand jitter: React Flow treats it as a drag and snaps the step. On an
   // off-grid y of 120 that moved it to 112 and autosaved a change nobody made.
@@ -68,8 +82,10 @@ test("opening, touching a step and validating never saves", async ({ page }) => 
   await page.mouse.down();
   await page.mouse.move(box.x + box.width / 2, box.y + 19);
   await page.mouse.up();
-  await page.keyboard.press("ArrowDown");
-  await page.keyboard.press("ArrowUp");
+
+  // Opening a step's settings must not write its defaults either (UX-SPEC §4.5).
+  await step("publish").click();
+  await expect(page.getByRole("complementary", { name: "Publisher settings" })).toBeVisible();
 
   await page.getByRole("button", { name: "Validate" }).click();
   await expect(page.getByText("Ready to run.")).toBeVisible();
@@ -80,8 +96,8 @@ test("opening, touching a step and validating never saves", async ({ page }) => 
 });
 
 test("moving a step still saves it, on the grid", async ({ page }) => {
-  const puts: string[] = [];
-  const researcher = await openSeededWorkflow(page, puts);
+  const puts: SavedGraph[] = [];
+  const researcher = (await openSeededWorkflow(page, puts))("research");
 
   const box = (await researcher.boundingBox())!;
   await page.mouse.move(box.x + box.width / 2, box.y + 20);
@@ -90,9 +106,96 @@ test("moving a step still saves it, on the grid", async ({ page }) => {
   await page.mouse.up();
 
   await expect.poll(() => puts.length).toBe(1);
-  const saved = JSON.parse(puts[0]) as { graph: { nodes: { id: string; position: { x: number; y: number } }[] } };
-  for (const node of saved.graph.nodes) {
-    expect(node.position.x % 16).toBe(0);
-    expect(node.position.y % 16).toBe(0);
+  for (const saved of puts[0]!.graph.nodes) {
+    expect(saved.position.x % 16).toBe(0);
+    expect(saved.position.y % 16).toBe(0);
   }
+});
+
+test("the canvas says what each step is set to do and what crosses each connection", async ({ page }) => {
+  const step = await openSeededWorkflow(page, []);
+
+  // Labels from the schema, not raw values — and the topic stays off the canvas.
+  await expect(step("research")).toContainText("5 sources");
+  await expect(step("write")).toContainText("Short · Conversational · Video script");
+  await expect(step("publish")).toContainText("YouTube · Unlisted");
+  await expect(step("write")).toContainText("Step 2");
+
+  // Hovering a step names what its connections hand on.
+  await step("video").hover();
+  await expect(page.getByText("title · article")).toBeVisible();
+  await expect(page.getByText("video", { exact: true })).toBeVisible();
+});
+
+test("a field left empty says where its value comes from; taking it over and giving it back never stores an empty value", async ({ page }) => {
+  const puts: SavedGraph[] = [];
+  const step = await openSeededWorkflow(page, puts);
+  await step("publish").click();
+  const drawer = page.getByRole("complementary", { name: "Publisher settings" });
+
+  // Only an earlier step can supply the file; the title is inherited until the user takes it over.
+  await expect(drawer).toContainText("From Video · video");
+  await expect(drawer.getByText("From Writer · title")).toBeVisible();
+
+  await drawer.getByRole("button", { name: "Use my own" }).first().click();
+  await page.keyboard.type("Solar in Saudi Arabia");
+  await expect.poll(() => puts.length).toBeGreaterThan(0);
+  expect(configOf(puts.at(-1)!, "publish")).toEqual({ platform: "youtube", privacy: "unlisted", title: "Solar in Saudi Arabia" });
+
+  // Giving control back removes the key; it is never saved as "".
+  const before = puts.length;
+  await drawer.getByRole("button", { name: "Use Writer's instead" }).click();
+  await expect(drawer.getByText("From Writer · title")).toBeVisible();
+  await expect.poll(() => puts.length).toBeGreaterThan(before);
+  expect(configOf(puts.at(-1)!, "publish")).toEqual({ platform: "youtube", privacy: "unlisted" });
+});
+
+test("the palette suggests what fits next, and a click adds it already connected", async ({ page }) => {
+  const step = await openSeededWorkflow(page, []);
+  const palette = page.getByRole("complementary", { name: "Agents" });
+
+  await expect(palette).toContainText("Click to add after Publisher");
+  const suggested = palette.getByRole("region", { name: "Suggested next" });
+  await expect(suggested).toContainText("Takes link from Publisher");
+  await suggested.getByRole("button", { name: /^Email/ }).click();
+
+  const email = step("Email");
+  await expect(email).toContainText("Step 5");
+  await expect(email).toContainText("Missing: recipients");
+  const drawer = page.getByRole("complementary", { name: "Email settings" });
+  await expect(drawer).toContainText("From Publisher · link");
+  await expect(drawer.getByText("From Writer · title")).toBeVisible();
+
+  await drawer.getByRole("button", { name: "Send it to me (demo@gp.local)" }).click();
+  await expect(email).not.toContainText("Missing");
+});
+
+test("a loose step says what it needs, and drawing a connection shows what it would take", async ({ page }) => {
+  const step = await openSeededWorkflow(page, []);
+
+  // Nothing Publisher makes is useful to Image, so it is added but left unconnected.
+  const palette = page.getByRole("complementary", { name: "Agents" });
+  await palette.getByRole("region", { name: "Create" }).getByRole("button", { name: /^Image/ }).click();
+  const image = step("Image");
+  await expect(image).toContainText("Missing: prompt — or add a Writer before it");
+  await expect(image).not.toContainText("Step");
+
+  await expect(image).toBeInViewport({ ratio: 1 });
+  await page.waitForTimeout(300);
+  await page.getByRole("button", { name: "Close settings" }).click();
+  await page.getByRole("button", { name: "Fit View" }).click();
+  await page.waitForTimeout(300);
+
+  const from = (await step("write").locator(".react-flow__handle-right").boundingBox())!;
+  const to = (await image.locator(".react-flow__handle-left").boundingBox())!;
+  await page.mouse.move(from.x + from.width / 2, from.y + from.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(to.x + to.width / 2, to.y + to.height / 2, { steps: 10 });
+  // While dragging, each possible target says what it would take.
+  await expect(image).toContainText("Takes title");
+  await expect(step("research")).toContainText("Can't use anything from Writer");
+  await page.mouse.up();
+
+  await expect(image).toContainText("Step 3");
+  await expect(image).not.toContainText("Missing");
 });

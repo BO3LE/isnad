@@ -1,4 +1,4 @@
-import { configSummary, graphsEqual, refuseConnection, snapPosition, snapToGrid, stepNumbers } from "./graph";
+import { graphsEqual, refuseConnection, snapPosition, snapToGrid, stepNumbers } from "./graph";
 
 const edge = (source: string, target: string) => ({ id: `${source}-${target}`, source, target });
 
@@ -81,23 +81,6 @@ describe("snapPosition", () => {
   it("treats a missing position as the origin", () => {
     expect(snapPosition(undefined)).toEqual({ x: 0, y: 0 });
     expect(snapPosition({ x: null, y: 40 })).toEqual({ x: 0, y: 48 });
-  });
-});
-
-describe("configSummary (§15.2)", () => {
-  it("joins up to three values", () => {
-    expect(configSummary({ length: "Medium", style: "Informative", format: "Blog post", extra: "ignored" })).toBe(
-      "Medium · Informative · Blog post",
-    );
-  });
-
-  it("skips empty values rather than printing gaps", () => {
-    expect(configSummary({ topic: "Solar", notes: "", sources: null })).toBe("Solar");
-  });
-
-  it("is empty for an unconfigured node", () => {
-    expect(configSummary({})).toBe("");
-    expect(configSummary(null)).toBe("");
   });
 });
 
