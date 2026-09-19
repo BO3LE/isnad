@@ -12,7 +12,8 @@ import { runStatusMeta, TERMINAL_RUN_STATUSES } from "@/design-system/status/sta
 import { agentTitle } from "@/design-system/agents/agentMeta";
 import { formatAbsoluteTime, pluralise } from "@/lib/format";
 import { stepError } from "@/lib/runPlayback";
-import { endpoints, type RunState } from "@/lib/api";
+import { ApiError, endpoints, type RunState } from "@/lib/api";
+import { useToast } from "@/design-system/components/toast-context";
 import { NotFoundState } from "@/pages/NotFoundPage";
 
 // P-06, the run monitor (DESIGN-SYSTEM §21 S-05). The canvas is where a run is watched while you
@@ -55,6 +56,7 @@ export function RunPage() {
   const { runId = "" } = useParams();
   const queryClient = useQueryClient();
   const [now, setNow] = useState(() => Date.now());
+  const toast = useToast();
 
   const run = useQuery({
     queryKey: ["run", runId],
@@ -77,7 +79,12 @@ export function RunPage() {
   }, [live]);
 
   const refresh = () => queryClient.invalidateQueries({ queryKey: ["run", runId] });
-  const cancel = useMutation({ mutationFn: () => endpoints.cancel(runId), onSuccess: refresh });
+  const cancel = useMutation({
+    mutationFn: () => endpoints.cancel(runId),
+    onSuccess: refresh,
+    onError: (error) =>
+      toast({ variant: "error", message: error instanceof ApiError ? error.message : "Couldn't cancel the run." }),
+  });
 
   const steps = state?.nodes ?? [];
   const done = steps.filter((s) => s.status === "success").length;
@@ -85,7 +92,8 @@ export function RunPage() {
   const waiting = steps.find((s) => s.status === "awaiting_approval");
   const failed = steps.find((s) => s.status === "failed");
   const failure = stepError(failed?.error_message);
-  const titleOf = (agentType: string) => agentTitle(agentType, catalog.data);
+  // "publisher is waiting for your approval" is what the raw type reads like; wait for the name.
+  const titleOf = (agentType: string) => (catalog.data ? agentTitle(agentType, catalog.data) : "This step");
 
   // §16.6 — the tab says what the run needs, for a user who is somewhere else.
   useEffect(() => {
@@ -126,12 +134,7 @@ export function RunPage() {
                   <span className="text-body-sm text-text-muted">{formatAbsoluteTime(state.created_at)}</span>
                 )}
                 {live && (
-                  <Button
-                    className="ml-auto"
-                    onClick={() => cancel.mutate()}
-                    loading={cancel.isPending}
-                    disabled={state.status === "queued"}
-                  >
+                  <Button className="ml-auto" onClick={() => cancel.mutate()} loading={cancel.isPending}>
                     Cancel run
                   </Button>
                 )}

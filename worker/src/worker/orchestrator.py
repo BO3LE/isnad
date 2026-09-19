@@ -20,6 +20,7 @@ from contracts.graph import CycleError, ancestors, topological_order
 from contracts.ports import Ports
 from contracts.run import (
     MAX_RETRIES,
+    REJECTED_BY_REVIEWER,
     TERMINAL_NODE_STATUSES,
     TERMINAL_RUN_STATUSES,
     ApprovalDecision,
@@ -95,7 +96,7 @@ class Orchestrator:
                     self.store.set_run_status(run_id, RunStatus.AWAITING_APPROVAL)
                     return RunStatus.AWAITING_APPROVAL
                 if decision == ApprovalDecision.REJECT:
-                    return self._halt(snap, order[index + 1 :], node, "Rejected by reviewer.")
+                    return self._halt(snap, order[index + 1 :], node, REJECTED_BY_REVIEWER)
 
             # Run context: outputs of every upstream agent (not only the direct parent), oldest first,
             # so Publisher sees Writer's title as well as Video's file. Configuration wins.

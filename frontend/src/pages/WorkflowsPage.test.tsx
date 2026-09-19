@@ -60,6 +60,17 @@ describe("P-03 Workflows", () => {
     expect(screen.getByText("2 steps")).toBeInTheDocument();
   });
 
+  it("does not call a run a person stopped a failure", async () => {
+    // Both are `failed` on the wire; only the reason tells them apart (§2 rule 7).
+    workflows.mockResolvedValue([
+      summary({ id: "1", name: "Rejected one", last_run: { id: "r1", status: "failed", created_at: "2026-09-16T09:00:00Z", completed_at: "2026-09-16T09:05:00Z", reason: "rejected" } }),
+      summary({ id: "2", name: "Broken one", last_run: { id: "r2", status: "failed", created_at: "2026-09-16T09:00:00Z", completed_at: "2026-09-16T09:05:00Z" } }),
+    ]);
+    renderPage();
+    expect(await screen.findByText("Rejected by you")).toBeInTheDocument();
+    expect(screen.getByText("Failed")).toBeInTheDocument();
+  });
+
   it("filters by name, and offers a way out when nothing matches", async () => {
     workflows.mockResolvedValue([summary({ id: "1", name: "Weekly tech digest" }), summary({ id: "2", name: "Solar explainer" })]);
     renderPage();

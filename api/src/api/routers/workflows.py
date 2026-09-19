@@ -19,6 +19,7 @@ from api.schemas import (
     WorkflowSummary,
     WorkflowUpdate,
 )
+from api.services.run_reason import rejected_runs
 from api.services.validation import validate_graph
 from api.services.workflows import ordered_nodes, save_graph
 from contracts.run import NodeStatus, RunStatus, WorkflowGraph
@@ -52,7 +53,7 @@ def list_workflows(user: User = Depends(get_current_user), session: Session = De
     workflows = session.scalars(
         select(Workflow).where(Workflow.user_id == user.id).order_by(Workflow.updated_at.desc())
     ).all()
-    summaries = []
+    latest = {}
     for wf in workflows:
         last = session.scalar(
             select(ExecutionRun)
@@ -60,6 +61,15 @@ def list_workflows(user: User = Depends(get_current_user), session: Session = De
             .order_by(ExecutionRun.created_at.desc())
             .limit(1)
         )
+        if last is not None:
+            latest[wf.id] = last
+    # One query for every rejection on the page, rather than one per workflow. (The lookup of
+    # each workflow's latest run above is still per-workflow, and predates this.)
+    rejected = rejected_runs(session, [run.id for run in latest.values() if run.status == RunStatus.FAILED.value])
+
+    summaries = []
+    for wf in workflows:
+        last = latest.get(wf.id)
         graph = WorkflowGraph.model_validate(wf.graph_definition or {})
         summaries.append(
             WorkflowSummary(
@@ -69,7 +79,11 @@ def list_workflows(user: User = Depends(get_current_user), session: Session = De
                 agent_types=[n.agent_type for n in ordered_nodes(graph)],
                 updated_at=wf.updated_at,
                 last_run=RunSummary(
-                    id=last.id, status=last.status, created_at=last.created_at, completed_at=last.completed_at
+                    id=last.id,
+                    status=last.status,
+                    created_at=last.created_at,
+                    completed_at=last.completed_at,
+                    reason="rejected" if last.id in rejected else None,
                 )
                 if last
                 else None,
@@ -200,4 +214,14 @@ def list_runs(workflow_id: UUID, user: User = Depends(get_current_user), session
         .order_by(ExecutionRun.created_at.desc())
         .limit(50)
     ).all()
-    return [RunSummary(id=r.id, status=r.status, created_at=r.created_at, completed_at=r.completed_at) for r in runs]
+    rejected = rejected_runs(session, [r.id for r in runs if r.status == RunStatus.FAILED.value])
+    return [
+        RunSummary(
+            id=r.id,
+            status=r.status,
+            created_at=r.created_at,
+            completed_at=r.completed_at,
+            reason="rejected" if r.id in rejected else None,
+        )
+        for r in runs
+    ]

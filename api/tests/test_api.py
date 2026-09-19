@@ -2,7 +2,7 @@ from uuid import uuid4
 
 from conftest import auth_headers, graph
 
-from db.models import ExecutionLog, ExecutionRun
+from db.models import AgentOutput, ExecutionLog, ExecutionRun
 
 
 def test_health_needs_nothing(client):
@@ -128,3 +128,101 @@ def test_cancel_skips_steps_that_have_not_started(client, headers, sessions):
 def test_catalog_is_served_from_the_worker_published_source(client, headers):
     names = [a["name"] for a in client.get("/agents/catalog", headers=headers).json()]
     assert names == ["researcher", "writer"]
+
+
+# ---------------------------------------------------------------- what a run produced (Part 3)
+
+
+def _finished_run(client, headers, sessions, *, rejected: bool = False):
+    """A run whose two steps have finished, with an output recorded against each."""
+    wf = client.post(
+        "/workflows", json={"graph": graph("researcher", "writer", configs=[{"topic": "solar"}, {}])}, headers=headers
+    ).json()
+    run_id = client.post(f"/workflows/{wf['id']}/run", headers=headers).json()["run_id"]
+    with sessions() as s:
+        logs = s.query(ExecutionLog).order_by(ExecutionLog.position_order).all()
+        for log in logs:
+            log.status = "success"
+        s.add(AgentOutput(log_id=logs[0].id, output_type="text", content="notes about solar"))
+        s.add(
+            AgentOutput(
+                log_id=logs[1].id,
+                output_type="file",
+                storage_path="runs/abc/article.md",
+                mime_type="text/markdown",
+                bytes=2048,
+            )
+        )
+        run = s.query(ExecutionRun).one()
+        if rejected:
+            run.status = "failed"
+            logs[1].status = "failed"
+            logs[1].error_message = "[attempt 1] Rejected by reviewer."
+        else:
+            run.status = "succeeded"
+        s.commit()
+    return wf["id"], run_id
+
+
+def test_a_run_lists_what_it_produced_in_step_order(client, headers, sessions):
+    _, run_id = _finished_run(client, headers, sessions)
+    outputs = client.get(f"/runs/{run_id}/outputs", headers=headers).json()
+
+    assert [o["agent_type"] for o in outputs] == ["researcher", "writer"]
+    assert outputs[0]["kind"] == "text"
+    assert outputs[0]["filename"] is None
+    # A stored file is named by the last segment of its path — there is no filename column.
+    assert outputs[1]["filename"] == "article.md"
+    assert outputs[1]["mime_type"] == "text/markdown"
+    assert outputs[1]["bytes"] == 2048
+    # Every id has to lead somewhere: a file to a download, and text to its content.
+    link = client.get(f"/outputs/{outputs[1]['id']}", headers=headers).json()
+    assert link["url"].endswith("runs/abc/article.md")
+    written = client.get(f"/outputs/{outputs[0]['id']}", headers=headers)
+    assert written.status_code == 200
+    assert written.json()["text"] == "notes about solar"
+
+
+def test_another_users_outputs_are_not_listed(client, headers, sessions):
+    _, run_id = _finished_run(client, headers, sessions)
+    # Assert the owner is served first: a bare 404 for the stranger is also what a missing route
+    # returns, so on its own it would pass against an API with no ownership check at all.
+    mine = client.get(f"/runs/{run_id}/outputs", headers=headers)
+    assert mine.status_code == 200 and mine.json() != []
+
+    other = auth_headers(sessions, email="someone-else@gp.local")
+    assert client.get(f"/runs/{run_id}/outputs", headers=other).status_code == 404
+
+
+def test_a_run_with_nothing_to_show_says_so_rather_than_failing(client, headers, sessions):
+    run_id, _ = _parked_run(client, headers, sessions)
+    response = client.get(f"/runs/{run_id}/outputs", headers=headers)
+    assert response.status_code == 200
+    assert response.json() == []
+
+
+def test_a_rejected_run_is_not_reported_as_a_failure(client, headers, sessions):
+    workflow_id, _run_id = _finished_run(client, headers, sessions, rejected=True)
+
+    listed = client.get("/workflows", headers=headers).json()
+    summary = next(w for w in listed if w["id"] == workflow_id)["last_run"]
+    assert summary["status"] == "failed"
+    assert summary["reason"] == "rejected"
+
+    history = client.get(f"/workflows/{workflow_id}/runs", headers=headers).json()
+    assert history[0]["reason"] == "rejected"
+
+
+def test_a_genuine_failure_carries_no_reason(client, headers, sessions):
+    workflow_id, _ = _finished_run(client, headers, sessions)
+    with sessions() as s:
+        run = s.query(ExecutionRun).one()
+        run.status = "failed"
+        log = s.query(ExecutionLog).order_by(ExecutionLog.position_order).all()[1]
+        log.status = "failed"
+        log.error_message = "[attempt 3] YouTube refused the file"
+        s.commit()
+
+    summary = next(w for w in client.get("/workflows", headers=headers).json() if w["id"] == workflow_id)["last_run"]
+    assert summary["status"] == "failed"
+    assert summary["reason"] is None

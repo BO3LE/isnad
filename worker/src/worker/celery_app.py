@@ -51,7 +51,7 @@ def registry() -> Registry:
 def store() -> SqlRunStore:
     global _store
     if _store is None:
-        _store = SqlRunStore(make_session_factory(make_engine(settings.database_url)))
+        _store = SqlRunStore(make_session_factory(make_engine(settings.database_url)), settings.storage_root)
     return _store
 
 

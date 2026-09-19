@@ -488,8 +488,10 @@
         "type": "string"
       },
       "OutputLink": {
+        "description": "How to get at one output: a URL for a file, the words themselves for text.",
         "properties": {
           "expires_in": {
+            "default": 0,
             "title": "Expires In",
             "type": "integer"
           },
@@ -498,15 +500,31 @@
             "title": "Id",
             "type": "string"
           },
+          "text": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Text"
+          },
           "url": {
-            "title": "Url",
-            "type": "string"
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Url"
           }
         },
         "required": [
-          "id",
-          "url",
-          "expires_in"
+          "id"
         ],
         "title": "OutputLink",
         "type": "object"
@@ -543,6 +561,81 @@
           "status"
         ],
         "title": "RunCreated",
+        "type": "object"
+      },
+      "RunOutput": {
+        "description": "One thing a run produced.\n\n`id` is what GET /outputs/{id} resolves: a download URL for a file, the content itself for\ntext. `filename`, `mime_type` and `bytes` are a file's; text and links carry none of them.",
+        "properties": {
+          "agent_type": {
+            "title": "Agent Type",
+            "type": "string"
+          },
+          "bytes": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bytes"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "filename": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Filename"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "text",
+              "file",
+              "url"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "mime_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mime Type"
+          },
+          "node_id": {
+            "format": "uuid",
+            "title": "Node Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "node_id",
+          "agent_type",
+          "kind",
+          "created_at"
+        ],
+        "title": "RunOutput",
         "type": "object"
       },
       "RunState": {
@@ -657,6 +750,18 @@
             "format": "uuid",
             "title": "Id",
             "type": "string"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "const": "rejected",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
           },
           "status": {
             "$ref": "#/components/schemas/RunStatus"
@@ -1380,6 +1485,59 @@
           }
         ],
         "summary": "Decide",
+        "tags": [
+          "runs"
+        ]
+      }
+    },
+    "/runs/{run_id}/outputs": {
+      "get": {
+        "description": "What this run produced, in the order the steps ran.\n\nThe worker already records every output; this exposes them so a person can see, download and\napprove the actual article, image and video rather than being told a file exists somewhere.",
+        "operationId": "run_outputs_runs__run_id__outputs_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Run Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/RunOutput"
+                  },
+                  "title": "Response Run Outputs Runs  Run Id  Outputs Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Run Outputs",
         "tags": [
           "runs"
         ]
