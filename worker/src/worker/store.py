@@ -7,8 +7,10 @@ tested with `worker.testing.InMemoryRunStore` — no database, no network.
 
 from __future__ import annotations
 
+import mimetypes
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
+from pathlib import Path
 from typing import Any, Protocol
 from uuid import UUID
 
@@ -51,8 +53,26 @@ def _now() -> datetime:
 
 
 class SqlRunStore:
-    def __init__(self, session_factory: sessionmaker[Session]):
+    def __init__(self, session_factory: sessionmaker[Session], storage_root: str | None = None):
         self._sessions = session_factory
+        self._storage_root = Path(storage_root) if storage_root else None
+
+    def _describe_file(self, storage_path: str) -> tuple[str | None, int | None]:
+        """What a person needs to recognise a file before opening it: its type and its size.
+
+        Both are columns the schema has always had and nothing filled, so every run reported a file
+        with no size. The type comes from the name, which is enough for the kinds an agent writes;
+        the size needs the file itself, and is left unset if it is not where we expect it.
+        """
+        mime, _ = mimetypes.guess_type(storage_path)
+        size: int | None = None
+        if self._storage_root is not None:
+            candidate = self._storage_root / storage_path
+            try:
+                size = candidate.stat().st_size
+            except OSError:
+                size = None
+        return mime, size
 
     def load(self, run_id: UUID) -> RunSnapshot:
         with self._sessions() as s:
@@ -120,9 +140,16 @@ class SqlRunStore:
             s.add(AgentOutput(log_id=log_id, output_type="text", content_json=output))
             for key, value in output.items():
                 if isinstance(value, str) and key.endswith("_path"):
-                    s.add(AgentOutput(log_id=log_id, output_type="file", storage_path=value))
+                    mime, size = self._describe_file(value)
+                    s.add(
+                        AgentOutput(log_id=log_id, output_type="file", storage_path=value, mime_type=mime, bytes=size)
+                    )
                 elif isinstance(value, list) and key.endswith("_paths"):
-                    s.add_all(AgentOutput(log_id=log_id, output_type="file", storage_path=v) for v in value)
+                    for v in value:
+                        mime, size = self._describe_file(v)
+                        s.add(
+                            AgentOutput(log_id=log_id, output_type="file", storage_path=v, mime_type=mime, bytes=size)
+                        )
                 elif isinstance(value, str) and key == "remote_url":
                     s.add(AgentOutput(log_id=log_id, output_type="url", content=value))
 

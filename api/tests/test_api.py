@@ -175,13 +175,21 @@ def test_a_run_lists_what_it_produced_in_step_order(client, headers, sessions):
     assert outputs[1]["filename"] == "article.md"
     assert outputs[1]["mime_type"] == "text/markdown"
     assert outputs[1]["bytes"] == 2048
-    # The id is what turns into a download URL.
+    # Every id has to lead somewhere: a file to a download, and text to its content.
     link = client.get(f"/outputs/{outputs[1]['id']}", headers=headers).json()
     assert link["url"].endswith("runs/abc/article.md")
+    written = client.get(f"/outputs/{outputs[0]['id']}", headers=headers)
+    assert written.status_code == 200
+    assert written.json()["text"] == "notes about solar"
 
 
 def test_another_users_outputs_are_not_listed(client, headers, sessions):
     _, run_id = _finished_run(client, headers, sessions)
+    # Assert the owner is served first: a bare 404 for the stranger is also what a missing route
+    # returns, so on its own it would pass against an API with no ownership check at all.
+    mine = client.get(f"/runs/{run_id}/outputs", headers=headers)
+    assert mine.status_code == 200 and mine.json() != []
+
     other = auth_headers(sessions, email="someone-else@gp.local")
     assert client.get(f"/runs/{run_id}/outputs", headers=other).status_code == 404
 

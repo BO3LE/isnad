@@ -543,17 +543,25 @@ export interface components {
          * @enum {string}
          */
         NodeStatus: "pending" | "running" | "retrying" | "awaiting_approval" | "success" | "failed" | "skipped";
-        /** OutputLink */
+        /**
+         * OutputLink
+         * @description How to get at one output: a URL for a file, the words themselves for text.
+         */
         OutputLink: {
-            /** Expires In */
+            /**
+             * Expires In
+             * @default 0
+             */
             expires_in: number;
             /**
              * Id
              * Format: uuid
              */
             id: string;
+            /** Text */
+            text?: string | null;
             /** Url */
-            url: string;
+            url?: string | null;
         };
         /** Position */
         Position: {
@@ -579,7 +587,10 @@ export interface components {
         };
         /**
          * RunOutput
-         * @description One thing a run produced. `id` is what GET /outputs/{id} turns into a download URL.
+         * @description One thing a run produced.
+         *
+         *     `id` is what GET /outputs/{id} resolves: a download URL for a file, the content itself for
+         *     text. `filename`, `mime_type` and `bytes` are a file's; text and links carry none of them.
          */
         RunOutput: {
             /** Agent Type */

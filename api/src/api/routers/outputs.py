@@ -14,6 +14,14 @@ from db.models import AgentOutput, ExecutionLog, User, Workflow
 router = APIRouter(prefix="/outputs", tags=["outputs"])
 
 
+def _as_text(payload: dict[str, object] | None) -> str | None:
+    """An agent's own output object, as words. Its string fields are the readable part of it."""
+    if not payload:
+        return None
+    parts = [str(value) for value in payload.values() if isinstance(value, str) and value.strip()]
+    return "\n\n".join(parts) if parts else None
+
+
 @router.get("/{output_id}", response_model=OutputLink)
 def download(
     output_id: UUID,
@@ -37,6 +45,13 @@ def download(
     owned(user, owner)
     if output.output_type == "url" and output.content:
         return OutputLink(id=output.id, url=output.content, expires_in=0)
+    if output.output_type == "text":
+        # Not every output is a file. An article is text, and the approval window has to be able to
+        # show the words rather than offer a download that does not exist.
+        written = output.content if output.content is not None else _as_text(output.content_json)
+        if written is None:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "This output has nothing in it.")
+        return OutputLink(id=output.id, text=written)
     if not output.storage_path:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "This output has no file.")
     if settings.environment == "production":

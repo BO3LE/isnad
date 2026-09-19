@@ -63,7 +63,8 @@ def list_workflows(user: User = Depends(get_current_user), session: Session = De
         )
         if last is not None:
             latest[wf.id] = last
-    # One query for the whole page rather than one per workflow.
+    # One query for every rejection on the page, rather than one per workflow. (The lookup of
+    # each workflow's latest run above is still per-workflow, and predates this.)
     rejected = rejected_runs(session, [run.id for run in latest.values() if run.status == RunStatus.FAILED.value])
 
     summaries = []

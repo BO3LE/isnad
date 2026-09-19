@@ -488,8 +488,10 @@
         "type": "string"
       },
       "OutputLink": {
+        "description": "How to get at one output: a URL for a file, the words themselves for text.",
         "properties": {
           "expires_in": {
+            "default": 0,
             "title": "Expires In",
             "type": "integer"
           },
@@ -498,15 +500,31 @@
             "title": "Id",
             "type": "string"
           },
+          "text": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Text"
+          },
           "url": {
-            "title": "Url",
-            "type": "string"
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Url"
           }
         },
         "required": [
-          "id",
-          "url",
-          "expires_in"
+          "id"
         ],
         "title": "OutputLink",
         "type": "object"
@@ -546,7 +564,7 @@
         "type": "object"
       },
       "RunOutput": {
-        "description": "One thing a run produced. `id` is what GET /outputs/{id} turns into a download URL.",
+        "description": "One thing a run produced.\n\n`id` is what GET /outputs/{id} resolves: a download URL for a file, the content itself for\ntext. `filename`, `mime_type` and `bytes` are a file's; text and links carry none of them.",
         "properties": {
           "agent_type": {
             "title": "Agent Type",
