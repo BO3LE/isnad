@@ -1,5 +1,5 @@
 import { CircleCheck, CircleX, TriangleAlert, X } from "lucide-react";
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { Button } from "@/design-system/components/Button";
 import { IconButton } from "@/design-system/components/IconButton";
 import { pluralise } from "@/lib/format";
@@ -11,7 +11,7 @@ import type { ValidationResult } from "@/lib/api";
 // `api/src/api/services/validation.py`, not here.
 
 /** How long "Ready to run" stays before the panel closes itself (§15.5). */
-export const READY_DISMISS_MS = 2000;
+const READY_DISMISS_MS = 2000;
 
 export interface ValidationPanelProps {
   result: ValidationResult;
@@ -23,20 +23,28 @@ export interface ValidationPanelProps {
 
 export function ValidationPanel({ result, titleOf, onGoToStep, onClose }: ValidationPanelProps) {
   const issues = result.issues ?? [];
-  const ready = issues.length === 0;
+  // Only the server saying so makes this ready: a refusal with nothing listed is still a refusal,
+  // and must never be painted as success.
+  const ready = result.valid && issues.length === 0;
 
-  // Nothing left to fix: say so, then get out of the way.
+  // Nothing left to fix: say so, then get out of the way. The handler is held in a ref because the
+  // canvas re-renders on every pan, zoom and hover — a new function identity in the dependencies
+  // would restart the countdown each time, and the panel would outstay its two seconds.
+  const close = useRef(onClose);
+  close.current = onClose;
   useEffect(() => {
     if (!ready) return;
-    const timer = window.setTimeout(onClose, READY_DISMISS_MS);
+    const timer = window.setTimeout(() => close.current(), READY_DISMISS_MS);
     return () => window.clearTimeout(timer);
-  }, [ready, onClose]);
+  }, [ready]);
 
   const heading = ready
     ? "Ready to run"
-    : result.valid
-      ? pluralise(issues.length, "warning")
-      : `${pluralise(issues.length, "issue")} to fix before running`;
+    : issues.length === 0
+      ? "This workflow can't run yet"
+      : result.valid
+        ? pluralise(issues.length, "warning")
+        : `${pluralise(issues.length, "issue")} to fix before running`;
 
   return (
     <section
@@ -64,7 +72,9 @@ export function ValidationPanel({ result, titleOf, onGoToStep, onClose }: Valida
             const title = issue.node_id ? titleOf(issue.node_id) : null;
             return (
               <li
-                key={`${issue.code}-${issue.node_id ?? issue.edge_id ?? index}`}
+                // One step can raise several issues of the same code — a step with two required
+                // settings unset gives two `missing_config` rows — so the position is part of the key.
+                key={`${issue.code}-${issue.node_id ?? issue.edge_id ?? ""}-${index}`}
                 className="flex items-center gap-2 border-b border-border px-3 py-2 last:border-b-0"
               >
                 {warning ? (

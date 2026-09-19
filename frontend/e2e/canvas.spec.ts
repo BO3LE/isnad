@@ -238,9 +238,11 @@ test("validation reports the server's words, and each one takes you to its step"
   await expect(page.getByRole("complementary", { name: "Video settings" })).toBeVisible();
   await expect(step("video")).toBeInViewport({ ratio: 1 });
 
-  // A different issue moves to a different step.
+  // Each of the three lands on its own step, not merely the first.
   await panel.getByRole("button", { name: "Go to Researcher" }).click();
   await expect(page.getByRole("complementary", { name: "Researcher settings" })).toBeVisible();
+  await panel.getByRole("button", { name: "Go to Writer" }).click();
+  await expect(page.getByRole("complementary", { name: "Writer settings" })).toBeVisible();
 });
 
 test("the issue count opens the report it is counting, and closing it keeps the count", async ({ page }) => {
@@ -257,13 +259,72 @@ test("the issue count opens the report it is counting, and closing it keeps the 
   await expect(panel).toBeVisible();
 });
 
+test("a warning is not a pass: the canvas never claims Valid for something the server didn't check", async ({ page }) => {
+  // The worker hasn't started, so the server passes the graph but says the settings went unchecked.
+  const unchecked = {
+    code: "catalog_unavailable",
+    severity: "warning",
+    message: "Agent settings couldn't be checked because the worker hasn't started yet.",
+  };
+  await openSeededWorkflow(page, [], { valid: true, issues: [unchecked] });
+  await page.getByRole("button", { name: "Validate" }).click();
+
+  const panel = page.getByRole("region", { name: "Validation" });
+  await expect(panel.getByRole("heading")).toHaveText("1 warning");
+  await expect(panel.getByText(unchecked.message, { exact: true })).toBeVisible();
+
+  // It must not dismiss itself like a pass, and the status bar must not read "✓ Valid".
+  await page.waitForTimeout(2500);
+  await expect(panel).toBeVisible();
+  await page.getByRole("button", { name: "Close validation" }).click();
+  await expect(page.getByText("✓ Valid")).toBeHidden();
+
+  // The warning stays reachable.
+  await page.getByRole("button", { name: "1 warning" }).click();
+  await expect(panel).toBeVisible();
+});
+
+test("two unset settings on one step list as two issues", async ({ page }) => {
+  // validation.py emits one missing_config per required field, so a step can raise several rows
+  // that share a code and a step.
+  await openSeededWorkflow(page, [], {
+    valid: false,
+    issues: [
+      { code: "missing_config", severity: "error", node_id: "video", message: "Video is missing narration voice." },
+      { code: "missing_config", severity: "error", node_id: "video", message: "Video is missing resolution." },
+    ],
+  });
+  const errors: string[] = [];
+  page.on("console", (message) => message.type() === "error" && errors.push(message.text()));
+
+  await page.getByRole("button", { name: "Validate" }).click();
+  const panel = page.getByRole("region", { name: "Validation" });
+  await expect(panel.getByRole("heading")).toHaveText("2 issues to fix before running");
+  await expect(panel.getByRole("listitem")).toHaveCount(2);
+  await expect(panel.getByRole("button", { name: "Go to Video" })).toHaveCount(2);
+  expect(errors.filter((text) => text.includes("same key"))).toEqual([]);
+});
+
 test("a workflow with nothing wrong says so, then gets out of the way", async ({ page }) => {
-  await openSeededWorkflow(page, [], { valid: true, issues: [] });
+  const step = await openSeededWorkflow(page, [], { valid: true, issues: [] });
   await page.getByRole("button", { name: "Validate" }).click();
 
   const panel = page.getByRole("region", { name: "Validation" });
   await expect(panel.getByRole("heading")).toHaveText("Ready to run");
-  await expect(panel).toBeHidden({ timeout: 5_000 });
+
+  // Moving on and off a step re-renders the canvas (onNodeMouseEnter/Leave). The countdown must
+  // survive that, or the panel outstays its two seconds for anyone whose hand is on the mouse.
+  // The hovering has to outlast the countdown itself, which is what makes this a real test: a
+  // countdown restarted by each re-render would still be running when the loop ends.
+  const over = (await step("write").boundingBox())!;
+  for (let i = 0; i < 12; i++) {
+    await page.mouse.move(over.x + over.width / 2, over.y + over.height / 2);
+    await page.waitForTimeout(125);
+    await page.mouse.move(over.x + over.width / 2, over.y - 60);
+    await page.waitForTimeout(125);
+  }
+  // Already gone: the countdown ran while the hovering did. A restarted one would still owe 2 s.
+  await expect(panel).toBeHidden({ timeout: 1_000 });
 });
 
 test("pressing Run on a graph the server refuses opens the panel, not a toast", async ({ page }) => {
@@ -278,6 +339,8 @@ test("pressing Run on a graph the server refuses opens the panel, not a toast", 
   const panel = page.getByRole("region", { name: "Validation" });
   await expect(panel.getByRole("heading")).toHaveText("3 issues to fix before running");
   await expect(panel.getByText(ISSUES[1].message, { exact: true })).toBeVisible();
+  // "not a toast" is half the point: an error toast is role="alert", and none should appear.
+  await expect(page.getByRole("alert")).toHaveCount(0);
 });
 
 // ---------------------------------------------------------------- run mode (UX-SPEC §6, §7)
