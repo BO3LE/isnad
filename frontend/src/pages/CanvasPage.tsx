@@ -27,6 +27,7 @@ import { HandoverEdge, type HandoverEdgeData } from "@/components/canvas/Handove
 import { ApprovalDialog } from "@/components/canvas/ApprovalDialog";
 import { RunBar } from "@/components/canvas/RunBar";
 import { StepDrawer } from "@/components/canvas/StepDrawer";
+import { ValidationPanel } from "@/components/canvas/ValidationPanel";
 import { useCanvasRun } from "@/components/canvas/useCanvasRun";
 import { useGraphHistory } from "@/components/canvas/useGraphHistory";
 import { agentTitle } from "@/design-system/agents/agentMeta";
@@ -42,6 +43,7 @@ import { useAuth } from "@/lib/auth";
 import { GRID, graphsEqual, refuseConnection, snapPosition, snapToGrid, stepNumbers, toWorkflowGraph } from "@/lib/graph";
 import { chainTail, describeStep, handover, suggestNext, type StepHandover } from "@/lib/handover";
 import { missingSettings, summarise, type Configuration } from "@/lib/schema";
+import { validationFrom } from "@/lib/validation";
 
 // P-04 · Workflow Canvas (FRONTEND-PAGES-PLAN.md) · DESIGN-SYSTEM.md §15, §21 S-03 · UX-SPEC §4.
 // The canvas teaches: each step says what it is set to do and what it still needs, each connection
@@ -87,6 +89,9 @@ function CanvasPageInner() {
   const [edges, setEdges, onEdgesChange] = useEdgesState([]);
   const [save, setSave] = useState<SaveState>({ kind: "idle" });
   const [validation, setValidation] = useState<ValidationResult | null>(null);
+  // §15.5 — the panel is dismissible, so a stale result stays available to the status bar's count
+  // without the panel reappearing on its own.
+  const [panelOpen, setPanelOpen] = useState(false);
   const [zoom, setZoom] = useState(1);
   const [name, setName] = useState("");
   const [editingName, setEditingName] = useState(false);
@@ -381,6 +386,27 @@ function CanvasPageInner() {
 
   const closeDrawer = useCallback(() => setSelectedId(null), []);
 
+  // §15.5 "Go to node" — select the step, centre it, and open its settings, so the issue the user
+  // just read is in front of them with the form that fixes it.
+  const goToStep = useCallback(
+    (nodeId: string) => {
+      const node = nodes.find((n) => n.id === nodeId);
+      if (!node) return;
+      setSelectedId(nodeId);
+      // Let the drawer open and React Flow re-measure the pane before aiming, as the reveal effect
+      // below does — otherwise the step is centred behind the drawer.
+      window.setTimeout(() => {
+        const { zoom: current } = getViewport();
+        const covered = window.matchMedia("(max-width: 1023px)").matches ? DRAWER_WIDTH / 2 / current : 0;
+        setCenter(node.position.x + NODE_WIDTH / 2 + covered, node.position.y + 48, {
+          zoom: current,
+          duration: 200,
+        });
+      }, 80);
+    },
+    [nodes, setCenter, getViewport],
+  );
+
   /** Steps after this one that will also wait for a person. */
   const laterGates = (stepId: string) => {
     const order = canvasRun.run?.nodes?.map((n) => n.node_id) ?? [];
@@ -413,8 +439,9 @@ function CanvasPageInner() {
   const validate = useMutation({
     mutationFn: () => endpoints.validate(workflowId),
     onSuccess: (result) => {
+      // §15.5 owns the report, including "Ready to run" — a toast as well would say it twice.
       setValidation(result);
-      if (result.valid) toast({ variant: "success", message: "Ready to run." });
+      setPanelOpen(true);
     },
     onError: () => toast({ variant: "error", message: "Couldn't validate the workflow." }),
   });
@@ -431,13 +458,23 @@ function CanvasPageInner() {
     },
     onSuccess: (created) => {
       setSelectedId(null);
+      setPanelOpen(false);
       canvasRun.start(created.run_id);
     },
-    onError: (error) =>
+    onError: (error) => {
+      // §15.5 — pressing Run on a workflow the server refuses opens the panel with its reasons,
+      // rather than failing into a toast that cannot say which step is wrong.
+      const refused = validationFrom(error);
+      if (refused) {
+        setValidation(refused);
+        setPanelOpen(true);
+        return;
+      }
       toast({
         variant: "error",
         message: error instanceof ApiError ? error.message : "Couldn't start the run.",
-      }),
+      });
+    },
   });
 
   const cancelRun = useMutation({
@@ -680,6 +717,16 @@ function CanvasPageInner() {
             )}
           </div>
 
+          {/* §15.5 — docked above the status bar, and never over a run. */}
+          {validation && panelOpen && !runMode && (
+            <ValidationPanel
+              result={validation}
+              titleOf={(nodeId) => (nodes.some((n) => n.id === nodeId) ? agentTitle(typeOf(nodeId), agents) : null)}
+              onGoToStep={goToStep}
+              onClose={() => setPanelOpen(false)}
+            />
+          )}
+
           {runMode ? (
             <RunBar
               run={canvasRun.run}
@@ -697,7 +744,9 @@ function CanvasPageInner() {
             validation={{
               state: validation ? (validation.valid ? "valid" : "issues") : "unknown",
               count: validation?.issues?.length ?? 0,
-              onOpen: () => validate.mutate(),
+              // §15.6 — the count opens the report it is counting. It is only a button when there
+              // are issues, so there is always a result to show.
+              onOpen: () => setPanelOpen(true),
             }}
             lastRun={
               canvasRun.lastRun

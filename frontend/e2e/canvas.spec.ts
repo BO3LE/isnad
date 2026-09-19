@@ -42,7 +42,12 @@ const workflow = {
   },
 };
 
-async function openSeededWorkflow(page: Page, puts: SavedGraph[]) {
+interface Validation {
+  valid: boolean;
+  issues: { code: string; message: string; severity?: string; node_id?: string; edge_id?: string }[];
+}
+
+async function openSeededWorkflow(page: Page, puts: SavedGraph[], validation: Validation = { valid: true, issues: [] }) {
   await page.route("http://api.mock/auth/dev-login", (route) => route.fulfill({ json: { access_token: "t", token_type: "bearer" } }));
   await page.route("http://api.mock/workflows", (route) => route.fulfill({ json: [] }));
   await page.route("http://api.mock/agents/catalog", (route) => route.fulfill({ json: catalog }));
@@ -51,9 +56,7 @@ async function openSeededWorkflow(page: Page, puts: SavedGraph[]) {
     return route.fulfill({ json: workflow });
   });
   await page.route(`http://api.mock/workflows/${WORKFLOW_ID}/runs`, (route) => route.fulfill({ json: [] }));
-  await page.route(`http://api.mock/workflows/${WORKFLOW_ID}/validate`, (route) =>
-    route.fulfill({ json: { valid: true, issues: [] } }),
-  );
+  await page.route(`http://api.mock/workflows/${WORKFLOW_ID}/validate`, (route) => route.fulfill({ json: validation }));
 
   await page.goto("/login");
   await page.getByLabel("Email").fill("demo@gp.local");
@@ -89,7 +92,8 @@ test("opening, touching a step and validating never saves", async ({ page }) => 
   await expect(page.getByRole("complementary", { name: "Publisher settings" })).toBeVisible();
 
   await page.getByRole("button", { name: "Validate" }).click();
-  await expect(page.getByText("Ready to run.")).toBeVisible();
+  // §15.5 — the panel reports the result; it used to be a toast as well, which said it twice.
+  await expect(page.getByRole("region", { name: "Validation" }).getByRole("heading")).toHaveText("Ready to run");
 
   // Longer than the 800 ms autosave debounce.
   await page.waitForTimeout(1500);
@@ -199,6 +203,81 @@ test("a loose step says what it needs, and drawing a connection shows what it wo
 
   await expect(image).toContainText("Step 3");
   await expect(image).not.toContainText("Missing");
+});
+
+// ---------------------------------------------------------------- validation panel (§15.5)
+
+// Three problems of three different kinds, worded exactly as api/services/validation.py words them.
+const ISSUES = [
+  {
+    code: "cycle_detected",
+    severity: "error",
+    node_id: "write",
+    message: "These steps form a loop: Writer → Video. Remove one connection.",
+  },
+  { code: "orphan_node", severity: "error", node_id: "research", message: "Researcher isn't connected to anything." },
+  { code: "missing_config", severity: "error", node_id: "video", message: "Video is missing narration voice." },
+];
+
+test("validation reports the server's words, and each one takes you to its step", async ({ page }) => {
+  const step = await openSeededWorkflow(page, [], { valid: false, issues: ISSUES });
+  await page.getByRole("button", { name: "Validate" }).click();
+
+  const panel = page.getByRole("region", { name: "Validation" });
+  await expect(panel.getByRole("heading")).toHaveText("3 issues to fix before running");
+
+  // Verbatim: an exact, whole-string match, so a prefix, a trim or a reworded ending fails here.
+  for (const issue of ISSUES) await expect(panel.getByText(issue.message, { exact: true })).toBeVisible();
+
+  // Each issue carries its own step's action, named from the catalog.
+  await expect(panel.getByRole("button", { name: "Go to Writer" })).toBeVisible();
+  await expect(panel.getByRole("button", { name: "Go to Researcher" })).toBeVisible();
+
+  // Go to step selects it, brings it into view, and opens its settings.
+  await panel.getByRole("button", { name: "Go to Video" }).click();
+  await expect(page.getByRole("complementary", { name: "Video settings" })).toBeVisible();
+  await expect(step("video")).toBeInViewport({ ratio: 1 });
+
+  // A different issue moves to a different step.
+  await panel.getByRole("button", { name: "Go to Researcher" }).click();
+  await expect(page.getByRole("complementary", { name: "Researcher settings" })).toBeVisible();
+});
+
+test("the issue count opens the report it is counting, and closing it keeps the count", async ({ page }) => {
+  await openSeededWorkflow(page, [], { valid: false, issues: ISSUES });
+  await page.getByRole("button", { name: "Validate" }).click();
+
+  const panel = page.getByRole("region", { name: "Validation" });
+  await expect(panel).toBeVisible();
+  await panel.getByRole("button", { name: "Close validation" }).click();
+  await expect(panel).toBeHidden();
+
+  // §15.6 — the status bar keeps the count, and it is the way back in.
+  await page.getByRole("button", { name: "3 issues" }).click();
+  await expect(panel).toBeVisible();
+});
+
+test("a workflow with nothing wrong says so, then gets out of the way", async ({ page }) => {
+  await openSeededWorkflow(page, [], { valid: true, issues: [] });
+  await page.getByRole("button", { name: "Validate" }).click();
+
+  const panel = page.getByRole("region", { name: "Validation" });
+  await expect(panel.getByRole("heading")).toHaveText("Ready to run");
+  await expect(panel).toBeHidden({ timeout: 5_000 });
+});
+
+test("pressing Run on a graph the server refuses opens the panel, not a toast", async ({ page }) => {
+  await openSeededWorkflow(page, []);
+  // The run endpoint answers 422 with the same shape /validate returns.
+  await page.route(`http://api.mock/workflows/${WORKFLOW_ID}/run`, (route) =>
+    route.fulfill({ status: 422, json: { detail: { valid: false, issues: ISSUES } } }),
+  );
+
+  await page.getByRole("button", { name: "Run", exact: true }).click();
+
+  const panel = page.getByRole("region", { name: "Validation" });
+  await expect(panel.getByRole("heading")).toHaveText("3 issues to fix before running");
+  await expect(panel.getByText(ISSUES[1].message, { exact: true })).toBeVisible();
 });
 
 // ---------------------------------------------------------------- run mode (UX-SPEC §6, §7)
