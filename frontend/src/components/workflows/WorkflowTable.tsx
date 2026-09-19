@@ -1,6 +1,7 @@
 import { Ellipsis } from "lucide-react";
 import { Link } from "react-router-dom";
 import { AgentIcon } from "@/design-system/agents/AgentIcon";
+import { Skeleton } from "@/design-system/components/Skeleton";
 import { IconButton } from "@/design-system/components/IconButton";
 import { Menu, type MenuItem } from "@/design-system/components/Menu";
 import { StatusChip } from "@/design-system/status/StatusChip";
@@ -55,9 +56,13 @@ export function WorkflowTable({
                 </td>
                 <td className="px-3 py-2.5">
                   <span className="flex items-center gap-1">
-                    {steps.slice(0, 6).map((type, index) => (
-                      <AgentIcon key={`${type}-${index}`} {...manifestFor(type, agents)} size="sm" />
-                    ))}
+                    {/* The placeholder glyph means "no agent is installed for this", so it must
+                        not stand in for agents whose catalog simply hasn't arrived yet. */}
+                    {agents
+                      ? steps.slice(0, 6).map((type, index) => (
+                          <AgentIcon key={`${type}-${index}`} {...manifestFor(type, agents)} size="sm" />
+                        ))
+                      : steps.slice(0, 6).map((_type, index) => <Skeleton key={index} className="h-6 w-6 rounded-xs" />)}
                     {steps.length > 6 && <span className="text-caption text-text-muted">+{steps.length - 6}</span>}
                     {steps.length === 0 && <span className="text-body-sm text-text-subtle">—</span>}
                   </span>

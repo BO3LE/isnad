@@ -1,6 +1,7 @@
 import { Ellipsis } from "lucide-react";
 import { Link } from "react-router-dom";
 import { AgentIcon } from "@/design-system/agents/AgentIcon";
+import { Skeleton } from "@/design-system/components/Skeleton";
 import { IconButton } from "@/design-system/components/IconButton";
 import { Menu, type MenuItem } from "@/design-system/components/Menu";
 import { StatusChip } from "@/design-system/status/StatusChip";
@@ -49,9 +50,11 @@ export function WorkflowCard({
 
       {steps > 0 ? (
         <div className="flex items-center gap-1.5">
-          {shown.map((type, index) => (
-            <AgentIcon key={`${type}-${index}`} {...manifestFor(type, agents)} size="sm" />
-          ))}
+          {agents
+              ? shown.map((type, index) => (
+                  <AgentIcon key={`${type}-${index}`} {...manifestFor(type, agents)} size="sm" />
+                ))
+              : shown.map((_type, index) => <Skeleton key={index} className="h-6 w-6 rounded-xs" />)}
           {overflow > 0 && <span className="text-caption text-text-muted">+{overflow}</span>}
         </div>
       ) : (
