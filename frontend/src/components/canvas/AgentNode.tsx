@@ -3,8 +3,9 @@ import { memo } from "react";
 import { Handle, Position, type NodeProps } from "reactflow";
 import { AgentIcon } from "@/design-system/agents/AgentIcon";
 import { StatusChip } from "@/design-system/status/StatusChip";
-import { nodeStatusMeta } from "@/design-system/status/statusMeta";
+import { nodeStatusMeta, rejectedMeta } from "@/design-system/status/statusMeta";
 import type { NodeStatus } from "@/lib/api";
+import { stepError } from "@/lib/runPlayback";
 import type { Configuration } from "@/lib/schema";
 
 // DESIGN-SYSTEM.md §15.2 — "the most important component in the product" — and UX-SPEC §4.2:
@@ -35,20 +36,44 @@ export interface AgentNodeData extends StepData {
   connectHint?: ConnectHint;
   /** Live status during a run; absent in edit mode, where no chip is shown. */
   status?: NodeStatus;
+  /** Why the step stopped, during a run. */
+  runMessage?: string;
+  retryCount?: number;
   readOnly?: boolean;
 }
 
 const HANDLE = "!h-2.5 !w-2.5 !border-[1.5px] !border-border-strong !bg-surface";
+const HIDDEN_HANDLE = "!h-px !w-px !min-w-0 !border-0 !bg-transparent !opacity-0";
+
+// §16 on the node: the frame says where the run is without reading the chip.
+const RUN_FRAME: Record<NodeStatus, string> = {
+  pending: "border border-border-strong shadow-1",
+  running: "border-[1.5px] border-status-running-solid shadow-2",
+  retrying: "border-[1.5px] border-status-retrying-solid shadow-2",
+  awaiting_approval: "border-[1.5px] border-status-approval-solid shadow-2",
+  success: "border border-border-strong shadow-[inset_3px_0_0_var(--status-success-solid),var(--shadow-1)]",
+  failed: "border-[1.5px] border-status-failed-solid shadow-1",
+  skipped: "border border-dashed border-border-strong opacity-60",
+};
 
 export const AgentNode = memo(function AgentNode({ data, selected }: NodeProps<AgentNodeData>) {
-  const invalid = (data.issueCount ?? 0) > 0;
+  const running = data.status !== undefined;
+  const invalid = !running && (data.issueCount ?? 0) > 0;
   const statusMeta = data.status ? nodeStatusMeta[data.status] : null;
   const hint = data.connectHint;
+  const error = data.status === "failed" ? stepError(data.runMessage) : null;
+  const rejected = error?.rejected === true;
+  const chipLabel =
+    data.status === "retrying" ? `Retrying · attempt ${(data.retryCount ?? 0) + 1}` : undefined;
 
   return (
     <div
-      className={`group relative w-[248px] rounded-md bg-surface text-left transition-shadow duration-100 ease-standard ${
-        invalid
+      className={`group relative w-[248px] rounded-md bg-surface text-left transition-[box-shadow,border-color] duration-200 ease-standard ${
+        running
+          ? rejected
+            ? "border-[1.5px] border-status-cancelled-solid shadow-1"
+            : RUN_FRAME[data.status!]
+          : invalid
           ? "border-[1.5px] border-dashed border-status-failed-solid shadow-1"
           : selected
             ? "border-[1.5px] border-text shadow-2"
@@ -58,7 +83,8 @@ export const AgentNode = memo(function AgentNode({ data, selected }: NodeProps<A
       } ${hint?.kind === "nothing" ? "opacity-60" : ""}`}
     >
       {/* §15.2: handles are 10 px but need a 24 px hit area, so the visible circle sits in a larger target. */}
-      {!data.readOnly && <Handle type="target" position={Position.Left} className={HANDLE} />}
+      {/* Read-only still renders the handles — React Flow draws connections from them — just not usable. */}
+      <Handle type="target" position={Position.Left} isConnectable={!data.readOnly} className={data.readOnly ? HIDDEN_HANDLE : HANDLE} />
 
       <div className="flex items-start gap-2.5 p-3">
         <AgentIcon agentType={data.agentType} icon={data.icon} family={data.family} />
@@ -74,7 +100,17 @@ export const AgentNode = memo(function AgentNode({ data, selected }: NodeProps<A
         </div>
       </div>
 
-      {hint ? (
+      {running ? (
+        error ? (
+          <p className={`border-t border-border px-3 py-2 text-body-sm ${rejected ? "text-text-muted" : "text-status-failed-fg"}`}>
+            {rejected ? "You rejected this step. Nothing was sent." : error.text}
+          </p>
+        ) : data.status === "awaiting_approval" ? (
+          <p className="border-t border-border px-3 py-2 text-body-sm text-status-approval-fg">Waiting for you. Nothing has been sent yet.</p>
+        ) : data.summary.length > 0 ? (
+          <p className="line-clamp-2 border-t border-border px-3 py-2 text-body-sm text-text-muted">{data.summary.join(" · ")}</p>
+        ) : null
+      ) : hint ? (
         <p
           className={`flex items-center gap-1.5 border-t border-border px-3 py-2 text-body-sm ${
             hint.kind === "takes" ? "text-status-success-fg" : "text-text-muted"
@@ -102,7 +138,7 @@ export const AgentNode = memo(function AgentNode({ data, selected }: NodeProps<A
 
       {(statusMeta || data.requiresApproval || invalid) && (
         <div className="flex items-center gap-2 border-t border-border px-3 py-2">
-          {statusMeta && <StatusChip meta={statusMeta} />}
+          {statusMeta && <StatusChip meta={rejected ? rejectedMeta : statusMeta} label={chipLabel} />}
           {invalid && (
             <span className="text-body-sm text-status-failed-fg">
               {data.issueCount} {data.issueCount === 1 ? "issue" : "issues"}
@@ -118,7 +154,7 @@ export const AgentNode = memo(function AgentNode({ data, selected }: NodeProps<A
         </div>
       )}
 
-      {!data.readOnly && <Handle type="source" position={Position.Right} className={HANDLE} />}
+      <Handle type="source" position={Position.Right} isConnectable={!data.readOnly} className={data.readOnly ? HIDDEN_HANDLE : HANDLE} />
     </div>
   );
 });
