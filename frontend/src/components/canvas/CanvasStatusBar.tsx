@@ -8,7 +8,7 @@ import type { RunStatus } from "@/lib/api";
 // DESIGN-SYSTEM.md §15.6 — 32 px, body-sm muted, separated by " · ".
 export interface CanvasStatusBarProps {
   steps: number;
-  validation: { state: "unknown" | "valid" | "issues"; count: number; onOpen: () => void };
+  validation: { state: "unknown" | "valid" | "issues" | "warnings"; count: number; onOpen: () => void };
   lastRun?: { id: string; status: RunStatus; createdAt: string } | null;
   zoom: number;
   mockAgents: boolean;
@@ -30,6 +30,13 @@ export function CanvasStatusBar({ steps, validation, lastRun, zoom, mockAgents }
       {validation.state === "issues" && (
         <button type="button" onClick={validation.onOpen} className="text-status-failed-fg hover:underline">
           {pluralise(validation.count, "issue")}
+        </button>
+      )}
+      {/* The server can pass a graph and still say something went unchecked. Claiming "✓ Valid"
+          there would be a claim it never made, and would leave no way back into the panel. */}
+      {validation.state === "warnings" && (
+        <button type="button" onClick={validation.onOpen} className="text-status-retrying-fg hover:underline">
+          {pluralise(validation.count, "warning")}
         </button>
       )}
       {validation.state === "unknown" && <span>Not validated</span>}

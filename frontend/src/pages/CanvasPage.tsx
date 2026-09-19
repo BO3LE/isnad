@@ -388,6 +388,8 @@ function CanvasPageInner() {
 
   // §15.5 "Go to node" — select the step, centre it, and open its settings, so the issue the user
   // just read is in front of them with the form that fixes it.
+  const aimTimer = useRef<number>();
+  useEffect(() => () => window.clearTimeout(aimTimer.current), []);
   const goToStep = useCallback(
     (nodeId: string) => {
       const node = nodes.find((n) => n.id === nodeId);
@@ -395,7 +397,8 @@ function CanvasPageInner() {
       setSelectedId(nodeId);
       // Let the drawer open and React Flow re-measure the pane before aiming, as the reveal effect
       // below does — otherwise the step is centred behind the drawer.
-      window.setTimeout(() => {
+      window.clearTimeout(aimTimer.current);
+      aimTimer.current = window.setTimeout(() => {
         const { zoom: current } = getViewport();
         const covered = window.matchMedia("(max-width: 1023px)").matches ? DRAWER_WIDTH / 2 / current : 0;
         setCenter(node.position.x + NODE_WIDTH / 2 + covered, node.position.y + 48, {
@@ -742,7 +745,13 @@ function CanvasPageInner() {
           <CanvasStatusBar
             steps={nodes.length}
             validation={{
-              state: validation ? (validation.valid ? "valid" : "issues") : "unknown",
+              state: !validation
+                ? "unknown"
+                : !validation.valid
+                  ? "issues"
+                  : validation.issues.length > 0
+                    ? "warnings"
+                    : "valid",
               count: validation?.issues?.length ?? 0,
               // §15.6 — the count opens the report it is counting. It is only a button when there
               // are issues, so there is always a result to show.
