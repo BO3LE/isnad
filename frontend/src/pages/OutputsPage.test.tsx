@@ -74,6 +74,9 @@ describe("OutputsPage", () => {
     const download = await screen.findByRole("link", { name: /Download/ });
     expect(download).toHaveAttribute("href", "https://files.test/video.mp4");
     expect(download).toHaveAttribute("download", "video.mp4");
+    // Files come from another origin, so `download` is ignored — without this the click would
+    // navigate the app away and play the video where the app used to be.
+    expect(download).toHaveAttribute("target", "_blank");
   });
 
   it("separates what was published from what was made", async () => {
@@ -96,6 +99,10 @@ describe("OutputsPage", () => {
     expect(within(files).getByText("a.pdf")).toBeInTheDocument();
     expect(within(files).getByText("PDF")).toBeInTheDocument();
     expect(within(files).getByText(/180 KB/)).toBeInTheDocument();
+    // Grouping has to exclude as well as include: a link listed in both sections would otherwise pass.
+    expect(within(files).queryByText("https://youtu.be/abc123")).not.toBeInTheDocument();
+    expect(within(publishedSection).queryByText("a.pdf")).not.toBeInTheDocument();
+    expect(within(files).getByRole("heading", { name: "1 file", level: 2 })).toBeInTheDocument();
   });
 
   it("shows the words a run produced, with a way to take them", async () => {
@@ -108,19 +115,49 @@ describe("OutputsPage", () => {
     expect(within(text).getByRole("button", { name: /Copy text/ })).toBeInTheDocument();
   });
 
-  it("says why there is nothing, differently for a run still going and one that failed", async () => {
+  it("tells a run still going that files are coming", async () => {
     show([], {}, run({ status: "running", completed_at: null }));
     expect(await screen.findByText(/each one shows up as soon as its step finishes/)).toBeInTheDocument();
   });
 
-  it("offers Run again only once the run is over", async () => {
-    show([], {}, run({ status: "running", completed_at: null }));
-    expect(await screen.findByText("Nothing here yet")).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Run again" })).not.toBeInTheDocument();
+  it("tells a failed run that nothing was made", async () => {
+    show([], {}, run({ status: "failed" }));
+    expect(await screen.findByText(/The run stopped before anything was produced/)).toBeInTheDocument();
   });
 
-  it("offers Run again when it is", async () => {
+  it("does not tell someone who stopped a run that it failed", async () => {
+    // The worker records a rejection as `failed`; §2 rule 7 says it never reads as one.
+    show([], {}, run({
+      status: "failed",
+      nodes: [{ node_id: "n", agent_type: "publisher", status: "failed", retry_count: 0, started_at: null, completed_at: null, duration_ms: null, error_message: "[attempt 1] Rejected by reviewer." }],
+    }));
+    expect(await screen.findByText("Rejected by you")).toBeInTheDocument();
+    expect(screen.getByText(/You stopped this run/)).toBeInTheDocument();
+    expect(screen.queryByText("Failed")).not.toBeInTheDocument();
+  });
+
+  it("says a cancelled run simply made nothing", async () => {
+    show([], {}, run({ status: "cancelled" }));
+    expect(await screen.findByText(/didn't produce any files/)).toBeInTheDocument();
+  });
+
+  it("leaves a download that has no URL out of the tab order", async () => {
+    // pointer-events-none stops a mouse but not a keyboard; an anchor with no href is not focusable.
+    show([output({ id: "f", filename: "a.pdf", mime_type: "application/pdf" })], {});
+    const download = await screen.findByText(/Download/);
+    const anchor = download.closest("a")!;
+    expect(anchor).not.toHaveAttribute("href");
+    expect(anchor).toHaveAttribute("aria-disabled", "true");
+  });
+
+  it("offers to run it again only once the run is over", async () => {
+    show([], {}, run({ status: "running", completed_at: null }));
+    expect(await screen.findByText("Nothing here yet")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Run this workflow again" })).not.toBeInTheDocument();
+  });
+
+  it("offers to run it again when it is", async () => {
     show([]);
-    expect(await screen.findByRole("button", { name: "Run again" })).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: "Run this workflow again" })).toBeInTheDocument();
   });
 });
