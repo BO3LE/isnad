@@ -14,12 +14,41 @@ from db.models import AgentOutput, ExecutionLog, User, Workflow
 router = APIRouter(prefix="/outputs", tags=["outputs"])
 
 
+def _render(value: object) -> str | None:
+    """One value from an agent's output object, as a person would read it."""
+    if isinstance(value, str):
+        return value.strip() or None
+    if isinstance(value, bool):
+        return "yes" if value else "no"
+    if isinstance(value, int | float):
+        return str(value)
+    if isinstance(value, list):
+        rendered = [item for item in (_render(v) for v in value) if item]
+        return "\n".join(f"- {item}" for item in rendered) or None
+    if isinstance(value, dict):
+        rendered = [f"{k}: {item}" for k, v in value.items() if (item := _render(v))]
+        return " · ".join(rendered) or None
+    return None
+
+
 def _as_text(payload: dict[str, object] | None) -> str | None:
-    """An agent's own output object, as words. Its string fields are the readable part of it."""
+    """An agent's own output object, as words.
+
+    Written generically on purpose: an agent publishes whatever shape it likes, and the approval
+    window has to be able to show it without the platform knowing which agent it came from (AT-12).
+    Every field is labelled by its own name, so a seventh agent's output reads as well as Writer's.
+    """
     if not payload:
         return None
-    parts = [str(value) for value in payload.values() if isinstance(value, str) and value.strip()]
-    return "\n\n".join(parts) if parts else None
+    blocks: list[str] = []
+    for key, value in payload.items():
+        rendered = _render(value)
+        if rendered is None:
+            continue
+        label = key.replace("_", " ")
+        block = "\n" in rendered or rendered.startswith("- ")
+        blocks.append(f"{label}:\n{rendered}" if block else f"{label}: {rendered}")
+    return "\n\n".join(blocks) or None
 
 
 @router.get("/{output_id}", response_model=OutputLink)

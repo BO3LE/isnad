@@ -183,6 +183,37 @@ def test_a_run_lists_what_it_produced_in_step_order(client, headers, sessions):
     assert written.json()["text"] == "notes about solar"
 
 
+def test_an_agents_own_output_shape_is_readable_whatever_it_is(client, headers, sessions):
+    """AT-12 reaches the preview too: the platform cannot know which fields an agent publishes."""
+    _, run_id = _finished_run(client, headers, sessions)
+    with sessions() as s:
+        log = s.query(ExecutionLog).order_by(ExecutionLog.position_order).all()[0]
+        s.add(
+            AgentOutput(
+                log_id=log.id,
+                output_type="text",
+                content_json={
+                    "notes": ["Finding one", "Finding two"],
+                    "sources": [{"title": "IRENA", "url": "https://example.org/1"}],
+                    "confidence": 0.9,
+                    "checked": True,
+                    "nothing": None,
+                },
+            )
+        )
+        s.commit()
+
+    outputs = client.get(f"/runs/{run_id}/outputs", headers=headers).json()
+    written = [client.get(f"/outputs/{o['id']}", headers=headers).json() for o in outputs if o["kind"] == "text"]
+    shaped = next(w for w in written if "Finding one" in (w.get("text") or ""))["text"]
+
+    assert "notes:" in shaped and "- Finding one" in shaped and "- Finding two" in shaped
+    assert "title: IRENA" in shaped and "https://example.org/1" in shaped
+    assert "confidence: 0.9" in shaped and "checked: yes" in shaped
+    # A field with nothing in it is not shown as an empty line.
+    assert "nothing" not in shaped
+
+
 def test_another_users_outputs_are_not_listed(client, headers, sessions):
     _, run_id = _finished_run(client, headers, sessions)
     # Assert the owner is served first: a bare 404 for the stranger is also what a missing route

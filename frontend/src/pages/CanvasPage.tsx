@@ -771,6 +771,8 @@ function CanvasPageInner() {
         {waitingStep && (
           <ApprovalDialog
             open={reviewing}
+            runId={canvasRun.runId}
+            agents={agents}
             onClose={() => setReviewing(false)}
             stepTitle={agentTitle(waitingStep.data.agentType, agents)}
             manifest={agents.find((a) => a.name === waitingStep.data.agentType)}

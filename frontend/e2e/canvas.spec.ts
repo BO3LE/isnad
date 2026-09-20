@@ -375,6 +375,21 @@ async function withRun(page: Page) {
     decisions.push(route.request().postDataJSON());
     return route.fulfill({ status: 202, json: { run_id: RUN_ID, status: "queued" } });
   });
+  // What the run produced, as Part 3's endpoint serves it.
+  await page.route(`http://api.mock/runs/${RUN_ID}/outputs`, (route) =>
+    route.fulfill({
+      json: [
+        { id: "out-article", node_id: "write", agent_type: "writer", kind: "text", filename: null, mime_type: null, bytes: null, created_at: "2026-09-20T10:00:00Z" },
+        { id: "out-video", node_id: "video", agent_type: "video", kind: "file", filename: "video.mp4", mime_type: "video/mp4", bytes: 4036, created_at: "2026-09-20T10:00:01Z" },
+      ],
+    }),
+  );
+  await page.route("http://api.mock/outputs/out-article", (route) =>
+    route.fulfill({ json: { id: "out-article", text: "title: The Future of Solar Energy" } }),
+  );
+  await page.route("http://api.mock/outputs/out-video", (route) =>
+    route.fulfill({ json: { id: "out-video", url: "http://api.mock/files/video.mp4", expires_in: 3600 } }),
+  );
   await page.route(`http://api.mock/runs/${RUN_ID}/cancel`, (route) => {
     server.state = runState("cancelled", ["success", "skipped", "skipped", "skipped"]);
     return route.fulfill({ status: 202, json: server.state });
@@ -414,6 +429,30 @@ test("a run plays on the canvas one handover at a time, then waits for approval"
   await expect(bar).toContainText("4 of 4 steps");
   await bar.getByRole("button", { name: "Back to editing" }).click();
   await expect(page.getByRole("complementary", { name: "Agents" })).toContainText("Click to add after Publisher");
+});
+
+test("the approval window shows the thing itself, not a promise of it", async ({ page }) => {
+  await withRun(page);
+  await page.getByRole("button", { name: "Run", exact: true }).click();
+  await page.getByRole("region", { name: "Run progress" }).getByRole("button", { name: "Review" }).click({ timeout: 15_000 });
+
+  const dialog = page.getByRole("dialog", { name: "Review before it goes out" });
+  const preview = dialog.getByRole("region", { name: "Preview" });
+
+  // One tab per thing the run made, named from the catalog — never "Preview isn't available yet".
+  await expect(dialog).not.toContainText("Preview isn't available yet");
+  await expect(preview.getByRole("tab")).toHaveCount(2);
+  await expect(preview.getByRole("tab", { name: "Writer · text" })).toBeVisible();
+  await expect(preview.getByRole("tab", { name: "Video · video.mp4" })).toBeVisible();
+
+  // The article is shown as words, and marked as made by an agent.
+  await expect(preview).toContainText("The Future of Solar Energy");
+  await expect(preview).toContainText("Generated");
+
+  // The video is playable in place, with its size in the product's own units (§23.1).
+  await preview.getByRole("tab", { name: "Video · video.mp4" }).click();
+  await expect(preview.locator("video")).toHaveAttribute("src", "http://api.mock/files/video.mp4");
+  await expect(preview).toContainText("4.0 KB");
 });
 
 test("rejecting needs a reason and never reads as a failure", async ({ page }) => {
