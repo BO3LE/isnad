@@ -16,7 +16,7 @@ from api.catalog import StaticCatalog
 from api.deps import get_catalog, get_enqueuer, get_session
 from api.main import create_app
 from api.settings import ApiSettings, get_settings
-from contracts.manifest import AgentManifest
+from contracts.manifest import AgentManifest, AgentOutput
 from db.models import Base, User
 
 SETTINGS = ApiSettings(
@@ -41,6 +41,12 @@ CATALOG = [
         input_type="WriteInput",
         output_type="WriteOutput",
         config_schema={"properties": {}},
+        # As the real writer publishes them: the agent's own word for each field it hands on.
+        outputs=[
+            AgentOutput(name="title", title="title"),
+            AgentOutput(name="summary", title="summary"),
+            AgentOutput(name="article_md", title="article"),
+        ],
     ),
 ]
 

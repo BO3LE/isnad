@@ -8,6 +8,7 @@ import { Textarea } from "@/design-system/components/Input";
 import type { AgentManifest } from "@/lib/api";
 import { fallbackFor, type StepHandover } from "@/lib/handover";
 import { isEmpty, optionLabel, resolveFields, type Configuration, type FormField } from "@/lib/schema";
+import { OutputPreview } from "@/components/runs/OutputPreview";
 
 // S-06 on the canvas (UX-SPEC §7): "What exactly is about to go out under my name?"
 //
@@ -18,6 +19,9 @@ import { isEmpty, optionLabel, resolveFields, type Configuration, type FormField
 
 export interface ApprovalDialogProps {
   open: boolean;
+  /** The run being decided, so the preview can show what it has produced. */
+  runId: string | null;
+  agents?: AgentManifest[];
   onClose: () => void;
   stepTitle: string;
   manifest: AgentManifest | undefined;
@@ -51,6 +55,8 @@ function approveLabel(stepTitle: string, fields: FormField[], configuration: Con
 
 export function ApprovalDialog({
   open,
+  runId,
+  agents,
   onClose,
   stepTitle,
   manifest,
@@ -165,13 +171,8 @@ export function ApprovalDialog({
           )}
         </section>
 
-        <section className="grid gap-1 rounded-md border border-dashed border-border-strong bg-bg-sunken p-4" aria-label="Preview">
-          <p className="text-body-md font-medium text-text">Preview isn't available yet</p>
-          <p className="text-body-sm text-text-muted">
-            The platform can't list the files this run made yet, so they can't be shown here. What {stepTitle} will use is
-            listed above.
-          </p>
-        </section>
+        {/* S-06 — the point of the screen: see the thing itself before it goes out. */}
+        <OutputPreview runId={runId} agents={agents} />
 
         {rejecting && (
           <Field label="Why are you rejecting this?" required error={noteError}>
