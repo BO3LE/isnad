@@ -1,5 +1,5 @@
 import { X } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useState } from "react";
 import { AgentIcon } from "@/design-system/agents/AgentIcon";
 import { Banner } from "@/design-system/components/Banner";
 import { IconButton } from "@/design-system/components/IconButton";
@@ -8,6 +8,8 @@ import { Tabs } from "@/design-system/components/Tabs";
 import type { AgentManifest, ValidationResult } from "@/lib/api";
 import { fallbackFor, producerOf, withArticle, type StepHandover } from "@/lib/handover";
 import { resolveFields, setValue, type Configuration } from "@/lib/schema";
+import { LastOutput } from "./LastOutput";
+import { useLastOutput } from "./useLastOutput";
 import type { AgentNodeData } from "./AgentNode";
 import { InheritChip, ProviderText, SchemaField } from "./SchemaField";
 
@@ -20,6 +22,7 @@ import { InheritChip, ProviderText, SchemaField } from "./SchemaField";
 type Issue = ValidationResult["issues"][number];
 
 export interface StepDrawerProps {
+  workflowId: string;
   stepId: string;
   data: AgentNodeData;
   manifest: AgentManifest | undefined;
@@ -40,6 +43,7 @@ const inputLabel = (name: string) => {
 };
 
 export function StepDrawer({
+  workflowId,
   stepId,
   data,
   manifest,
@@ -58,7 +62,21 @@ export function StepDrawer({
   const inputs = manifest?.inputs ?? [];
   const locked = manifest?.requires_approval === true;
 
-  useEffect(() => setTab("settings"), [stepId]);
+  // §17.6: the tab exists "only if one exists". A step nothing has produced for shows Settings and
+  // no second tab at all, rather than a tab whose whole content is an apology.
+  const lastOutput = useLastOutput(workflowId, stepId);
+  const hasOutput = lastOutput.outputs.length > 0;
+
+  // Layout, not passive: the drawer stays mounted across step changes (CanvasPage renders it
+  // unkeyed), so a passive effect leaves one painted frame showing the previous step's tab against
+  // the new step's data.
+  useLayoutEffect(() => setTab("settings"), [stepId]);
+
+  // The last run can finish, or be replaced by one that skipped this step, while the drawer is
+  // open. If the tab being shown goes away, fall back rather than render a panel for nothing.
+  useEffect(() => {
+    if (!hasOutput) setTab((current) => (current === "output" ? "settings" : current));
+  }, [hasOutput]);
 
   useEffect(() => {
     function onKey(event: KeyboardEvent) {
@@ -94,10 +112,7 @@ export function StepDrawer({
         className="px-4"
         value={tab}
         onChange={setTab}
-        tabs={[
-          { id: "settings", label: "Settings" },
-          { id: "output", label: "Last output" },
-        ]}
+        tabs={[{ id: "settings", label: "Settings" }, ...(hasOutput ? [{ id: "output", label: "Last output" }] : [])]}
       />
 
       {tab === "settings" ? (
@@ -187,10 +202,7 @@ export function StepDrawer({
         </div>
       ) : (
         <div className="grid min-h-0 flex-1 content-start gap-2 overflow-y-auto p-4">
-          <p className="text-body-md font-medium text-text">Nothing to show yet</p>
-          <p className="text-body-md text-text-muted">
-            After this workflow runs, what {data.title} produced will appear here.
-          </p>
+          <LastOutput state={lastOutput} />
         </div>
       )}
 
