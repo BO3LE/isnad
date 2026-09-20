@@ -62,3 +62,11 @@ describe("formatBytes", () => {
     expect(formatBytes(Number.NaN)).toBe("");
   });
 });
+
+describe("formatBytes at a unit boundary", () => {
+  it("steps up rather than showing a thousand of the smaller unit", () => {
+    expect(formatBytes(999_999)).toBe("1.0 MB");
+    expect(formatBytes(999_999_999)).toBe("1.0 GB");
+    expect(formatBytes(1_000_000)).toBe("1.0 MB");
+  });
+});

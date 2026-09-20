@@ -69,7 +69,9 @@ export function formatBytes(bytes: number): string {
   const units = ["KB", "MB", "GB", "TB"];
   let value = bytes / 1000;
   let unit = 0;
-  while (value >= 1000 && unit < units.length - 1) {
+  // Step up on what will be *shown*, not on the raw value: 999,999 B rounds to 1000, which has to
+  // read "1.0 MB" rather than "1000 KB".
+  while (Math.round(value) >= 1000 && unit < units.length - 1) {
     value /= 1000;
     unit += 1;
   }

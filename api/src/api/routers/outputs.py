@@ -6,7 +6,8 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from api.deps import get_current_user, get_session, owned
+from api.catalog import CatalogSource
+from api.deps import get_catalog, get_current_user, get_session, owned
 from api.schemas import OutputLink
 from api.settings import ApiSettings, get_settings
 from db.models import AgentOutput, ExecutionLog, User, Workflow
@@ -31,12 +32,13 @@ def _render(value: object) -> str | None:
     return None
 
 
-def _as_text(payload: dict[str, object] | None) -> str | None:
+def _as_text(payload: dict[str, object] | None, titles: dict[str, str] | None = None) -> str | None:
     """An agent's own output object, as words.
 
     Written generically on purpose: an agent publishes whatever shape it likes, and the approval
-    window has to be able to show it without the platform knowing which agent it came from (AT-12).
-    Every field is labelled by its own name, so a seventh agent's output reads as well as Writer's.
+    window has to read it without the platform knowing which agent wrote it (AT-12). Each field is
+    named with the agent's own word for it where the catalog has one — "article", not the
+    mechanical "article md" — so what a person reads is what the agent calls its own work.
     """
     if not payload:
         return None
@@ -45,7 +47,7 @@ def _as_text(payload: dict[str, object] | None) -> str | None:
         rendered = _render(value)
         if rendered is None:
             continue
-        label = key.replace("_", " ")
+        label = (titles or {}).get(key) or key.replace("_", " ")
         block = "\n" in rendered or rendered.startswith("- ")
         blocks.append(f"{label}:\n{rendered}" if block else f"{label}: {rendered}")
     return "\n\n".join(blocks) or None
@@ -57,27 +59,30 @@ def download(
     user: User = Depends(get_current_user),
     session: Session = Depends(get_session),
     settings: ApiSettings = Depends(get_settings),
+    catalog: CatalogSource = Depends(get_catalog),
 ):
     """Return a download URL — the API never streams files itself.
 
     Development serves files from STORAGE_ROOT at /files. TODO(W4): Supabase signed URLs in production.
     """
     row = session.execute(
-        select(AgentOutput, Workflow.user_id)
+        select(AgentOutput, Workflow.user_id, ExecutionLog.agent_type)
         .join(ExecutionLog, ExecutionLog.id == AgentOutput.log_id)
         .join(Workflow, Workflow.id == ExecutionLog.workflow_id)
         .where(AgentOutput.id == output_id)
     ).first()
     if row is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "This file doesn't exist or isn't yours.")
-    output, owner = row
+    output, owner, agent_type = row
     owned(user, owner)
     if output.output_type == "url" and output.content:
         return OutputLink(id=output.id, url=output.content, expires_in=0)
     if output.output_type == "text":
         # Not every output is a file. An article is text, and the approval window has to be able to
         # show the words rather than offer a download that does not exist.
-        written = output.content if output.content is not None else _as_text(output.content_json)
+        manifest = next((m for m in (catalog.agents() or []) if m.name == agent_type), None)
+        titles = {o.name: o.title for o in manifest.outputs} if manifest else {}
+        written = output.content if output.content is not None else _as_text(output.content_json, titles)
         if written is None:
             raise HTTPException(status.HTTP_404_NOT_FOUND, "This output has nothing in it.")
         return OutputLink(id=output.id, text=written)

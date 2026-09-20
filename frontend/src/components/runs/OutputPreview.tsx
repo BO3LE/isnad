@@ -40,7 +40,13 @@ function Loading() {
 }
 
 function One({ output }: { output: RunOutput }) {
-  const link = useQuery({ queryKey: ["output", output.id], queryFn: () => endpoints.output(output.id) });
+  // What a run produced never changes, so this is fetched once. Without it every tab switch
+  // remounts this component and refetches — re-minting a download URL to show the same file.
+  const link = useQuery({
+    queryKey: ["output", output.id],
+    queryFn: () => endpoints.output(output.id),
+    staleTime: Infinity,
+  });
 
   if (link.isPending) return <Loading />;
   if (link.isError) {
