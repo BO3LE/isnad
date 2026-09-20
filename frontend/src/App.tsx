@@ -8,6 +8,7 @@ import { CanvasPage } from "./pages/CanvasPage";
 import { LoginPage } from "./pages/LoginPage";
 import { NotFoundPage } from "./pages/NotFoundPage";
 import { RegisterPage } from "./pages/RegisterPage";
+import { OutputsPage } from "@/pages/OutputsPage";
 import { RunPage } from "./pages/RunPage";
 import { WorkflowsPage } from "./pages/WorkflowsPage";
 
@@ -37,6 +38,14 @@ export function App() {
               element={
                 <RequireAuth>
                   <CanvasPage />
+                </RequireAuth>
+              }
+            />
+            <Route
+              path="/runs/:runId/outputs"
+              element={
+                <RequireAuth>
+                  <OutputsPage />
                 </RequireAuth>
               }
             />

@@ -188,6 +188,14 @@ export function RunPage() {
               <Banner variant="info">You rejected {failed ? titleOf(failed.agent_type) : "a step"}. Nothing was sent.</Banner>
             )}
 
+            {!live && (
+              <p className="text-body-md">
+                <Link to={`/runs/${runId}/outputs`} className="text-text underline">
+                  See what this run made
+                </Link>
+              </p>
+            )}
+
             <section aria-label="Steps" className="grid gap-3">
               <h2 className="text-heading-sm text-text">Steps</h2>
               <StepList
