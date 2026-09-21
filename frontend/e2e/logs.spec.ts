@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { expect, test, type Page } from "@playwright/test";
 
 // P-08 in a real browser, against a mocked API (no backend running).
@@ -8,6 +9,10 @@ import { expect, test, type Page } from "@playwright/test";
 // worker/store.py — and not that the orchestrator retries. AT-06 still needs a real run.
 
 const RUN = "00000000-0000-4000-8000-0000000000aa";
+// The real catalog, as captured from GET /agents/catalog. Mocking it as [] would let every row
+// fall back to the raw agent type, and the titles and icons this page reads from the catalog
+// (AT-12) would go untested.
+const catalog = JSON.parse(readFileSync(new URL("../src/test/catalog.json", import.meta.url), "utf-8")) as unknown[];
 
 const run = {
   id: RUN,
@@ -64,7 +69,7 @@ const logs = [
 async function openLogs(page: Page, rows: unknown[] = logs) {
   await page.route("http://api.mock/auth/dev-login", (r) => r.fulfill({ json: { access_token: "t", token_type: "bearer" } }));
   await page.route("http://api.mock/workflows", (r) => r.fulfill({ json: [] }));
-  await page.route("http://api.mock/agents/catalog", (r) => r.fulfill({ json: [] }));
+  await page.route("http://api.mock/agents/catalog", (r) => r.fulfill({ json: catalog }));
   await page.route(`http://api.mock/runs/${RUN}`, (r) => r.fulfill({ json: run }));
   await page.route(`http://api.mock/runs/${RUN}/logs`, (r) => r.fulfill({ json: rows }));
 
@@ -94,7 +99,7 @@ async function scrollsSideways(page: Page): Promise<boolean> {
 test("a retried step tells the whole story: every attempt, the waits, and what it cost", async ({ page }) => {
   await openLogs(page);
 
-  const failed = page.getByRole("row").filter({ hasText: "publisher" });
+  const failed = page.getByRole("row").filter({ hasText: "Publisher" });
   // The Retries cell specifically, not the row: the step number is also 3, so a whole-row match
   // would hold even with the Retries column deleted.
   await expect(failed.getByRole("cell").nth(5)).toHaveText("3");
@@ -120,7 +125,7 @@ test("a step that never ran reports nothing, rather than zero of everything", as
   await openLogs(page);
   // §21 S-07's own mock: the skipped Email row is "— — — —" across the board. Counting zero
   // retries for a step that never made a first attempt states something that did not happen.
-  const skipped = page.getByRole("row").filter({ hasText: "email" });
+  const skipped = page.getByRole("row").filter({ hasText: "Email" });
   await expect(skipped.getByRole("cell").nth(2)).toHaveText("—"); // started
   await expect(skipped.getByRole("cell").nth(4)).toHaveText("—"); // duration
   await expect(skipped.getByRole("cell").nth(5)).toHaveText("—"); // retries
@@ -186,7 +191,7 @@ test("the CSV shrinks with the filter, so the file matches what was being read",
 
 test("the time zone toggle actually moves the clock", async ({ page }) => {
   await openLogs(page);
-  const started = page.getByRole("row").filter({ hasText: "researcher" }).getByRole("cell").nth(2);
+  const started = page.getByRole("row").filter({ hasText: "Researcher" }).getByRole("cell").nth(2);
 
   // The suite pins the browser to Asia/Riyadh (playwright.config.ts) so these two differ. On a UTC
   // runner they would be the same string, and this assertion — and the CSV test's use of the
@@ -239,7 +244,7 @@ test("a run that finishes while you are reading it stops being \"Running\"", asy
   let finished = false;
   await page.route("http://api.mock/auth/dev-login", (r) => r.fulfill({ json: { access_token: "t", token_type: "bearer" } }));
   await page.route("http://api.mock/workflows", (r) => r.fulfill({ json: [] }));
-  await page.route("http://api.mock/agents/catalog", (r) => r.fulfill({ json: [] }));
+  await page.route("http://api.mock/agents/catalog", (r) => r.fulfill({ json: catalog }));
   await page.route(`http://api.mock/runs/${RUN}`, (r) =>
     r.fulfill({ json: { ...run, status: finished ? "succeeded" : "running" } }),
   );
@@ -286,7 +291,7 @@ test("a step retrying right now says which attempt is in flight", async ({ page 
     { ...logs[0]!, agent_type: "publisher", status: "running", retry_count: 1, completed_at: null, duration_ms: null, error_message: "[attempt 1] invalid_grant: Token has been revoked." },
   ];
   await openLogs(page, midRetry);
-  const row = page.getByRole("row").filter({ hasText: "publisher" });
+  const row = page.getByRole("row").filter({ hasText: "Publisher" });
   await expect(row.getByRole("cell").nth(5)).toHaveText("Attempt 2");
 });
 
@@ -295,7 +300,7 @@ test("a step between attempts says how much rope is left", async ({ page }) => {
     { ...logs[0]!, agent_type: "publisher", status: "retrying", retry_count: 2, completed_at: null, duration_ms: null, error_message: "[attempt 1] Token revoked.\n[attempt 2] Token revoked." },
   ];
   await openLogs(page, waiting);
-  const row = page.getByRole("row").filter({ hasText: "publisher" });
+  const row = page.getByRole("row").filter({ hasText: "Publisher" });
   await expect(row.getByRole("cell").nth(5)).toHaveText("Retrying 2/3");
 });
 
@@ -304,10 +309,30 @@ test("a rejected step's hover says the same thing its cell does", async ({ page 
     { ...logs[0]!, agent_type: "publisher", status: "failed", error_message: "[attempt 1] Rejected by reviewer." },
   ];
   await openLogs(page, rejected);
-  const cell = page.getByRole("row").filter({ hasText: "publisher" }).getByRole("cell").nth(6);
+  const cell = page.getByRole("row").filter({ hasText: "Publisher" }).getByRole("cell").nth(6);
   await expect(cell).toHaveText("You stopped this step.");
   // The tooltip used to fall back to the worker's own wording and contradict the cell.
   await expect(cell).toHaveAttribute("title", "You stopped this step.");
+});
+
+test("a step that already finished reports attempts taken, not an attempt in flight", async ({ page }) => {
+  // The in-flight wording is deliberately `running`-only. A succeeded step with one retry took two
+  // attempts and is over; "Attempt 2" there would read as though it were still going.
+  const done = [{ ...logs[0]!, agent_type: "publisher", status: "success", retry_count: 1 }];
+  await openLogs(page, done);
+  const cell = page.getByRole("row").filter({ hasText: "Publisher" }).getByRole("cell").nth(5);
+  await expect(cell).toHaveText("1");
+  await expect(cell).not.toHaveText(/Attempt/);
+});
+
+test("the row is named and drawn from the catalog, not from the raw agent type", async ({ page }) => {
+  // AT-12: nothing on this page knows an agent. The type is `publisher`; "Publisher" and the icon
+  // come from the catalog, so a seventh agent lists itself here with no change to this file.
+  await openLogs(page);
+  const row = page.getByRole("row").filter({ hasText: "Publisher" });
+  await expect(row.getByRole("rowheader")).toContainText("Publisher");
+  await expect(row.getByRole("rowheader")).not.toContainText("publisher");
+  await expect(row.getByRole("rowheader").locator("svg")).toHaveCount(1);
 });
 
 test("a run with nothing logged says so", async ({ page }) => {
