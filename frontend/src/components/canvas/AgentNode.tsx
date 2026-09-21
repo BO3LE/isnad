@@ -5,6 +5,7 @@ import { AgentIcon } from "@/design-system/agents/AgentIcon";
 import { StatusChip } from "@/design-system/status/StatusChip";
 import { nodeStatusMeta, rejectedMeta } from "@/design-system/status/statusMeta";
 import type { NodeStatus } from "@/lib/api";
+import { retryLabel } from "@/lib/logs";
 import { stepError } from "@/lib/runPlayback";
 import type { Configuration } from "@/lib/schema";
 
@@ -63,8 +64,10 @@ export const AgentNode = memo(function AgentNode({ data, selected }: NodeProps<A
   const hint = data.connectHint;
   const error = data.status === "failed" ? stepError(data.runMessage) : null;
   const rejected = error?.rejected === true;
-  const chipLabel =
-    data.status === "retrying" ? `Retrying · attempt ${(data.retryCount ?? 0) + 1}` : undefined;
+  // §16.5 — "Retrying 1/3", so the node says how much rope is left, not just that it is trying
+  // again. The "next in ~2s" countdown that section also asks for has nothing to count towards:
+  // no next-retry time is recorded anywhere (FRONTEND-PAGES-PLAN gap 19).
+  const chipLabel = data.status === "retrying" ? retryLabel(data.retryCount ?? 0) : undefined;
 
   return (
     <div

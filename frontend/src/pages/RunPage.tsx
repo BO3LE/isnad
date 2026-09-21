@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { AppShell, PageBody } from "@/components/app/AppShell";
+import { RunTabs } from "@/components/runs/RunTabs";
 import { StepList } from "@/components/runs/StepList";
 import { Banner } from "@/design-system/components/Banner";
 import { Button } from "@/design-system/components/Button";
@@ -167,6 +168,8 @@ export function RunPage() {
                         : `${pluralise(done, "step")} of ${total} finished.`}
                 </p>
               )}
+
+              <RunTabs runId={state.id} current="overview" />
             </header>
 
             {waiting && (

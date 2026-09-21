@@ -15,6 +15,7 @@ export type RunCreated = Schemas["RunCreated"];
 export type NodeState = Schemas["NodeState"];
 export type RunSummary = Schemas["RunSummary"];
 export type RunOutput = Schemas["RunOutput"];
+export type LogEntry = Schemas["LogEntry"];
 export type OutputLink = Schemas["OutputLink"];
 export type NodeStatus = Schemas["NodeStatus"];
 export type RunStatus = Schemas["RunStatus"];
@@ -71,6 +72,7 @@ export const endpoints = {
     api<RunCreated>(`/runs/${runId}/nodes/${nodeId}/approve`, { method: "POST", body: JSON.stringify({ decision, note }) }),
   cancel: (runId: string) => api<RunState>(`/runs/${runId}/cancel`, { method: "POST" }),
   runOutputs: (runId: string) => api<RunOutput[]>(`/runs/${runId}/outputs`),
+  runLogs: (runId: string) => api<LogEntry[]>(`/runs/${runId}/logs`),
   /** A file's download URL, or the words themselves for text (api/routers/outputs.py). */
   output: (outputId: string) => api<OutputLink>(`/outputs/${outputId}`),
 };

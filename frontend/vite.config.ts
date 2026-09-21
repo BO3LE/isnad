@@ -14,6 +14,9 @@ export default defineConfig({
     watch: { usePolling: process.env.CHOKIDAR_USEPOLLING === "true" },
   },
   test: {
+    // Pinned, not inherited: on a UTC machine a local-vs-UTC assertion is a tautology, so any test
+    // of the log's time zone toggle would pass without the code honouring the zone at all.
+    env: { TZ: "Asia/Riyadh" },
     globals: true,
     environment: "jsdom",
     setupFiles: ["./src/test/setup.ts"],

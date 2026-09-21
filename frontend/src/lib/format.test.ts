@@ -1,4 +1,4 @@
-import { formatBytes, formatDuration, formatRelativeTime, pluralise } from "./format";
+import { formatBytes, formatDuration, formatRelativeTime, formatTimeOfDay, pluralise } from "./format";
 
 const NOW = new Date("2026-09-16T12:00:00Z");
 const ago = (seconds: number) => new Date(NOW.getTime() - seconds * 1000);
@@ -68,5 +68,37 @@ describe("formatBytes at a unit boundary", () => {
     expect(formatBytes(999_999)).toBe("1.0 MB");
     expect(formatBytes(999_999_999)).toBe("1.0 GB");
     expect(formatBytes(1_000_000)).toBe("1.0 MB");
+  });
+});
+
+// The log table's clock (§21 S-07). The suite pins TZ=Asia/Riyadh (vite.config.ts) precisely so
+// these two are different: on a UTC machine every assertion here would hold whether or not
+// `formatTimeOfDay` looked at its `zone` argument at all.
+describe("formatTimeOfDay (§21 S-07)", () => {
+  const AT = "2026-09-20T16:05:02Z";
+
+  it("reads the clock in the viewer's own zone by default", () => {
+    expect(formatTimeOfDay(AT)).toBe("19:05:02");
+  });
+
+  it("reads it in UTC when asked", () => {
+    expect(formatTimeOfDay(AT, "utc")).toBe("16:05:02");
+  });
+
+  it("actually changes with the zone, rather than ignoring the argument", () => {
+    expect(formatTimeOfDay(AT, "utc")).not.toBe(formatTimeOfDay(AT, "local"));
+  });
+
+  it("keeps seconds, because steps finish seconds apart", () => {
+    // Rounded to the minute, several rows of a fast run would claim the same start time.
+    expect(formatTimeOfDay("2026-09-20T16:05:59Z", "utc")).toBe("16:05:59");
+  });
+
+  it("accepts a Date as readily as a string", () => {
+    expect(formatTimeOfDay(new Date(AT), "utc")).toBe("16:05:02");
+  });
+
+  it("says nothing at all about a date it cannot read", () => {
+    expect(formatTimeOfDay("not-a-date")).toBe("");
   });
 });
