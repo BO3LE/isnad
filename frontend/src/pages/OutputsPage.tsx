@@ -1,7 +1,8 @@
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Copy, Download, ExternalLink, FileText, Sparkles } from "lucide-react";
-import { Link, useNavigate, useParams } from "react-router-dom";
+import { useNavigate, useParams } from "react-router-dom";
 import { AppShell, PageBody } from "@/components/app/AppShell";
+import { RunTabs } from "@/components/runs/RunTabs";
 import { Banner } from "@/design-system/components/Banner";
 import { Button } from "@/design-system/components/Button";
 import { Card } from "@/design-system/components/Card";
@@ -262,15 +263,7 @@ export function OutputsPage() {
               </Button>
             )}
           </div>
-          {/* The run itself is one click away; the steps list lives there (§21 S-05). */}
-          <nav className="flex gap-4 border-b border-border text-body-sm">
-            <Link to={`/runs/${runId}`} className="px-1 pb-2 text-text-muted hover:text-text">
-              Overview
-            </Link>
-            <span aria-current="page" className="border-b-2 border-text px-1 pb-2 font-medium text-text">
-              Files{items.length > 0 ? ` ${items.length}` : ""}
-            </span>
-          </nav>
+          <RunTabs runId={runId} current="files" fileCount={items.length} />
         </header>
 
         {run.isError && <Banner variant="error">Couldn&apos;t load this run.</Banner>}
