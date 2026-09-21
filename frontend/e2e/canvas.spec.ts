@@ -47,7 +47,13 @@ interface Validation {
   issues: { code: string; message: string; severity?: string; node_id?: string; edge_id?: string }[];
 }
 
-async function openSeededWorkflow(page: Page, puts: SavedGraph[], validation: Validation = { valid: true, issues: [] }) {
+/** A finished run to answer the drawer's "Last output" tab with, and the links for its outputs. */
+interface LastRun {
+  outputs: Record<string, unknown>[];
+  links: Record<string, Record<string, unknown>>;
+}
+
+async function openSeededWorkflow(page: Page, puts: SavedGraph[], validation: Validation = { valid: true, issues: [] }, last?: LastRun) {
   await page.route("http://api.mock/auth/dev-login", (route) => route.fulfill({ json: { access_token: "t", token_type: "bearer" } }));
   await page.route("http://api.mock/workflows", (route) => route.fulfill({ json: [] }));
   await page.route("http://api.mock/agents/catalog", (route) => route.fulfill({ json: catalog }));
@@ -55,7 +61,20 @@ async function openSeededWorkflow(page: Page, puts: SavedGraph[], validation: Va
     if (route.request().method() === "PUT") puts.push(route.request().postDataJSON() as SavedGraph);
     return route.fulfill({ json: workflow });
   });
-  await page.route(`http://api.mock/workflows/${WORKFLOW_ID}/runs`, (route) => route.fulfill({ json: [] }));
+  await page.route(`http://api.mock/workflows/${WORKFLOW_ID}/runs`, (route) =>
+    route.fulfill({ json: last ? [{ id: LAST_RUN, status: "succeeded", created_at: "2026-09-20T10:00:00Z", completed_at: "2026-09-20T10:06:12Z", reason: null }] : [] }),
+  );
+  if (last) {
+    await page.route(`http://api.mock/runs/${LAST_RUN}/outputs`, (route) => route.fulfill({ json: last.outputs }));
+    for (const [id, link] of Object.entries(last.links)) {
+      await page.route(`http://api.mock/outputs/${id}`, (route) => route.fulfill({ json: link }));
+    }
+    // Real bytes, or `readyState` below would only ever prove the element exists. This is one
+    // second of h264 + aac at 1280x720, the same file the mock Video agent renders with ffmpeg.
+    await page.route("http://api.mock/files/video.mp4", (route) =>
+      route.fulfill({ contentType: "video/mp4", body: readFileSync(new URL("./fixtures/video.mp4", import.meta.url)) }),
+    );
+  }
   await page.route(`http://api.mock/workflows/${WORKFLOW_ID}/validate`, (route) => route.fulfill({ json: validation }));
 
   await page.goto("/login");
@@ -72,6 +91,7 @@ async function openSeededWorkflow(page: Page, puts: SavedGraph[], validation: Va
 }
 
 const SEEDED = ["research", "write", "video", "publish"];
+const LAST_RUN = "00000000-0000-4000-8000-0000000000ee";
 const configOf = (put: SavedGraph, id: string) => put.graph.nodes.find((n) => n.id === id)?.configuration;
 
 test("opening, touching a step and validating never saves", async ({ page }) => {
@@ -487,4 +507,58 @@ test("cancelling shows at once what was skipped", async ({ page }) => {
   await bar.getByRole("button", { name: "Cancel run" }).click();
   await expect(bar).toContainText("Run cancelled. Steps that hadn't started were skipped.");
   await expect(step("video")).toContainText("Skipped");
+});
+
+
+// S-04's "Last output" tab in the real build. jsdom covers which outputs reach it; what it cannot
+// answer is whether the video a person opens there actually decodes, and whether a tab that §17.6
+// says should not exist is really absent from the rendered tablist rather than merely hidden.
+const lastRun: LastRun = {
+  outputs: [
+    { id: "wrote", node_id: "write", agent_type: "writer", kind: "text", filename: null, mime_type: null, bytes: null, created_at: "2026-09-20T10:01:00Z" },
+    { id: "made", node_id: "video", agent_type: "video", kind: "file", filename: "video.mp4", mime_type: "video/mp4", bytes: 4036, created_at: "2026-09-20T10:02:00Z" },
+  ],
+  links: {
+    wrote: { id: "wrote", url: null, expires_in: 0, text: "The Future of Solar Energy in Saudi Arabia" },
+    made: { id: "made", url: "http://api.mock/files/video.mp4", expires_in: 3600 },
+  },
+};
+
+test("a step shows what it made last time, and a step that made nothing offers no tab for it", async ({ page }) => {
+  const step = await openSeededWorkflow(page, [], { valid: true, issues: [] }, lastRun);
+
+  // The Writer produced text in that run, so the tab is there and holds the words themselves.
+  await step("write").click();
+  const writer = page.getByRole("complementary", { name: "Writer settings" });
+  await writer.getByRole("tab", { name: "Last output" }).click();
+  await expect(writer).toContainText("The Future of Solar Energy in Saudi Arabia");
+  await expect(writer).toContainText("From the last run,");
+  // One output needs no tabs of its own.
+  await expect(writer.getByRole("tablist", { name: "What this step made" })).toHaveCount(0);
+
+  // The Publisher never ran in it. §17.6: the tab exists "only if one exists" — so it must not.
+  await page.keyboard.press("Escape");
+  await step("publish").click();
+  const publisher = page.getByRole("complementary", { name: "Publisher settings" });
+  await expect(publisher.getByRole("tab")).toHaveCount(1);
+  await expect(publisher.getByRole("tab", { name: "Settings" })).toBeVisible();
+});
+
+test("the video a step made plays inside the drawer", async ({ page }) => {
+  const step = await openSeededWorkflow(page, [], { valid: true, issues: [] }, lastRun);
+  await step("video").click();
+  const drawer = page.getByRole("complementary", { name: "Video settings" });
+  await drawer.getByRole("tab", { name: "Last output" }).click();
+
+  const video = drawer.locator("video");
+  await expect(video).toHaveAttribute("src", "http://api.mock/files/video.mp4");
+  await expect(drawer).toContainText("4.0 KB");
+
+  // The whole point of previewing in place: an element whose metadata never arrives is a broken
+  // preview, and only a real browser can tell the difference.
+  await expect
+    // Structurally typed: e2e compiles without the DOM lib (tsconfig.node.json), so there is no
+    // HTMLVideoElement here — only the one property this assertion needs.
+    .poll(() => video.evaluate((el: { readyState: number }) => el.readyState), { timeout: 15_000 })
+    .toBeGreaterThanOrEqual(1);
 });

@@ -13,6 +13,7 @@ export type ValidationResult = Schemas["ValidationResult"];
 export type RunState = Schemas["RunState"];
 export type RunCreated = Schemas["RunCreated"];
 export type NodeState = Schemas["NodeState"];
+export type RunSummary = Schemas["RunSummary"];
 export type RunOutput = Schemas["RunOutput"];
 export type OutputLink = Schemas["OutputLink"];
 export type NodeStatus = Schemas["NodeStatus"];
@@ -64,7 +65,7 @@ export const endpoints = {
   deleteWorkflow: (id: string) => api<void>(`/workflows/${id}`, { method: "DELETE" }),
   validate: (id: string) => api<ValidationResult>(`/workflows/${id}/validate`, { method: "POST" }),
   run: (id: string) => api<RunCreated>(`/workflows/${id}/run`, { method: "POST" }),
-  workflowRuns: (id: string) => api<Schemas["RunSummary"][]>(`/workflows/${id}/runs`),
+  workflowRuns: (id: string) => api<RunSummary[]>(`/workflows/${id}/runs`),
   runState: (id: string) => api<RunState>(`/runs/${id}`),
   approve: (runId: string, nodeId: string, decision: "approve" | "reject", note?: string) =>
     api<RunCreated>(`/runs/${runId}/nodes/${nodeId}/approve`, { method: "POST", body: JSON.stringify({ decision, note }) }),

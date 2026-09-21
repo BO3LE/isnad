@@ -787,6 +787,7 @@ function CanvasPageInner() {
 
         {selectedStep && !runMode && (
           <StepDrawer
+            workflowId={workflowId}
             stepId={selectedStep.id}
             data={selectedStep.data}
             manifest={agents.find((a) => a.name === selectedStep.data.agentType)}

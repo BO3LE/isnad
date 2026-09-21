@@ -29,7 +29,7 @@ function label(output: RunOutput, agents?: AgentManifest[]): string {
   return `${who} · text`;
 }
 
-function Loading() {
+export function OutputLoading() {
   return (
     <div className="grid gap-2" aria-busy>
       <Skeleton className="h-4 w-2/3" />
@@ -39,7 +39,8 @@ function Loading() {
   );
 }
 
-function One({ output }: { output: RunOutput }) {
+/** One output, rendered as what it actually is. Shared with the drawer's "Last output" tab. */
+export function OutputBody({ output }: { output: RunOutput }) {
   // What a run produced never changes, so this is fetched once. Without it every tab switch
   // remounts this component and refetches — re-minting a download URL to show the same file.
   const link = useQuery({
@@ -48,7 +49,7 @@ function One({ output }: { output: RunOutput }) {
     staleTime: Infinity,
   });
 
-  if (link.isPending) return <Loading />;
+  if (link.isPending) return <OutputLoading />;
   if (link.isError) {
     return (
       <p className="text-body-sm text-status-failed-fg">
@@ -116,7 +117,7 @@ export function OutputPreview({ runId, agents }: OutputPreviewProps) {
   if (outputs.isPending && runId !== null) {
     return (
       <section className="grid gap-2 rounded-md border border-border bg-surface p-4" aria-label="Preview">
-        <Loading />
+        <OutputLoading />
       </section>
     );
   }
@@ -142,7 +143,7 @@ export function OutputPreview({ runId, agents }: OutputPreviewProps) {
         onChange={setShown}
       />
       <div className="grid gap-1">
-        <One key={current.id} output={current} />
+        <OutputBody key={current.id} output={current} />
         {current.bytes != null && <p className="text-caption text-text-muted">{formatBytes(current.bytes)}</p>}
       </div>
     </section>
