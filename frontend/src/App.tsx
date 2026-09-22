@@ -86,7 +86,11 @@ export function App() {
 
 function RequireAuth({ children }: { children: ReactNode }) {
   const token = useAuth((state) => state.token);
+  const hydrated = useAuth((state) => state.hydrated);
   const location = useLocation();
+  // In Supabase mode the stored session loads asynchronously; redirecting before it resolves
+  // would bounce a signed-in user to /login on every page refresh.
+  if (!hydrated) return <Spinner label="Loading your session" />;
   if (!token) return <Navigate to={`/login?next=${encodeURIComponent(location.pathname)}`} replace />;
   return <>{children}</>;
 }
