@@ -1,17 +1,16 @@
-# CLAUDE.md
+# Contributor Guide
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+Guidance for anyone  working in this repository — the rules, boundaries and gotchas that aren't obvious from the code alone. Team workflow and PR process live in [CONTRIBUTING.md](../CONTRIBUTING.md); this file is the "how the codebase actually works" companion to that.
 
-## Git Safety Rule
-Before making any code changes, always run `git branch --show-current`.
-If the result is "main" or "master", STOP and ask me to create/switch to a feature branch first. Never make changes directly on main.
-Branch names follow `<component>/<short-description>` (e.g. `worker/retry-backoff`) — see [CONTRIBUTING.md](CONTRIBUTING.md).
+## Git safety rule
+Never commit directly to `main` (or `master`). Before making any code changes, check the current branch (`git branch --show-current`) — if it's `main`, create or switch to a feature branch first.
+Branch names follow `<component>/<short-description>` (e.g. `worker/retry-backoff`) — see [CONTRIBUTING.md](../CONTRIBUTING.md).
 
 ## What this is
-A visual AI-agent workflow platform: drag agents onto a canvas, chain them, press Run — nothing is published until a human approves it. Full narrative: [README.md](README.md). Environment/DB setup and troubleshooting: [SETUP.md](SETUP.md). Team workflow and PR process: [CONTRIBUTING.md](CONTRIBUTING.md).
+A visual AI-agent workflow platform: drag agents onto a canvas, chain them, press Run — nothing is published until a human approves it. Full narrative: [README.md](../README.md). Environment/DB setup and troubleshooting: [SETUP.md](../SETUP.md). Team workflow and PR process: [CONTRIBUTING.md](../CONTRIBUTING.md).
 
 ## Architecture: seven components, one import rule
-Each component (`contracts`, `frontend`, `api`, `worker`, `agents/*`, `adapters`, `exporters`, `db`) is a separately installable package, tested in isolation, talking to the others only through `contracts`. Allowed/forbidden import edges are enforced in CI by [`.importlinter`](.importlinter) — read it before adding a cross-component import. If it blocks you, the fix is almost always moving a type into `contracts`, not editing `.importlinter`.
+Each component (`contracts`, `frontend`, `api`, `worker`, `agents/*`, `adapters`, `exporters`, `db`) is a separately installable package, tested in isolation, talking to the others only through `contracts`. Allowed/forbidden import edges are enforced in CI by [`.importlinter`](../.importlinter) — read it before adding a cross-component import. If it blocks you, the fix is almost always moving a type into `contracts`, not editing `.importlinter`.
 
 Edges worth knowing without opening the file:
 - `agents/*` never imports `worker`, `api`, `db`, `adapters` implementations, or another agent — only `contracts` and `ports`.
@@ -24,7 +23,7 @@ Edges worth knowing without opening the file:
 ## Agent plugin discovery (spans three files, not obvious from any one)
 Agents are never imported by name. Each `agents/<name>/pyproject.toml` declares an entry point under `[project.entry-points."gp.agents"]`; `worker/src/worker/registry.py`'s `Registry.from_entry_points()` loads whatever is installed. On startup the worker publishes the resulting catalog (manifests + JSON-Schema config forms) to the Redis key `gp:agents:catalog`; the API reads it from there instead of importing agents, because the `api → agents` edge is forbidden. Consequences:
 - The catalog is empty until a worker has started once; `/health/ready` and `/validate` degrade gracefully rather than failing when it's missing.
-- Adding an agent should touch nothing outside `agents/<name>/` ([docs/ADDING_AN_AGENT.md](docs/ADDING_AN_AGENT.md)) — if a change bleeds into another component, the boundary is probably wrong.
+- Adding an agent should touch nothing outside `agents/<name>/` ([docs/ADDING_AN_AGENT.md](ADDING_AN_AGENT.md)) — if a change bleeds into another component, the boundary is probably wrong.
 - The entry point **name** must equal both the folder name and the agent's own `manifest.name`, or the registry silently skips it (logged, not raised — one broken agent must not take the worker down).
 
 ## Run execution (worker/src/worker/orchestrator.py)
@@ -36,7 +35,7 @@ Runs snapshot the graph at press-Run time (`execution_runs.graph_snapshot`); `ex
 ```bash
 scripts/bootstrap.sh                   # .venv + every Python component installed editable
                                         # (--config-settings editable_mode=compat is required for the
-                                        # `agents` namespace package to resolve — docs/DECISIONS.md INF-01)
+                                        # `agents` namespace package to resolve — DECISIONS.md INF-01)
 cd frontend && npm ci
 
 make test                              # every component's own suite, run in isolation (scripts/test_all.sh)
