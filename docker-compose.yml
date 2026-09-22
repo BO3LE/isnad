@@ -84,6 +84,11 @@ services:
     build: { context: frontend, target: dev }
     environment:
       VITE_API_URL: http://localhost:8000
+      # Set VITE_AUTH_MODE=supabase in .env to switch P-01/P-02 off dev sign-in (needs JWT_SECRET
+      # above to match, since the API verifies whatever mode issued the token — see INF-06).
+      VITE_AUTH_MODE: ${VITE_AUTH_MODE:-dev}
+      VITE_SUPABASE_URL: ${VITE_SUPABASE_URL:-https://wawbngrkbmlidliybkbw.supabase.co}
+      VITE_SUPABASE_ANON_KEY: ${VITE_SUPABASE_ANON_KEY:-}
     ports: ["5173:5173"]
     volumes:
       - ./frontend:/app

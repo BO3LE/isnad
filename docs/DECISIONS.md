@@ -46,13 +46,15 @@ Project-level decisions still open (D-01 Supabase, host, image provider, product
 
 *Deviates from plan:* §5.2 specified `agent_type_enum`.
 
-### INF-06 · Authentication: HS256 JWT in the Supabase shape, dev sign-in until D-01
+### INF-06 · Authentication: JWT in the Supabase shape, dev sign-in until D-01
 
-**Decision.** The API verifies HS256 tokens with `sub`, `email` and `aud = authenticated` — the same shape Supabase Auth issues. Until D-01 is signed off, `POST /auth/dev-login` issues such tokens without a password; it is disabled when `ENVIRONMENT=production`.
+**Decision.** The API accepts JWTs with `sub`, `email` and `aud = authenticated` — the same shape Supabase Auth issues — from two sources: `POST /auth/dev-login` (HS256, signed with `JWT_SECRET`, no password, disabled when `ENVIRONMENT=production`) and, when the frontend is switched to `VITE_AUTH_MODE=supabase`, Supabase Auth itself.
 
-**Why.** Nothing about the rest of the system depends on who signs the token, so work isn't blocked on D-01. If D-01 is approved, set `JWT_SECRET` to the Supabase JWT secret and the frontend signs in with supabase-js. If rejected, add `/auth/register` and `/auth/login` issuing the same tokens.
+**Why.** Nothing about the rest of the system depends on who signs the token, so work isn't blocked on D-01. The frontend opts in per environment (`frontend/src/lib/auth-client.ts`); the API tells the two apart by the token's `alg` header rather than a mode flag, so both can be exercised side by side.
 
-Uses **PyJWT** rather than python-jose (listed in the plan) because python-jose is no longer maintained.
+**Verification detail (superseded from the original plan).** Supabase now signs new tokens with a project-specific asymmetric key (ES256/RS256) rather than a single HS256 shared secret — the isnad project has already rotated off the legacy shared secret. So `api/src/api/auth.py` verifies a Supabase-issued token against the project's public JWKS (`{SUPABASE_URL}/auth/v1/.well-known/jwks.json`) instead of a secret; only dev-login's own HS256 tokens use `JWT_SECRET`. `JWT_SECRET` never needs to match anything on Supabase's side.
+
+Uses **PyJWT** rather than python-jose (listed in the plan) because python-jose is no longer maintained; `PyJWKClient` handles the JWKS fetch and caching.
 
 ### INF-07 · Run context = outputs of every upstream agent
 
