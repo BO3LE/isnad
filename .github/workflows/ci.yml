@@ -122,6 +122,36 @@ jobs:
       - name: Seed twice (must be idempotent)
         run: python -m db.seed && python -m db.seed
 
+  # ------------------------------------------------------------------ run lifecycle
+  # GP-plan W3 (C7): a whole run — queued → running → awaiting_approval → succeeded/failed — through
+  # the real orchestrator, SqlRunStore and installed agents against PostgreSQL 15, with fake adapters.
+  # No Redis or Celery: the test calls the orchestrator the way the Celery task does. Unlike the
+  # docker-compose `integration` job this is cheap, so it runs on every pull request and gates the merge.
+  run-lifecycle:
+    name: Integration · run lifecycle on PostgreSQL 15
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    services:
+      postgres:
+        image: postgres:15
+        env: { POSTGRES_PASSWORD: postgres, POSTGRES_DB: gp }
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres" --health-interval 3s --health-timeout 3s --health-retries 20
+    env:
+      INTEGRATION_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/gp
+      REQUIRE_INTEGRATION_DB: "1"  # a missing database or FFmpeg is a failure here, not a skip
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with: { python-version: "${{ env.PYTHON_VERSION }}", cache: pip }
+      - name: Install FFmpeg (the video template renders a real MP4)
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg
+      - name: Install the worker, its dependencies and every agent (no api)
+        run: pip install -c constraints.txt ./contracts ./db ./adapters ./exporters ./worker ./agents/*/ pytest pytest-asyncio
+      - name: Migrate, seed and run a full lifecycle per template
+        run: python -m pytest tests/integration -q
+
   # ------------------------------------------------------------------ contract drift
   api-contract:
     name: OpenAPI and frontend types are up to date
@@ -201,7 +231,7 @@ jobs:
   ci-ok:
     name: CI passed
     if: always()
-    needs: [boundaries, python-tests, db-migrations, api-contract, frontend, e2e]
+    needs: [boundaries, python-tests, db-migrations, run-lifecycle, api-contract, frontend, e2e]
     runs-on: ubuntu-latest
     steps:
       - name: Every required job succeeded
