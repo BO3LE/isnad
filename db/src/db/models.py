@@ -172,16 +172,32 @@ class AgentOutput(Base):
 
 
 class Credential(Base):
-    """Google OAuth tokens, encrypted. Never stored in a workflow's configuration."""
+    """Google OAuth tokens, encrypted (`db.crypto`, D-09). Never stored in a workflow's configuration.
+
+    A workflow node refers to a row only by `id`. `expires_at` is when the *connection* stops
+    working (Google limits refresh tokens of apps in "Testing" to 7 days) — not the hourly access
+    token, whose expiry lives inside the encrypted payload. `invalid_at` is set when Google answers
+    `invalid_grant` (revoked, expired, password changed); the row stays so the UI can say
+    "Reconnect" rather than silently forgetting the account.
+    """
 
     __tablename__ = "credentials"
+    __table_args__ = (
+        UniqueConstraint("user_id", "provider", "account_email", name="uq_credentials_user_provider_account"),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
     user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
     provider: Mapped[str] = mapped_column(String(32), nullable=False)
+    account_email: Mapped[str] = mapped_column(String(320), nullable=False)
+    scopes: Mapped[list[str]] = mapped_column(JSONType, nullable=False, default=list)
     encrypted_payload: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
     expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    invalid_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = _now()
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
+    )
 
 
 class Approval(Base):

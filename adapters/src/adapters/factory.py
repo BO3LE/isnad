@@ -75,15 +75,19 @@ def build_ports(settings: AdapterSettings) -> Ports:
 
         search = TavilySearch(settings.search_api_key)
 
+    from adapters._google import NoGoogleEmail, NoGooglePublisher
     from adapters.tts.gtts import GTTS
 
-    # TODO(W6/W7): swap FakePublisher / FakeEmail for the Google adapters using stored credentials.
+    # Publishing and email act as a person's Google account, so there is no process-wide real
+    # adapter: the worker swaps these placeholders for `adapters._google.google_ports(credential)`
+    # when a node names a connected account (D-09). Without one, the step fails with a readable
+    # "needs a Google connection" rather than pretending to publish.
     return Ports(
         llm=llm,
         search=search,
         tts=GTTS(),
         image=FakeImage(),
         storage=storage,
-        email=FakeEmail(),
-        publishers={"youtube": FakePublisher("youtube"), "drive": FakePublisher("drive")},
+        email=NoGoogleEmail(),
+        publishers={"youtube": NoGooglePublisher(), "drive": NoGooglePublisher()},
     )

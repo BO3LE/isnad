@@ -7,7 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
 from api import __version__
-from api.routers import agents, auth, health, outputs, runs, workflows
+from api.routers import agents, auth, connections, health, outputs, runs, workflows
 from api.settings import ApiSettings, get_settings
 
 
@@ -25,7 +25,7 @@ def create_app(settings: ApiSettings | None = None) -> FastAPI:
         allow_methods=["*"],
         allow_headers=["*"],
     )
-    for module in (health, auth, workflows, runs, agents, outputs):
+    for module in (health, auth, workflows, runs, agents, outputs, connections):
         app.include_router(module.router)
 
     if settings.environment != "production" and Path(settings.storage_root).is_dir():

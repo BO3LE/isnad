@@ -6,6 +6,9 @@ from contracts.ports import PublishMetadata, PublishResult
 class DrivePublisher:
     """PublishPort for Google Drive. Install with `gp-adapters[google]`.
 
+    `credentials_json`: a resolved, fresh credential (shape in `adapters._google`), built per node
+    by the worker from the connection the step names. Never read from env or the graph.
+
     TODO(W6, Zain): upload and return a shareable link.
     """
 

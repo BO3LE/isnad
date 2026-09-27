@@ -6,6 +6,9 @@ from contracts.ports import PublishMetadata, PublishResult
 class YouTubePublisher:
     """PublishPort for YouTube Data API v3. Install with `gp-adapters[google]`.
 
+    `credentials_json`: a resolved, fresh credential (shape in `adapters._google`), built per node
+    by the worker from the connection the step names. Never read from env or the graph.
+
     TODO(W6, Zain): resumable upload with title, description, tags and privacy;
     map quotaExceeded / uploadLimitExceeded / invalid_grant to readable AgentErrors
     (see DESIGN-SYSTEM.md §23.5).
