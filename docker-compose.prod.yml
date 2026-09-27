@@ -34,7 +34,7 @@ services:
     depends_on: [redis]
     deploy:
       resources:
-        limits: { cpus: "2", memory: 4g } # FFmpeg floor from GP-plan §5.5 — resize after the W5 sizing test
+        limits: { cpus: "2", memory: 4g } # W5 sizing test: 2 × 1080p renders peak at 2.2 GiB — docs/metrics/video-worker.md
 
   web:
     build: { context: frontend, target: prod, args: { VITE_API_URL: "${PUBLIC_API_URL:-/api}" } }
