@@ -6,6 +6,68 @@ Project-level decisions still open (D-01 Supabase, host, image provider, product
 
 ---
 
+## Proposed project decisions
+
+Awaiting team approval. Each is implemented so it can be reviewed working; if it is rejected, the
+branch that implemented it is reworked before merge.
+
+### D-09 · How credentials are stored — PROPOSED
+
+**Proposal.** Google OAuth tokens live only in `credentials.encrypted_payload`, encrypted with
+**Fernet** (AES-128-CBC + HMAC-SHA256, from `cryptography`) under a key from the environment,
+`CREDENTIALS_ENCRYPTION_KEY`. Several comma-separated keys are accepted (MultiFernet): the first
+encrypts, all decrypt — that is the rotation path. A workflow step holds only the connection's id
+(`credential_id`, a UUID — `contracts.run.CREDENTIAL_CONFIG_KEY`), never a token.
+
+- **Where the code lives.** `db/crypto.py`. The `db` component owns the table and so the format of
+  its one secret column; the api (writes on connect) and the worker (re-writes on refresh) both
+  already depend on `db` and may not import each other. `db` stays a leaf (`cryptography` is external).
+- **Schema (migration `0003`).** Adds `account_email`, `scopes` (JSON list of granted scopes),
+  `invalid_at` (Google said `invalid_grant`) and `updated_at`; one row per (user, provider, account).
+  Reconnecting the same Google account updates the row in place, so workflows that point at it keep
+  working. `expires_at` is when the *connection* ends (Google's `refresh_token_expires_in`, 7 days
+  for an app in Testing; empty otherwise) — the hourly access-token expiry is inside the payload.
+- **Connect (api, `/connections`).** `POST /connections/google/start` returns Google's consent URL
+  (`access_type=offline`, `prompt=consent`; scopes `openid`, `userinfo.email`, `youtube.upload`,
+  `drive.file`, `gmail.send`). `state` is a 10-minute HS256 JWT naming the user and a nonce; the
+  nonce is also set as an HttpOnly SameSite=Lax cookie, and the callback requires both to match,
+  so a consent link sent to someone else can't connect *their* Google account to *your* Isnad
+  account. The callback exchanges the code, reads the account email from the ID token, encrypts,
+  stores, and returns to `{FRONTEND_URL}/settings/connections?connected=google` (or, with
+  `?mode=popup`, a page that `postMessage`s the opener and closes). `GET /connections` lists
+  id, account, scopes in plain words, status (connected / expiring < 7 days / expired), expiry
+  and how many workflows use it — never a token. `DELETE /connections/{id}` revokes at Google
+  (best effort) and deletes. Someone else's id is 404.
+- **Use (worker).** In real mode, just before a node runs, `worker.credentials` checks the id belongs
+  to the workflow's owner, decrypts, refreshes the access token if it expires within 5 minutes,
+  writes the refreshed token back encrypted, and swaps Google adapters into that node's `Ports`.
+  The agent never sees where the token came from. `invalid_grant` marks the row `invalid_at` and
+  fails the step without retrying: "Your Google connection has expired or was removed. Reconnect
+  Google, then run again." With `FAKE_ADAPTERS=true` none of this runs.
+- **Guard rails.** Saving a workflow whose step settings contain a Google token, a client secret or
+  a key named like one (`refresh_token`, `password`, …), or a `credential_id` that isn't a UUID, is
+  refused with 422. `/validate` reports `missing_credential` / `expired_credential` on every
+  `x-widget: credential` field — errors with real adapters, warnings with fakes.
+
+**Why.** The graph JSON is copied into every run snapshot, returned to the browser and exported, so
+Invariant 4 can only hold if the graph carries a reference. Fernet is authenticated, needs no
+infrastructure, and one env var is the same operational cost as `JWT_SECRET`; Supabase Vault or a
+KMS would tie credentials to one host before the host is chosen. Tokens are per person, not a server
+key, because FR-05 publishes to *the user's* channel and Drive.
+
+**Rejected alternatives.** Supabase Vault / pgsodium (Supabase-only; local Docker and CI would need
+a second code path). Storing tokens in the graph or in `agent_nodes.configuration` (violates
+Invariant 4). One server-wide Google account in env (every user would publish to the team's
+channel).
+
+**Consequences.** Losing `CREDENTIALS_ENCRYPTION_KEY` makes every stored connection unreadable
+(people reconnect; nothing else is lost). The key must be set identically on api and worker.
+While the Google app is in Testing, connections last 7 days. Email's config gains a
+`credential_id` field (C0 change, needs the two-approval review). The start call must be made with
+`fetch(..., {credentials: "include"})` so the browser keeps the binding cookie.
+
+---
+
 ### INF-01 · Each component is an installable package with a `src/` layout
 
 **Decision.** `contracts`, `db`, `adapters`, `exporters`, `api`, `worker` and each agent have their own `pyproject.toml` and `src/<package>/`. Agents share the PEP 420 namespace package `agents` (`agents.researcher`, `agents.writer`, …), each installed from its own folder.

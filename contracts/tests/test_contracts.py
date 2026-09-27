@@ -130,3 +130,14 @@ def test_ancestors():
 
     a, b, c = _node(0), _node(100), _node(200)
     assert ancestors(_chain(a, b, c), c.id) == {a.id, b.id}
+
+
+@pytest.mark.parametrize("model", [PublishConfig, EmailConfig])
+def test_a_google_account_is_a_reference_never_a_token(model):
+    prop = model.model_json_schema()["properties"]["credential_id"]
+    assert prop["x-widget"] == "credential" and prop["x-provider"] == "google"
+    assert prop["format"] == "uuid"
+    extra = {"recipients": ["a@b.co"]} if model is EmailConfig else {}
+    assert model(credential_id=str(uuid4()), **extra).credential_id
+    with pytest.raises(ValidationError):
+        model(credential_id="ya29.a0-an-access-token", **extra)

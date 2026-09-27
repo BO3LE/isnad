@@ -42,6 +42,12 @@ TERMINAL_RUN_STATUSES = frozenset({RunStatus.SUCCEEDED, RunStatus.FAILED, RunSta
 # drift apart: a rejection is a person's decision, and must never be reported as a failure.
 REJECTED_BY_REVIEWER = "Rejected by reviewer."
 
+# The configuration key that names a connected account (D-09). Its value is the id of a
+# `credentials` row — never a token. The worker resolves it just before the node runs; the API
+# checks it belongs to the workflow's owner. Config models mark it with `x-widget: credential`.
+CREDENTIAL_CONFIG_KEY = "credential_id"
+UUID_PATTERN = r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+
 
 class ApprovalDecision(StrEnum):
     APPROVE = "approve"

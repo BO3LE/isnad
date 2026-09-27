@@ -17,6 +17,11 @@ class WorkerSettings(BaseSettings):
     openai_model: str = "gpt-4o"
     search_api_key: str | None = None
 
+    # D-09: Google connections. Only read when FAKE_ADAPTERS=false and a node names an account.
+    google_client_id: str | None = None
+    google_client_secret: str | None = None
+    credentials_encryption_key: str | None = None
+
 
 @lru_cache
 def get_settings() -> WorkerSettings:
