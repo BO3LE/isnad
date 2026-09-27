@@ -27,6 +27,14 @@ class ApiSettings(BaseSettings):
     storage_root: str = "/data/artifacts"
     public_files_url: str = "http://localhost:8000/files"
 
+    # Where the worker writes generated files. "local": served from STORAGE_ROOT at /files (never in
+    # production). "supabase": the private bucket STORAGE_BUCKET, downloaded through signed URLs that
+    # expire after DOWNLOAD_URL_EXPIRES_IN seconds. The service key is a secret — never log it.
+    storage_backend: Literal["local", "supabase"] = "local"
+    storage_bucket: str = "artifacts"
+    supabase_service_key: str | None = None
+    download_url_expires_in: int = 300
+
     @property
     def dev_login_allowed(self) -> bool:
         return self.enable_dev_login and self.environment != "production"

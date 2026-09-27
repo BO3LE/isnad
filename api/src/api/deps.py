@@ -13,6 +13,7 @@ from api.auth import InvalidToken, verify_token
 from api.catalog import CatalogSource, RedisCatalog
 from api.queue import CeleryEnqueuer, Enqueuer
 from api.settings import ApiSettings, get_settings
+from api.storage import FileSigner, SupabaseSigner
 from db.models import User
 from db.session import make_engine, make_session_factory
 
@@ -45,6 +46,22 @@ def _catalog(redis_url: str) -> RedisCatalog:
 
 def get_catalog(settings: ApiSettings = Depends(get_settings)) -> CatalogSource:
     return _catalog(settings.redis_url)
+
+
+@lru_cache
+def _signer(url: str, service_key: str, bucket: str) -> SupabaseSigner:
+    return SupabaseSigner(url, service_key, bucket)
+
+
+def get_file_signer(settings: ApiSettings = Depends(get_settings)) -> FileSigner | None:
+    """Signs download links when files live in Supabase Storage.
+
+    None when files are on local disk, or when Supabase storage is selected but not configured —
+    the outputs endpoint reports that only if the user actually asks for a file.
+    """
+    if settings.storage_backend != "supabase" or not settings.supabase_url or not settings.supabase_service_key:
+        return None
+    return _signer(settings.supabase_url, settings.supabase_service_key, settings.storage_bucket)
 
 
 def get_current_user(

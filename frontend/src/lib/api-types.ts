@@ -116,7 +116,9 @@ export interface paths {
          * Download
          * @description Return a download URL — the API never streams files itself.
          *
-         *     Development serves files from STORAGE_ROOT at /files. TODO(W4): Supabase signed URLs in production.
+         *     With STORAGE_BACKEND=supabase the URL is a short-lived signed link into the private bucket;
+         *     otherwise (development) files are served from STORAGE_ROOT at /files. Either way only the
+         *     output's owner gets a link — anyone else gets 404.
          */
         get: operations["download_outputs__output_id__get"];
         put?: never;

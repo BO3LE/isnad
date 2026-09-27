@@ -17,12 +17,12 @@ import redis
 from celery import Celery
 from celery.signals import worker_ready
 
-from adapters.factory import AdapterSettings, build_ports
+from adapters.factory import build_ports
 from contracts.queue import CATALOG_REDIS_KEY, RUN_WORKFLOW_TASK
 from db.session import make_engine, make_session_factory
 from worker.orchestrator import Orchestrator
 from worker.registry import Registry
-from worker.settings import get_settings
+from worker.settings import adapter_settings, get_settings
 from worker.store import SqlRunStore
 
 log = logging.getLogger(__name__)
@@ -51,7 +51,9 @@ def registry() -> Registry:
 def store() -> SqlRunStore:
     global _store
     if _store is None:
-        _store = SqlRunStore(make_session_factory(make_engine(settings.database_url)), settings.storage_root)
+        # File sizes are read from the local disk, so only when files are written there.
+        local_root = settings.storage_root if settings.storage_backend == "local" else None
+        _store = SqlRunStore(make_session_factory(make_engine(settings.database_url)), local_root)
     return _store
 
 
@@ -70,16 +72,7 @@ def _on_ready(**_: object) -> None:
 
 @app.task(name=RUN_WORKFLOW_TASK)
 def run_workflow(run_id: str) -> str:
-    ports = build_ports(
-        AdapterSettings(
-            fake=settings.fake_adapters,
-            storage_root=settings.storage_root,
-            public_base_url=settings.public_files_url,
-            openai_api_key=settings.openai_api_key,
-            openai_model=settings.openai_model,
-            search_api_key=settings.search_api_key,
-        )
-    )
+    ports = build_ports(adapter_settings(settings))
     run_store = store()
     run_store.mark_interrupted(UUID(run_id))
     status = asyncio.run(Orchestrator(run_store, registry(), ports).execute(UUID(run_id)))

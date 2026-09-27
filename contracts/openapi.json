@@ -1226,7 +1226,7 @@
     },
     "/outputs/{output_id}": {
       "get": {
-        "description": "Return a download URL \u2014 the API never streams files itself.\n\nDevelopment serves files from STORAGE_ROOT at /files. TODO(W4): Supabase signed URLs in production.",
+        "description": "Return a download URL \u2014 the API never streams files itself.\n\nWith STORAGE_BACKEND=supabase the URL is a short-lived signed link into the private bucket;\notherwise (development) files are served from STORAGE_ROOT at /files. Either way only the\noutput's owner gets a link \u2014 anyone else gets 404.",
         "operationId": "download_outputs__output_id__get",
         "parameters": [
           {

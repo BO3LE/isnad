@@ -120,7 +120,11 @@ Every variable is listed, with a comment, in [`.env.example`](.env.example). The
 | `JWT_SECRET` | placeholder | Token signing secret. Generate a real one for any shared deployment. |
 | `ENABLE_DEV_LOGIN` | `true` | Password-less sign-in. Always disabled when `ENVIRONMENT=production`. |
 | `OPENAI_API_KEY`, `SEARCH_API_KEY` | empty | Used only when `FAKE_ADAPTERS=false`. |
-| `SUPABASE_*` | empty | Filled in once D-01 is approved. |
+| `STORAGE_BACKEND` | `local` | Where generated files go. `local` = `STORAGE_ROOT` on disk, served at `PUBLIC_FILES_URL` (development only). `supabase` = the private bucket `STORAGE_BUCKET`, downloaded through signed URLs. Set the same value for api and worker. Files are stored at `artifacts/{user_id}/{run_id}/…` either way. |
+| `STORAGE_BUCKET` | `artifacts` | Supabase Storage bucket for `STORAGE_BACKEND=supabase`. Must be **private**. |
+| `DOWNLOAD_URL_EXPIRES_IN` | `300` | Lifetime of a signed download URL, in seconds. |
+| `SUPABASE_URL` | the isnad project | Verifies sign-in tokens (JWKS) and, with `STORAGE_BACKEND=supabase`, is the Storage endpoint. |
+| `SUPABASE_SERVICE_KEY` | empty | Needed only for `STORAGE_BACKEND=supabase` (worker uploads, API signs links). A secret that bypasses RLS: server side only, never `VITE_`-prefixed. |
 
 Never commit `.env`. Share keys through a password manager, not chat.
 
