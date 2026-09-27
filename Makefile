@@ -18,6 +18,11 @@ reset: ## Stop the stack and delete the database and artifacts volumes
 logs: ## Follow api and worker logs
 	docker compose logs -f api worker
 
+measure-video: ## Measure video render cost in the worker image under prod limits: make measure-video args="--parallel 2"
+	docker build -q -f worker/Dockerfile --target dev -t isnad-worker-measure .
+	docker run --rm --cpus $(or $(CPUS),2) --memory $(or $(MEM),4g) -v "$(CURDIR)/scripts:/app/scripts:ro" \
+	  --entrypoint bash isnad-worker-measure -c "pip install -q -c constraints.txt psutil && python scripts/measure_video_worker.py $(args)"
+
 migrate: ## Apply migrations and seed data inside Docker
 	docker compose run --rm migrate
 
@@ -61,4 +66,4 @@ landing-check: ## Fail if landing/site/index.html is out of date
 
 check: lint test ## Everything CI runs, locally
 
-.PHONY: help up down reset logs migrate revision bootstrap test lint format hooks hooks-all openapi landing landing-check check
+.PHONY: help up down reset logs measure-video migrate revision bootstrap test lint format hooks hooks-all openapi landing landing-check check
