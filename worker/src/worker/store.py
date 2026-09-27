@@ -18,7 +18,7 @@ from sqlalchemy import func, select, update
 from sqlalchemy.orm import Session, sessionmaker
 
 from contracts.run import ApprovalDecision, NodeStatus, RunStatus, WorkflowGraph
-from db.models import AgentOutput, Approval, ExecutionLog, ExecutionRun
+from db.models import AgentOutput, Approval, ExecutionLog, ExecutionRun, Workflow
 
 
 @dataclass
@@ -29,6 +29,8 @@ class RunSnapshot:
     node_status: dict[UUID, NodeStatus] = field(default_factory=dict)
     retry_counts: dict[UUID, int] = field(default_factory=dict)
     outputs: dict[UUID, dict[str, Any]] = field(default_factory=dict)
+    # The workflow's owner — files a run writes are stored under `{user_id}/{run_id}/`.
+    user_id: UUID | None = None
 
 
 class RunStore(Protocol):
@@ -86,6 +88,7 @@ class SqlRunStore:
                 graph=WorkflowGraph.model_validate(run.graph_snapshot),
                 node_status={log.node_id: NodeStatus(log.status) for log in logs},
                 retry_counts={log.node_id: log.retry_count for log in logs},
+                user_id=s.scalar(select(Workflow.user_id).where(Workflow.id == run.workflow_id)),
             )
             success_ids = {log.id: log.node_id for log in logs if log.status == NodeStatus.SUCCESS}
             if success_ids:

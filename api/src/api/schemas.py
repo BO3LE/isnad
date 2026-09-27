@@ -114,3 +114,28 @@ class RunOutput(BaseModel):
     mime_type: str | None = None
     bytes: int | None = None
     created_at: datetime
+
+
+class Connection(BaseModel):
+    """A connected account on S-09 and in the credential picker (D-09). Never carries a token.
+
+    `status`: `expired` once Google has refused the connection or `expires_at` has passed;
+    `expiring` within 7 days of `expires_at`; otherwise `connected`. `expires_at` is empty when
+    Google gave no end date. `scopes` are the granted services as a person reads them
+    ("YouTube", "Drive", "Gmail"). `used_by` counts this user's workflows whose steps reference it.
+    """
+
+    id: UUID
+    provider: Literal["google"]
+    account_email: str
+    scopes: list[str]
+    status: Literal["connected", "expiring", "expired"]
+    expires_at: datetime | None = None
+    created_at: datetime
+    used_by: int
+
+
+class ConnectStart(BaseModel):
+    """Send the browser (or a popup) here. Valid for 10 minutes, in the browser that asked."""
+
+    authorization_url: str

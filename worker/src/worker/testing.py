@@ -17,15 +17,20 @@ class InMemoryRunStore:
         self.outputs: dict[tuple[UUID, UUID], dict[str, Any]] = {}
         self.approvals: dict[tuple[UUID, UUID], ApprovalDecision] = {}
         self.history: list[tuple[str, NodeStatus | RunStatus]] = []
+        self.users: dict[UUID, UUID] = {}
 
-    def create_run(self, run_id: UUID, graph: WorkflowGraph) -> None:
+    def create_run(self, run_id: UUID, graph: WorkflowGraph, user_id: UUID | None = None) -> None:
         self.runs[run_id] = RunStatus.QUEUED
+        if user_id is not None:
+            self.users[run_id] = user_id
         self.graphs[run_id] = graph
         for node in graph.nodes:
             self.nodes[(run_id, node.id)] = {"status": NodeStatus.PENDING, "retry_count": 0, "errors": []}
 
     def load(self, run_id: UUID) -> RunSnapshot:
-        snap = RunSnapshot(run_id=run_id, status=self.runs[run_id], graph=self.graphs[run_id])
+        snap = RunSnapshot(
+            run_id=run_id, status=self.runs[run_id], graph=self.graphs[run_id], user_id=self.users.get(run_id)
+        )
         for (rid, nid), row in self.nodes.items():
             if rid == run_id:
                 snap.node_status[nid] = row["status"]

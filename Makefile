@@ -18,6 +18,11 @@ reset: ## Stop the stack and delete the database and artifacts volumes
 logs: ## Follow api and worker logs
 	docker compose logs -f api worker
 
+measure-video: ## Measure video render cost in the worker image under prod limits: make measure-video args="--parallel 2"
+	docker build -q -f worker/Dockerfile --target dev -t isnad-worker-measure .
+	docker run --rm --cpus $(or $(CPUS),2) --memory $(or $(MEM),4g) -v "$(CURDIR)/scripts:/app/scripts:ro" \
+	  --entrypoint bash isnad-worker-measure -c "pip install -q -c constraints.txt psutil && python scripts/measure_video_worker.py $(args)"
+
 migrate: ## Apply migrations and seed data inside Docker
 	docker compose run --rm migrate
 
@@ -33,6 +38,10 @@ bootstrap: ## Create .venv with every Python component installed (editable), and
 test: ## Run every component's own test suite
 	$(VENV) scripts/test_all.sh
 	cd frontend && npm test
+
+test-integration: ## Run tests/integration (full run lifecycle) against the Docker PostgreSQL
+	docker compose up -d --wait db
+	$(VENV) INTEGRATION_DATABASE_URL=$${INTEGRATION_DATABASE_URL:-postgresql://postgres:postgres@localhost:$${DB_HOST_PORT:-5433}/gp} python -m pytest tests/integration -q
 
 lint: ## ruff + format check + import boundaries + agent shape + frontend lint
 	$(VENV) ruff check . && ruff format --check . && lint-imports && python scripts/validate_manifests.py
@@ -61,4 +70,4 @@ landing-check: ## Fail if landing/site/index.html is out of date
 
 check: lint test ## Everything CI runs, locally
 
-.PHONY: help up down reset logs migrate revision bootstrap test lint format hooks hooks-all openapi landing landing-check check
+.PHONY: help up down reset logs measure-video migrate revision bootstrap test test-integration lint format hooks hooks-all openapi landing landing-check check

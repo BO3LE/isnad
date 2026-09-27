@@ -120,9 +120,61 @@ Every variable is listed, with a comment, in [`.env.example`](.env.example). The
 | `JWT_SECRET` | placeholder | Token signing secret. Generate a real one for any shared deployment. |
 | `ENABLE_DEV_LOGIN` | `true` | Password-less sign-in. Always disabled when `ENVIRONMENT=production`. |
 | `OPENAI_API_KEY`, `SEARCH_API_KEY` | empty | Used only when `FAKE_ADAPTERS=false`. |
-| `SUPABASE_*` | empty | Filled in once D-01 is approved. |
+| `STORAGE_BACKEND` | `local` | Where generated files go. `local` = `STORAGE_ROOT` on disk, served at `PUBLIC_FILES_URL` (development only). `supabase` = the private bucket `STORAGE_BUCKET`, downloaded through signed URLs. Set the same value for api and worker. Files are stored at `artifacts/{user_id}/{run_id}/…` either way. |
+| `STORAGE_BUCKET` | `artifacts` | Supabase Storage bucket for `STORAGE_BACKEND=supabase`. Must be **private**. |
+| `DOWNLOAD_URL_EXPIRES_IN` | `300` | Lifetime of a signed download URL, in seconds. |
+| `SUPABASE_URL` | the isnad project | Verifies sign-in tokens (JWKS) and, with `STORAGE_BACKEND=supabase`, is the Storage endpoint. |
+| `SUPABASE_SERVICE_KEY` | empty | Needed only for `STORAGE_BACKEND=supabase` (worker uploads, API signs links). A secret that bypasses RLS: server side only, never `VITE_`-prefixed. |
+| `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_REDIRECT_URI`, `CREDENTIALS_ENCRYPTION_KEY`, `FRONTEND_URL` | empty / local defaults | Settings → Connections (see below). Not needed with `FAKE_ADAPTERS=true`. |
 
 Never commit `.env`. Share keys through a password manager, not chat.
+
+### Connect Google (Settings → Connections, D-09)
+
+Publisher (YouTube, Drive) and Email (Gmail) act as a person's Google account. Each person connects
+theirs once; the tokens are stored encrypted in the `credentials` table and a workflow step only
+holds the connection's id. With `FAKE_ADAPTERS=true` none of this is needed.
+
+**1. Google Cloud Console** (one project for the team, <https://console.cloud.google.com>)
+
+1. *APIs & Services → Library*: enable **YouTube Data API v3**, **Google Drive API** and **Gmail API**.
+2. *APIs & Services → OAuth consent screen* (Google Auth Platform → Branding / Audience / Data access):
+   - User type **External**; app name "Isnad", support email, developer contact email.
+   - Data access → add scopes: `openid`, `.../auth/userinfo.email`, `.../auth/youtube.upload`,
+     `.../auth/drive.file`, `.../auth/gmail.send`. (`youtube.upload` and `gmail.send` are
+     *sensitive* scopes: fine unverified in Testing; publishing the app needs Google's verification.)
+   - Audience → Publishing status **Testing**, and add every team member's and every tester's Gmail
+     address under **Test users** (max 100). Anyone else gets "Access blocked".
+   - While in Testing, Google expires refresh tokens after **7 days**: the Connections screen shows
+     "expiring", then "expired — Reconnect". That is expected until the app is published.
+3. *APIs & Services → Credentials → Create credentials → OAuth client ID*:
+   - Application type **Web application**.
+   - Authorised redirect URIs (exact match, no trailing slash):
+     - local: `http://localhost:8000/connections/google/callback`
+     - production: `https://<your-host>/api/connections/google/callback` (the API sits behind `/api`)
+   - Authorised JavaScript origins are not needed (the browser never talks to Google's APIs).
+   - Copy the client ID and client secret.
+
+**2. `.env`** (and `.env.production` with the production values)
+
+```bash
+FAKE_ADAPTERS=false                  # only for real publishing; the connect flow itself works either way
+GOOGLE_CLIENT_ID=1234-abc.apps.googleusercontent.com
+GOOGLE_CLIENT_SECRET=GOCSPX-...
+GOOGLE_REDIRECT_URI=http://localhost:8000/connections/google/callback
+FRONTEND_URL=http://localhost:5173   # where the browser returns: {FRONTEND_URL}/settings/connections
+# Generate once per environment and keep it: losing it makes every stored connection unreadable.
+CREDENTIALS_ENCRYPTION_KEY=$(python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())")
+```
+
+Both the API and the worker read these (the worker needs the client ID/secret to refresh tokens and
+the key to decrypt them). To rotate the key: set `CREDENTIALS_ENCRYPTION_KEY=<new>,<old>` — new
+first — on both, and later drop the old one once every row has been refreshed or re-encrypted.
+
+**3. Check it:** sign in, open Settings → Connections, press **Connect Google**, choose a test user.
+You land back on `/settings/connections?connected=google`; `GET /connections` lists the account with
+"YouTube · Drive · Gmail". Errors come back as `?error=google_denied` (Cancel pressed),
+`google_state` (link expired, reused or opened in another browser) or `google_failed`.
 
 ## 7. Changing the API
 
