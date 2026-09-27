@@ -25,6 +25,10 @@ class WorkerSettings(BaseSettings):
     storage_bucket: str = "artifacts"
     supabase_url: str = ""
     supabase_service_key: str | None = None
+    # D-09: Google connections. Only read when FAKE_ADAPTERS=false and a node names an account.
+    google_client_id: str | None = None
+    google_client_secret: str | None = None
+    credentials_encryption_key: str | None = None
 
 
 def adapter_settings(settings: WorkerSettings) -> AdapterSettings:
@@ -41,11 +45,6 @@ def adapter_settings(settings: WorkerSettings) -> AdapterSettings:
         supabase_service_key=settings.supabase_service_key,
         storage_bucket=settings.storage_bucket,
     )
-
-    # D-09: Google connections. Only read when FAKE_ADAPTERS=false and a node names an account.
-    google_client_id: str | None = None
-    google_client_secret: str | None = None
-    credentials_encryption_key: str | None = None
 
 
 @lru_cache
