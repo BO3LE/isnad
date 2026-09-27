@@ -29,6 +29,7 @@ from contracts.run import (
     RunStatus,
 )
 from worker.registry import Registry, UnknownAgentError
+from worker.run_storage import run_ports
 from worker.store import RunSnapshot, RunStore
 
 log = logging.getLogger(__name__)
@@ -124,11 +125,12 @@ class Orchestrator:
         self, snap: RunSnapshot, node: GraphNode, agent, input_obj: BaseModel
     ) -> dict[str, Any] | None:
         run_id = snap.run_id
+        ports = run_ports(self.ports, snap.user_id, run_id)  # files land under {user_id}/{run_id}/
         retry_count = snap.retry_counts.get(node.id, 0)
         self.store.set_node_status(run_id, node.id, NodeStatus.RUNNING, retry_count=retry_count)
         while True:
             try:
-                produced = await agent.execute(input_obj, self.ports)
+                produced = await agent.execute(input_obj, ports)
                 payload = produced.model_dump() if isinstance(produced, BaseModel) else produced
                 output = agent.output_model.model_validate(payload).model_dump(mode="json")
             except Exception as exc:

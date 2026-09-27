@@ -58,13 +58,13 @@ jobs:
           - component: db
             install: ./db
           - component: adapters
-            install: ./contracts ./adapters
+            install: ./contracts "./adapters[storage]"
           - component: exporters
             install: ./exporters
             ffmpeg: true
           # The worker suite runs with NO agents installed — the C3 decoupling test.
           - component: worker
-            install: ./contracts ./db ./adapters ./worker
+            install: ./contracts ./db "./adapters[storage]" ./worker
           # The API suite runs with no worker, Redis or PostgreSQL — the C2 decoupling test.
           - component: api
             install: ./contracts ./db ./api[test]

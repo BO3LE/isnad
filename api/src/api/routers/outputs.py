@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -7,11 +8,13 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from api.catalog import CatalogSource
-from api.deps import get_catalog, get_current_user, get_session, owned
+from api.deps import get_catalog, get_current_user, get_file_signer, get_session, owned
 from api.schemas import OutputLink
 from api.settings import ApiSettings, get_settings
+from api.storage import FileMissing, FileSigner, StorageUnavailable
 from db.models import AgentOutput, ExecutionLog, User, Workflow
 
+log = logging.getLogger(__name__)
 router = APIRouter(prefix="/outputs", tags=["outputs"])
 
 
@@ -60,10 +63,13 @@ def download(
     session: Session = Depends(get_session),
     settings: ApiSettings = Depends(get_settings),
     catalog: CatalogSource = Depends(get_catalog),
+    signer: FileSigner | None = Depends(get_file_signer),
 ):
     """Return a download URL — the API never streams files itself.
 
-    Development serves files from STORAGE_ROOT at /files. TODO(W4): Supabase signed URLs in production.
+    With STORAGE_BACKEND=supabase the URL is a short-lived signed link into the private bucket;
+    otherwise (development) files are served from STORAGE_ROOT at /files. Either way only the
+    output's owner gets a link — anyone else gets 404.
     """
     row = session.execute(
         select(AgentOutput, Workflow.user_id, ExecutionLog.agent_type)
@@ -88,8 +94,24 @@ def download(
         return OutputLink(id=output.id, text=written)
     if not output.storage_path:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "This output has no file.")
+    if settings.storage_backend == "supabase":
+        if signer is None:
+            log.error("STORAGE_BACKEND=supabase but SUPABASE_URL / SUPABASE_SERVICE_KEY are not set")
+            raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "File downloads aren't set up on this server.")
+        expires_in = settings.download_url_expires_in
+        try:
+            url = signer.sign(output.storage_path, expires_in)
+        except FileMissing:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "This file is no longer in storage.") from None
+        except StorageUnavailable as exc:
+            log.warning("signing %s failed: %s", output.id, exc)
+            raise HTTPException(
+                status.HTTP_503_SERVICE_UNAVAILABLE, "File storage is unavailable. Try again shortly."
+            ) from None
+        return OutputLink(id=output.id, url=url, expires_in=expires_in)
     if settings.environment == "production":
-        raise HTTPException(status.HTTP_501_NOT_IMPLEMENTED, "Signed download URLs land in W4.")
+        # /files is never mounted in production, so a local-disk URL would not resolve.
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "File downloads aren't set up on this server.")
     return OutputLink(
         id=output.id, url=f"{settings.public_files_url.rstrip('/')}/{output.storage_path}", expires_in=3600
     )
