@@ -77,6 +77,7 @@ contracts: add EmailPort
 | `make landing-check` | `landing/index.html` changed without regenerating `landing/site/index.html` |
 | OpenAPI drift | `contracts/openapi.json` or the frontend types weren't regenerated |
 | Migration round-trip | a migration doesn't upgrade, downgrade and upgrade cleanly, or models and migrations disagree |
+| Run lifecycle (`tests/integration`, `make test-integration`) | a template workflow no longer runs end to end through the real orchestrator, `SqlRunStore` and agents on PostgreSQL: wrong order, missing timings or outputs, an approval gate that doesn't park, resume or halt, or a retry that isn't recorded |
 
 If the import contract blocks you, don't edit `.importlinter` to get through — talk to the owners of both components.
 
