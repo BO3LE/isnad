@@ -119,6 +119,10 @@ jobs:
           alembic downgrade base
           alembic upgrade head
           alembic check
+      - name: Row Level Security (plain Postgres, then a simulated Supabase)
+        env:
+          RLS_TEST_DATABASE_URL: ${{ env.DATABASE_URL }}
+        run: pip install -c constraints.txt pytest pytest-asyncio && python -m pytest -q db/tests/test_rls.py
       - name: Seed twice (must be idempotent)
         run: python -m db.seed && python -m db.seed
 
