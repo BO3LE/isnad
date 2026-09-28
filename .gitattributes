@@ -1,0 +1,4 @@
+# Shell scripts run inside Linux containers (worker/Dockerfile COPYs scripts/worker-entrypoint.sh
+# straight into the image): a CRLF shebang line breaks with "No such file or directory" there.
+# Windows checkouts with core.autocrlf=true otherwise convert these to CRLF on clone.
+*.sh text eol=lf
