@@ -8,7 +8,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field
 
-from contracts.run import ApprovalDecision, RunStatus, WorkflowGraph
+from contracts.run import ApprovalDecision, ApprovalInfo, RunStatus, WorkflowGraph
 
 
 class Message(BaseModel):
@@ -88,6 +88,13 @@ class RunCreated(BaseModel):
 class ApprovalRequest(BaseModel):
     decision: ApprovalDecision
     note: str | None = Field(None, max_length=2000)
+
+
+class ApprovalRecord(ApprovalInfo):
+    """One decision in a run's audit trail — GET /runs/{run_id}/approvals (UC-04, S-06)."""
+
+    node_id: UUID
+    agent_type: str
 
 
 class OutputLink(BaseModel):

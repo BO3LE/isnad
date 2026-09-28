@@ -1,0 +1,527 @@
+{
+  "generated_at": "2026-09-28T15:51:45.600286+00:00",
+  "nfr01_target_p95_ms": 500.0,
+  "idle": {
+    "window": {
+      "start": 1790610644.3712568,
+      "end": 1790610674.4217718
+    },
+    "overall": {
+      "endpoint": "overall",
+      "count": 8036,
+      "p50_ms": 25.333699999464443,
+      "p95_ms": 83.0652500008,
+      "p99_ms": 94.14413000085915,
+      "max_ms": 128.61500000144588,
+      "error_rate_pct": 2.0283723245395717
+    },
+    "per_endpoint": [
+      {
+        "endpoint": "GET /agents/catalog",
+        "count": 380,
+        "p50_ms": 20.885450001514982,
+        "p95_ms": 29.336490001696806,
+        "p99_ms": 37.91588899988706,
+        "max_ms": 55.467800000769785,
+        "error_rate_pct": 0.0
+      },
+      {
+        "endpoint": "GET /health",
+        "count": 820,
+        "p50_ms": 5.849099998158636,
+        "p95_ms": 9.275834998334176,
+        "p99_ms": 13.811008997254213,
+        "max_ms": 28.643400000873953,
+        "error_rate_pct": 0.0
+      },
+      {
+        "endpoint": "GET /runs/{id}",
+        "count": 1746,
+        "p50_ms": 26.656000000002678,
+        "p95_ms": 36.430199998903845,
+        "p99_ms": 42.182675000731244,
+        "max_ms": 72.28069999837317,
+        "error_rate_pct": 0.057273768613974804
+      },
+      {
+        "endpoint": "GET /runs/{id}/logs",
+        "count": 1279,
+        "p50_ms": 26.636800001142547,
+        "p95_ms": 36.736889996973325,
+        "p99_ms": 50.968949999078184,
+        "max_ms": 67.78969999868423,
+        "error_rate_pct": 0.0
+      },
+      {
+        "endpoint": "GET /workflows",
+        "count": 1291,
+        "p50_ms": 29.359600001043873,
+        "p95_ms": 39.55254999891622,
+        "p99_ms": 57.500369999252115,
+        "max_ms": 71.76869999966584,
+        "error_rate_pct": 0.1549186676994578
+      },
+      {
+        "endpoint": "GET /workflows/{id}",
+        "count": 1252,
+        "p50_ms": 19.68875000238768,
+        "p95_ms": 27.553680000528402,
+        "p99_ms": 34.20023899940134,
+        "max_ms": 59.05179999899701,
+        "error_rate_pct": 0.0
+      },
+      {
+        "endpoint": "POST /workflows/{id}/validate",
+        "count": 406,
+        "p50_ms": 24.558499999329797,
+        "p95_ms": 34.586550000312855,
+        "p99_ms": 50.11069499960284,
+        "max_ms": 58.46110000129556,
+        "error_rate_pct": 0.0
+      },
+      {
+        "endpoint": "PUT /workflows/{id}",
+        "count": 862,
+        "p50_ms": 82.2294999998121,
+        "p95_ms": 97.81834000004892,
+        "p99_ms": 113.15249199735258,
+        "max_ms": 128.61500000144588,
+        "error_rate_pct": 18.561484918793504
+      }
+    ]
+  },
+  "render": {
+    "window": {
+      "start": 1790610674.6100187,
+      "end": 1790610704.6957238
+    },
+    "overall": {
+      "endpoint": "overall",
+      "count": 4230,
+      "p50_ms": 39.36489999978221,
+      "p95_ms": 146.37222500005,
+      "p99_ms": 302.42635800088465,
+      "max_ms": 485.56859999735025,
+      "error_rate_pct": 1.8203309692671392
+    },
+    "per_endpoint": [
+      {
+        "endpoint": "GET /agents/catalog",
+        "count": 256,
+        "p50_ms": 30.336149999129702,
+        "p95_ms": 58.362175000183925,
+        "p99_ms": 84.14910499977849,
+        "max_ms": 103.53800000302726,
+        "error_rate_pct": 0.0
+      },
+      {
+        "endpoint": "GET /health",
+        "count": 419,
+        "p50_ms": 8.201799999369541,
+        "p95_ms": 15.084370000113248,
+        "p99_ms": 22.528263999556643,
+        "max_ms": 49.29270000138786,
+        "error_rate_pct": 0.47732696897374705
+      },
+      {
+        "endpoint": "GET /runs/{id}",
+        "count": 897,
+        "p50_ms": 40.28000000107568,
+        "p95_ms": 75.49354000220772,
+        "p99_ms": 91.42650399939149,
+        "max_ms": 116.62830000204849,
+        "error_rate_pct": 0.2229654403567447
+      },
+      {
+        "endpoint": "GET /runs/{id}/logs",
+        "count": 651,
+        "p50_ms": 39.55169999971986,
+        "p95_ms": 70.92829999965033,
+        "p99_ms": 83.35944999998901,
+        "max_ms": 124.40979999882984,
+        "error_rate_pct": 0.0
+      },
+      {
+        "endpoint": "GET /workflows",
+        "count": 646,
+        "p50_ms": 111.03865000040969,
+        "p95_ms": 315.74780000028113,
+        "p99_ms": 411.23274000055955,
+        "max_ms": 485.56859999735025,
+        "error_rate_pct": 0.0
+      },
+      {
+        "endpoint": "GET /workflows/{id}",
+        "count": 711,
+        "p50_ms": 29.213599998911377,
+        "p95_ms": 51.791149999189656,
+        "p99_ms": 69.52252999799383,
+        "max_ms": 91.18759999910253,
+        "error_rate_pct": 0.14064697609001406
+      },
+      {
+        "endpoint": "POST /workflows/{id}/validate",
+        "count": 219,
+        "p50_ms": 38.27550000278279,
+        "p95_ms": 72.08848999835025,
+        "p99_ms": 91.40293400101653,
+        "max_ms": 124.51909999799682,
+        "error_rate_pct": 0.0
+      },
+      {
+        "endpoint": "PUT /workflows/{id}",
+        "count": 431,
+        "p50_ms": 90.30390000043553,
+        "p95_ms": 130.0170499998785,
+        "p99_ms": 170.76794000022343,
+        "max_ms": 248.57690000135335,
+        "error_rate_pct": 16.70533642691415
+      }
+    ],
+    "video_overlaps": [
+      {
+        "run_id": "3ed2c4df-2a35-4bc4-bc92-206db8cbfe38",
+        "status": "success",
+        "started_at": "2026-09-28T15:51:14.582371Z",
+        "completed_at": "2026-09-28T15:51:15.465345Z",
+        "overlap_s": 0.8553261756896973
+      },
+      {
+        "run_id": "28f0d013-080d-4d29-9861-64a0399b7750",
+        "status": "success",
+        "started_at": "2026-09-28T15:51:14.653945Z",
+        "completed_at": "2026-09-28T15:51:15.500661Z",
+        "overlap_s": 0.8467159271240234
+      },
+      {
+        "run_id": "c02385c7-9b91-443a-b3cf-f5e8d6acc5cd",
+        "status": "success",
+        "started_at": "2026-09-28T15:51:16.255498Z",
+        "completed_at": "2026-09-28T15:51:17.388620Z",
+        "overlap_s": 1.1331219673156738
+      },
+      {
+        "run_id": "9e007ae7-1c43-4b17-869d-eafe3ec7ddeb",
+        "status": "success",
+        "started_at": "2026-09-28T15:51:16.258205Z",
+        "completed_at": "2026-09-28T15:51:17.386440Z",
+        "overlap_s": 1.128235101699829
+      },
+      {
+        "run_id": "67951608-bfe6-42b0-b0f1-b09d854a922d",
+        "status": "success",
+        "started_at": "2026-09-28T15:51:18.135010Z",
+        "completed_at": "2026-09-28T15:51:18.925889Z",
+        "overlap_s": 0.7908790111541748
+      },
+      {
+        "run_id": "5fbbfaf7-52b1-4159-8c66-653f78d6a137",
+        "status": "success",
+        "started_at": "2026-09-28T15:51:18.152565Z",
+        "completed_at": "2026-09-28T15:51:18.954058Z",
+        "overlap_s": 0.8014929294586182
+      },
+      {
+        "run_id": "ea7b7e5e-6574-489e-bf5e-69bd45a365f6",
+        "status": "success",
+        "started_at": "2026-09-28T15:51:19.552486Z",
+        "completed_at": "2026-09-28T15:51:20.256785Z",
+        "overlap_s": 0.7042989730834961
+      },
+      {
+        "run_id": "95a8308c-f210-452f-bfe7-c552aaf9a1d0",
+        "status": "success",
+        "started_at": "2026-09-28T15:51:19.573595Z",
+        "completed_at": "2026-09-28T15:51:20.264637Z",
+        "overlap_s": 0.6910419464111328
+      },
+      {
+        "run_id": "5e20918e-5566-4e02-9a12-d30b94ebc1e5",
+        "status": "success",
+        "started_at": "2026-09-28T15:51:20.913421Z",
+        "completed_at": "2026-09-28T15:51:21.550141Z",
+        "overlap_s": 0.6367201805114746
+      },
+      {
+        "run_id": "c3bd3de3-41b7-49df-b845-5f0b98d4e214",
+        "status": "success",
+        "started_at": "2026-09-28T15:51:20.924697Z",
+        "completed_at": "2026-09-28T15:51:21.580164Z",
+        "overlap_s": 0.6554670333862305
+      },
+      {
+        "run_id": "b70eb8de-befe-4612-a660-1dd8ba9b1728",
+        "status": "success",
+        "started_at": "2026-09-28T15:51:22.205166Z",
+        "completed_at": "2026-09-28T15:51:22.955581Z",
+        "overlap_s": 0.7504148483276367
+      },
+      {
+        "run_id": "1c11aae1-15b2-4295-b0c8-1cc13e7fcf8f",
+        "status": "success",
+        "started_at": "2026-09-28T15:51:22.220479Z",
+        "completed_at": "2026-09-28T15:51:22.971271Z",
+        "overlap_s": 0.7507920265197754
+      },
+      {
+        "run_id": "72b37a73-7bd7-4f2a-89e1-6a39954c3928",
+        "status": "success",
+        "started_at": "2026-09-28T15:51:23.504379Z",
+        "completed_at": "2026-09-28T15:51:24.157420Z",
+        "overlap_s": 0.653040885925293
+      },
+      {
+        "run_id": "c4dff3d2-a4a5-4667-aa17-d1014c7b1ff3",
+        "status": "success",
+        "started_at": "2026-09-28T15:51:23.519646Z",
+        "completed_at": "2026-09-28T15:51:24.165330Z",
+        "overlap_s": 0.645684003829956
+      },
+      {
+        "run_id": "c67571aa-7529-44b6-a6c3-297cc9b99db8",
+        "status": "success",
+        "started_at": "2026-09-28T15:51:25.011730Z",
+        "completed_at": "2026-09-28T15:51:25.904433Z",
+        "overlap_s": 0.8927030563354492
+      },
+      {
+        "run_id": "236b6251-2511-44fb-8ac8-3ddb11ff95cf",
+        "status": "success",
+        "started_at": "2026-09-28T15:51:25.009376Z",
+        "completed_at": "2026-09-28T15:51:25.917737Z",
+        "overlap_s": 0.9083609580993652
+      },
+      {
+        "run_id": "b113a8c0-5479-4783-8879-968c90447885",
+        "status": "success",
+        "started_at": "2026-09-28T15:51:26.600408Z",
+        "completed_at": "2026-09-28T15:51:27.372193Z",
+        "overlap_s": 0.7717850208282471
+      },
+      {
+        "run_id": "253ac170-bafd-4235-97fc-21f45e3774da",
+        "status": "success",
+        "started_at": "2026-09-28T15:51:26.602461Z",
+        "completed_at": "2026-09-28T15:51:27.369817Z",
+        "overlap_s": 0.7673559188842773
+      },
+      {
+        "run_id": "527dd411-955f-4a35-bdc6-62c8755145a9",
+        "status": "success",
+        "started_at": "2026-09-28T15:51:27.942226Z",
+        "completed_at": "2026-09-28T15:51:28.558681Z",
+        "overlap_s": 0.616455078125
+      },
+      {
+        "run_id": "2fcebcbc-947f-4460-b206-e524b9152edb",
+        "status": "success",
+        "started_at": "2026-09-28T15:51:27.953772Z",
+        "completed_at": "2026-09-28T15:51:28.603997Z",
+        "overlap_s": 0.6502249240875244
+      },
+      {
+        "run_id": "f1837ea3-7daa-458d-98f7-4e60d26eeaef",
+        "status": "success",
+        "started_at": "2026-09-28T15:51:29.265177Z",
+        "completed_at": "2026-09-28T15:51:29.807184Z",
+        "overlap_s": 0.5420069694519043
+      },
+      {
+        "run_id": "4460e9c9-9fba-4b92-8b66-150b90d8f676",
+        "status": "success",
+        "started_at": "2026-09-28T15:51:29.323563Z",
+        "completed_at": "2026-09-28T15:51:29.859224Z",
+        "overlap_s": 0.535660982131958
+      },
+      {
+        "run_id": "5f83e757-c45f-4121-9f8d-78331b12ca7e",
+        "status": "success",
+        "started_at": "2026-09-28T15:51:30.354134Z",
+        "completed_at": "2026-09-28T15:51:30.766666Z",
+        "overlap_s": 0.41253185272216797
+      },
+      {
+        "run_id": "df736b84-24dd-4f0e-a155-9a2ec21c1774",
+        "status": "success",
+        "started_at": "2026-09-28T15:51:30.464440Z",
+        "completed_at": "2026-09-28T15:51:30.964032Z",
+        "overlap_s": 0.4995918273925781
+      },
+      {
+        "run_id": "d8939429-e35a-4860-a81c-c1b85bd03a50",
+        "status": "success",
+        "started_at": "2026-09-28T15:51:31.368631Z",
+        "completed_at": "2026-09-28T15:51:31.662835Z",
+        "overlap_s": 0.2942039966583252
+      },
+      {
+        "run_id": "d401926e-2136-4904-9275-523fefabc4b0",
+        "status": "success",
+        "started_at": "2026-09-28T15:51:31.635101Z",
+        "completed_at": "2026-09-28T15:51:31.870066Z",
+        "overlap_s": 0.23496484756469727
+      },
+      {
+        "run_id": "efda386e-c09c-4fa8-8d3f-322be91cc943",
+        "status": "success",
+        "started_at": "2026-09-28T15:51:32.317784Z",
+        "completed_at": "2026-09-28T15:51:32.573656Z",
+        "overlap_s": 0.2558720111846924
+      },
+      {
+        "run_id": "a9f49675-2bfc-48de-ae55-bdc6cd99db9a",
+        "status": "success",
+        "started_at": "2026-09-28T15:51:32.637996Z",
+        "completed_at": "2026-09-28T15:51:32.898603Z",
+        "overlap_s": 0.2606070041656494
+      },
+      {
+        "run_id": "1afc6fd9-b748-4eca-a317-35091e81796a",
+        "status": "success",
+        "started_at": "2026-09-28T15:51:33.340755Z",
+        "completed_at": "2026-09-28T15:51:33.708023Z",
+        "overlap_s": 0.36726808547973633
+      },
+      {
+        "run_id": "69ab681a-1361-4990-89e2-41d3603f40ae",
+        "status": "success",
+        "started_at": "2026-09-28T15:51:33.422893Z",
+        "completed_at": "2026-09-28T15:51:33.868448Z",
+        "overlap_s": 0.4455549716949463
+      },
+      {
+        "run_id": "7c4b5073-11a7-48c9-9910-534c369a7178",
+        "status": "success",
+        "started_at": "2026-09-28T15:51:34.362302Z",
+        "completed_at": "2026-09-28T15:51:34.746342Z",
+        "overlap_s": 0.38403987884521484
+      },
+      {
+        "run_id": "818eded0-b269-4fec-8548-83d543ddfd30",
+        "status": "success",
+        "started_at": "2026-09-28T15:51:34.458748Z",
+        "completed_at": "2026-09-28T15:51:34.964251Z",
+        "overlap_s": 0.5055029392242432
+      },
+      {
+        "run_id": "d1731b3c-d63f-40fa-91bb-1968d6c01fb1",
+        "status": "success",
+        "started_at": "2026-09-28T15:51:35.437918Z",
+        "completed_at": "2026-09-28T15:51:35.736911Z",
+        "overlap_s": 0.2989931106567383
+      },
+      {
+        "run_id": "b74b7b83-f6c6-48a4-9aac-2364f2461fb6",
+        "status": "success",
+        "started_at": "2026-09-28T15:51:35.714491Z",
+        "completed_at": "2026-09-28T15:51:36.078502Z",
+        "overlap_s": 0.3640110492706299
+      },
+      {
+        "run_id": "cb8078d3-564e-4796-ae99-164b8e98788d",
+        "status": "success",
+        "started_at": "2026-09-28T15:51:36.660182Z",
+        "completed_at": "2026-09-28T15:51:37.058091Z",
+        "overlap_s": 0.39790892601013184
+      },
+      {
+        "run_id": "5fe14d2d-c2b8-4aac-a30d-247397c2140c",
+        "status": "success",
+        "started_at": "2026-09-28T15:51:37.031421Z",
+        "completed_at": "2026-09-28T15:51:37.371597Z",
+        "overlap_s": 0.3401761054992676
+      },
+      {
+        "run_id": "6f7856ff-8274-47c1-9ffc-8565411b770a",
+        "status": "success",
+        "started_at": "2026-09-28T15:51:37.790383Z",
+        "completed_at": "2026-09-28T15:51:38.183947Z",
+        "overlap_s": 0.39356398582458496
+      },
+      {
+        "run_id": "bb2f9f41-ce9e-48ff-bf9a-9a1d7721422f",
+        "status": "success",
+        "started_at": "2026-09-28T15:51:38.159600Z",
+        "completed_at": "2026-09-28T15:51:38.587696Z",
+        "overlap_s": 0.42809605598449707
+      },
+      {
+        "run_id": "857f1597-0012-4a84-82d0-cc69b75fca92",
+        "status": "success",
+        "started_at": "2026-09-28T15:51:39.089249Z",
+        "completed_at": "2026-09-28T15:51:39.466879Z",
+        "overlap_s": 0.37762999534606934
+      },
+      {
+        "run_id": "56ac6da1-07f4-4b7d-ab6f-a0117113c4ff",
+        "status": "success",
+        "started_at": "2026-09-28T15:51:39.522473Z",
+        "completed_at": "2026-09-28T15:51:39.845637Z",
+        "overlap_s": 0.3231639862060547
+      },
+      {
+        "run_id": "5684e6ec-ff7b-44a5-a04c-9f8b8a33e97c",
+        "status": "success",
+        "started_at": "2026-09-28T15:51:40.235565Z",
+        "completed_at": "2026-09-28T15:51:40.631305Z",
+        "overlap_s": 0.3957400321960449
+      },
+      {
+        "run_id": "a420874c-7fbe-4607-8fc2-8c0d593f5b0e",
+        "status": "success",
+        "started_at": "2026-09-28T15:51:40.746749Z",
+        "completed_at": "2026-09-28T15:51:41.191952Z",
+        "overlap_s": 0.4452030658721924
+      },
+      {
+        "run_id": "c9601741-60bf-4d77-be4a-b6b76fa643c7",
+        "status": "success",
+        "started_at": "2026-09-28T15:51:41.510327Z",
+        "completed_at": "2026-09-28T15:51:41.858119Z",
+        "overlap_s": 0.3477919101715088
+      },
+      {
+        "run_id": "24dbbf54-1dd1-4300-834b-bb5913c8d437",
+        "status": "success",
+        "started_at": "2026-09-28T15:51:41.936413Z",
+        "completed_at": "2026-09-28T15:51:42.261026Z",
+        "overlap_s": 0.3246128559112549
+      },
+      {
+        "run_id": "512e9a11-25de-495b-996d-f78ddd0ccbd7",
+        "status": "success",
+        "started_at": "2026-09-28T15:51:42.581676Z",
+        "completed_at": "2026-09-28T15:51:42.860999Z",
+        "overlap_s": 0.27932310104370117
+      },
+      {
+        "run_id": "7c676587-45c3-4b13-adf1-198f0c1a93e7",
+        "status": "success",
+        "started_at": "2026-09-28T15:51:42.992198Z",
+        "completed_at": "2026-09-28T15:51:43.283355Z",
+        "overlap_s": 0.2911570072174072
+      },
+      {
+        "run_id": "15da0e9f-2038-42f6-b54c-ef8b9b980131",
+        "status": "success",
+        "started_at": "2026-09-28T15:51:43.638150Z",
+        "completed_at": "2026-09-28T15:51:43.904492Z",
+        "overlap_s": 0.2663419246673584
+      },
+      {
+        "run_id": "542eb8a1-25b0-443e-8306-0a6b73b5fcc0",
+        "status": "success",
+        "started_at": "2026-09-28T15:51:44.018005Z",
+        "completed_at": "2026-09-28T15:51:44.269238Z",
+        "overlap_s": 0.2512331008911133
+      },
+      {
+        "run_id": "b8e5cf95-e68f-41b3-bc00-4d1ffdda8bda",
+        "status": "success",
+        "started_at": "2026-09-28T15:51:44.623288Z",
+        "completed_at": "2026-09-28T15:51:44.872949Z",
+        "overlap_s": 0.07243585586547852
+      }
+    ]
+  }
+}
