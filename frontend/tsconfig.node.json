@@ -13,5 +13,12 @@
     "strict": true,
     "types": ["node"]
   },
-  "include": ["vite.config.ts", "tailwind.config.ts", "playwright.config.ts", "e2e"]
+  "include": [
+    "vite.config.ts",
+    "tailwind.config.ts",
+    "playwright.config.ts",
+    "e2e",
+    "playwright.fullstack.config.ts",
+    "e2e-fullstack"
+  ]
 }
