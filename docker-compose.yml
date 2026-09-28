@@ -72,7 +72,7 @@ services:
     # On some Docker Desktop / WSL2 hosts the dev target's watchfiles reloader crashes with "Cannot
     # allocate memory". If that happens, run with WORKER_BUILD_TARGET=prod (loses autoreload; the
     # worker still installs every agent under agents/, just not live-edited).
-    build: { context: ., dockerfile: worker/Dockerfile, target: ${WORKER_BUILD_TARGET:-dev} }
+    build: { context: ., dockerfile: worker/Dockerfile, target: "${WORKER_BUILD_TARGET:-dev}" }
     env_file: [{ path: .env, required: false }]
     environment: *python-env
     volumes:
