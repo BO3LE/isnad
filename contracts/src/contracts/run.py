@@ -94,6 +94,15 @@ class WorkflowGraph(BaseModel):
     edges: list[GraphEdge] = Field(default_factory=list)
 
 
+class ApprovalInfo(BaseModel):
+    """The recorded human decision for a node that required approval (UC-04 audit trail)."""
+
+    decision: ApprovalDecision
+    decided_by_email: str | None = None
+    decided_at: datetime
+    note: str | None = None
+
+
 class NodeState(BaseModel):
     node_id: UUID
     agent_type: str
@@ -103,6 +112,8 @@ class NodeState(BaseModel):
     completed_at: datetime | None = None
     duration_ms: int | None = None
     error_message: str | None = None
+    # Present only for a node that has been approved or rejected (UC-04); null otherwise.
+    approval: ApprovalInfo | None = None
 
 
 class LogEntry(NodeState):

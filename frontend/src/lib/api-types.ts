@@ -204,6 +204,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/runs/{run_id}/approvals": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Run Approvals
+         * @description UC-04 audit trail: every decision recorded against this run, oldest first (S-06, report evidence).
+         */
+        get: operations["run_approvals_runs__run_id__approvals_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/runs/{run_id}/cancel": {
         parameters: {
             query?: never;
@@ -476,6 +496,45 @@ export interface components {
          * @enum {string}
          */
         ApprovalDecision: "approve" | "reject";
+        /**
+         * ApprovalInfo
+         * @description The recorded human decision for a node that required approval (UC-04 audit trail).
+         */
+        ApprovalInfo: {
+            /**
+             * Decided At
+             * Format: date-time
+             */
+            decided_at: string;
+            /** Decided By Email */
+            decided_by_email?: string | null;
+            decision: components["schemas"]["ApprovalDecision"];
+            /** Note */
+            note?: string | null;
+        };
+        /**
+         * ApprovalRecord
+         * @description One decision in a run's audit trail — GET /runs/{run_id}/approvals (UC-04, S-06).
+         */
+        ApprovalRecord: {
+            /** Agent Type */
+            agent_type: string;
+            /**
+             * Decided At
+             * Format: date-time
+             */
+            decided_at: string;
+            /** Decided By Email */
+            decided_by_email?: string | null;
+            decision: components["schemas"]["ApprovalDecision"];
+            /**
+             * Node Id
+             * Format: uuid
+             */
+            node_id: string;
+            /** Note */
+            note?: string | null;
+        };
         /** ApprovalRequest */
         ApprovalRequest: {
             decision: components["schemas"]["ApprovalDecision"];
@@ -581,6 +640,7 @@ export interface components {
         LogEntry: {
             /** Agent Type */
             agent_type: string;
+            approval?: components["schemas"]["ApprovalInfo"] | null;
             /** Completed At */
             completed_at?: string | null;
             /** Duration Ms */
@@ -625,6 +685,7 @@ export interface components {
         NodeState: {
             /** Agent Type */
             agent_type: string;
+            approval?: components["schemas"]["ApprovalInfo"] | null;
             /** Completed At */
             completed_at?: string | null;
             /** Duration Ms */
@@ -1163,6 +1224,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["RunState"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    run_approvals_runs__run_id__approvals_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApprovalRecord"][];
                 };
             };
             /** @description Validation Error */

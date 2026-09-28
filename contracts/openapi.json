@@ -174,6 +174,99 @@
         "title": "ApprovalDecision",
         "type": "string"
       },
+      "ApprovalInfo": {
+        "description": "The recorded human decision for a node that required approval (UC-04 audit trail).",
+        "properties": {
+          "decided_at": {
+            "format": "date-time",
+            "title": "Decided At",
+            "type": "string"
+          },
+          "decided_by_email": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Decided By Email"
+          },
+          "decision": {
+            "$ref": "#/components/schemas/ApprovalDecision"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          }
+        },
+        "required": [
+          "decision",
+          "decided_at"
+        ],
+        "title": "ApprovalInfo",
+        "type": "object"
+      },
+      "ApprovalRecord": {
+        "description": "One decision in a run's audit trail \u2014 GET /runs/{run_id}/approvals (UC-04, S-06).",
+        "properties": {
+          "agent_type": {
+            "title": "Agent Type",
+            "type": "string"
+          },
+          "decided_at": {
+            "format": "date-time",
+            "title": "Decided At",
+            "type": "string"
+          },
+          "decided_by_email": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Decided By Email"
+          },
+          "decision": {
+            "$ref": "#/components/schemas/ApprovalDecision"
+          },
+          "node_id": {
+            "format": "uuid",
+            "title": "Node Id",
+            "type": "string"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          }
+        },
+        "required": [
+          "decision",
+          "decided_at",
+          "node_id",
+          "agent_type"
+        ],
+        "title": "ApprovalRecord",
+        "type": "object"
+      },
       "ApprovalRequest": {
         "properties": {
           "decision": {
@@ -378,6 +471,16 @@
             "title": "Agent Type",
             "type": "string"
           },
+          "approval": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ApprovalInfo"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "completed_at": {
             "anyOf": [
               {
@@ -484,6 +587,16 @@
           "agent_type": {
             "title": "Agent Type",
             "type": "string"
+          },
+          "approval": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ApprovalInfo"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "completed_at": {
             "anyOf": [
@@ -1527,6 +1640,59 @@
           }
         ],
         "summary": "Get Run",
+        "tags": [
+          "runs"
+        ]
+      }
+    },
+    "/runs/{run_id}/approvals": {
+      "get": {
+        "description": "UC-04 audit trail: every decision recorded against this run, oldest first (S-06, report evidence).",
+        "operationId": "run_approvals_runs__run_id__approvals_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Run Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ApprovalRecord"
+                  },
+                  "title": "Response Run Approvals Runs  Run Id  Approvals Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Run Approvals",
         "tags": [
           "runs"
         ]
