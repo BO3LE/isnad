@@ -201,14 +201,18 @@ class Credential(Base):
 
 
 class Approval(Base):
-    """The UC-04 audit trail."""
+    """The UC-04 audit trail.
+
+    `log_id` is unique (migration 0004): a node parks for approval once and is decided once — the
+    orchestrator never returns a node to `awaiting_approval` after a decision — so a second row
+    for the same log would only ever be a bug, not a legitimate re-review.
+    """
 
     __tablename__ = "approvals"
+    __table_args__ = (UniqueConstraint("log_id", name="uq_approvals_log_id"),)
 
     id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
-    log_id: Mapped[uuid.UUID] = mapped_column(
-        ForeignKey("execution_logs.id", ondelete="CASCADE"), nullable=False, index=True
-    )
+    log_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("execution_logs.id", ondelete="CASCADE"), nullable=False)
     decision: Mapped[str] = mapped_column(Enum(*APPROVAL_DECISIONS, name="approval_decision"), nullable=False)
     decided_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
     decided_at: Mapped[datetime] = _now()
