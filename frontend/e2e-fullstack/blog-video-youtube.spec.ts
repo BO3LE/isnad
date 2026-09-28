@@ -15,7 +15,8 @@ test("Blog → Video → YouTube: run, approve the Publisher, and the MP4 + link
   // The video's output (video_path) becomes a "file" output — a FileCard under "Files", with a
   // playable <video> once its download URL resolves.
   await expect(page.getByRole("heading", { name: /^\d+ files?$/ })).toBeVisible();
-  await expect(page.getByText("video.mp4")).toBeVisible();
+  // exact: the Video step's text output also contains "…/video.mp4" (its storage path).
+  await expect(page.getByText("video.mp4", { exact: true })).toBeVisible();
   await expect(page.getByText("MP4", { exact: true })).toBeVisible();
   const video = page.locator("video").first();
   await expect(video).toBeVisible({ timeout: 20_000 });
