@@ -23,13 +23,13 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from sqlalchemy import delete, select, text
+from sqlalchemy import delete, select, text, update
 from sqlalchemy.orm import Session, sessionmaker
 
 from adapters.factory import AdapterSettings, build_ports
 from contracts.graph import topological_order
 from contracts.ports import Ports
-from contracts.run import NodeStatus, RunStatus, WorkflowGraph
+from contracts.run import TERMINAL_RUN_STATUSES, NodeStatus, RunStatus, WorkflowGraph
 from db.models import ExecutionLog, ExecutionRun, User, Workflow
 from db.seed import DEMO_EMAIL, seed
 from db.session import make_engine, make_session_factory
@@ -190,6 +190,19 @@ class Db:
                 )
             self._runs.append(run.id)
             return run.id
+
+    def cancel_run(self, run_id: uuid.UUID) -> None:
+        """Mirror of `POST /runs/{id}/cancel` (api/routers/runs.py): the run is cancelled, and steps
+        that haven't started are skipped; a step already running is left for the worker to finish."""
+        with self.sessions.begin() as s:
+            run = s.get(ExecutionRun, run_id)
+            assert RunStatus(run.status) not in TERMINAL_RUN_STATUSES, "the API answers 409 for a finished run"
+            run.status = RunStatus.CANCELLED.value
+            s.execute(
+                update(ExecutionLog)
+                .where(ExecutionLog.run_id == run_id, ExecutionLog.status.in_(["pending", "awaiting_approval"]))
+                .values(status=NodeStatus.SKIPPED.value)
+            )
 
     def cleanup(self) -> None:
         with self.sessions.begin() as s:
