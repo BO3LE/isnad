@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { DEMO_EMAIL, openFreshCopy, openOutputsFromCanvas, runToCompletion, signIn } from "./fixtures";
+import { DEMO_EMAIL, openOutputsFromCanvas, openTemplate, runToCompletion, signIn } from "./fixtures";
 
 // GP-plan W10 (C7) — the "Research → PDF → Email" template (researcher → writer → email) against
 // the real stack. The email step requires approval (D-08).
@@ -17,7 +17,7 @@ test("Research → PDF → Email: run, approve the Email step, and it shows up o
   page,
 }) => {
   await signIn(page);
-  await openFreshCopy(page, "Research → PDF → Email");
+  await openTemplate(page, "Research → PDF → Email");
   await runToCompletion(page, { approve: true });
   await openOutputsFromCanvas(page);
 

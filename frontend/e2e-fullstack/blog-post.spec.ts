@@ -1,11 +1,11 @@
 import { expect, test } from "@playwright/test";
-import { openFreshCopy, openOutputsFromCanvas, runToCompletion, signIn } from "./fixtures";
+import { openOutputsFromCanvas, openTemplate, runToCompletion, signIn } from "./fixtures";
 
 // GP-plan W10 (C7) — the "Blog post" template (researcher → writer) against the real stack:
 // frontend, api, worker, redis, postgres, FAKE_ADAPTERS=true. No approval gate on this one.
 test("Blog post: sign in, run, and the article shows up on Outputs", async ({ page }) => {
   await signIn(page);
-  await openFreshCopy(page, "Blog post");
+  await openTemplate(page, "Blog post");
   await runToCompletion(page, { approve: false });
   await openOutputsFromCanvas(page);
 

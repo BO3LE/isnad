@@ -16,26 +16,31 @@ export async function signIn(page: Page) {
 }
 
 /**
- * Duplicates the named template through the real "Duplicate" action (the card's "Actions for …"
- * menu — WorkflowCard) and opens the copy's canvas. A fresh workflow per test, so two runs of the
- * suite never share run history and a rerun is always independent (GP-plan W10 point 3).
+ * Opens the named template's canvas from the workflows list.
  *
- * The POST /workflows response from the duplicate is read only to get the new workflow's id
- * reliably — clicking the new card by name would be ambiguous once the suite has run more than
- * once, since every run leaves another "<name> (copy)" card behind.
+ * GP-plan W10 point 3 suggests "duplicate the template per test" for run independence — but the
+ * real "Duplicate" action (WorkflowCard's "Actions for …" menu, `duplicateWorkflow` in
+ * lib/api.ts) is broken against the real API for any workflow that already has saved steps,
+ * which every seeded template does: `duplicateWorkflow` copies the source's graph verbatim,
+ * node ids included, into `PUT /workflows/{copyId}`; the API inserts those ids as new
+ * `agent_nodes` rows without regenerating them, and since `agent_nodes.id` is a primary key (not
+ * scoped to a workflow) the insert collides with the original workflow's own rows and the
+ * request 500s ("duplicate key value violates unique constraint pk_agent_nodes"). Confirmed
+ * directly against the API (see the W10 report) — this is a real backend bug, not a test
+ * mistake, and out of scope to fix here per the W10 brief (don't touch app code without a
+ * forcing reason, and this one belongs to whoever owns C2/workflows).
+ *
+ * Independence doesn't actually need duplication, though: every Run press creates its own
+ * run_id and its own outputs regardless of how many times the same workflow has run before, and
+ * these specs run one at a time (`fullyParallel: false`, `workers: 1`), so two specs never touch
+ * the same seeded workflow concurrently. Running the template directly is simpler and sidesteps
+ * the bug entirely.
  */
-export async function openFreshCopy(page: Page, templateName: string): Promise<string> {
-  await expect(page.getByRole("link", { name: templateName, exact: true })).toBeVisible({ timeout: 20_000 });
-  await page.getByRole("button", { name: `Actions for ${templateName}` }).click();
-  const [response] = await Promise.all([
-    page.waitForResponse((r) => r.request().method() === "POST" && new URL(r.url()).pathname === "/workflows"),
-    page.getByRole("menuitem", { name: "Duplicate" }).click(),
-  ]);
-  const created = (await response.json()) as { id: string };
-
-  await page.goto(`/workflows/${created.id}`);
+export async function openTemplate(page: Page, templateName: string): Promise<void> {
+  const link = page.getByRole("link", { name: templateName, exact: true });
+  await expect(link).toBeVisible({ timeout: 20_000 });
+  await link.click();
   await expect(page.getByRole("button", { name: "Run", exact: true })).toBeVisible({ timeout: 20_000 });
-  return created.id;
 }
 
 /** Presses Run and watches the canvas RunBar to a terminal state, approving the run's one gate
@@ -69,8 +74,14 @@ export async function runToCompletion(page: Page, { approve }: { approve: boolea
  *  shortcut link straight from the canvas to Outputs (see the W10 report for this gap). */
 export async function openOutputsFromCanvas(page: Page) {
   await page.getByRole("button", { name: "Back to editing" }).click();
-  await page.getByRole("link", { name: "View run" }).click();
+  // "View run" appears once the status bar's run-history query has refetched after exiting run
+  // mode (useCanvasRun's `exit`) — a brief, real network round trip, not instant.
+  const viewRun = page.getByRole("link", { name: "View run" });
+  await expect(viewRun).toBeVisible({ timeout: 20_000 });
+  await viewRun.click();
   await expect(page.getByRole("heading", { name: "Run" })).toBeVisible({ timeout: 20_000 });
-  await page.getByRole("link", { name: /^Files/ }).click();
+  const filesTab = page.getByRole("link", { name: /^Files/ });
+  await expect(filesTab).toBeVisible({ timeout: 20_000 });
+  await filesTab.click();
   await expect(page.getByRole("heading", { name: "Files" })).toBeVisible({ timeout: 20_000 });
 }
