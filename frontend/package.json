@@ -16,6 +16,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:e2e": "playwright test",
+    "test:e2e:fullstack": "playwright test --config=playwright.fullstack.config.ts",
     "gen:api": "openapi-typescript ../contracts/openapi.json -o src/lib/api-types.ts",
     "check:api-types": "openapi-typescript ../contracts/openapi.json -o src/lib/api-types.ts && git diff --exit-code -- src/lib/api-types.ts"
   },
