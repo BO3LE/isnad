@@ -114,8 +114,13 @@ def _drive_one(base: str, token: str, workflow: dict, timeout: float, progress: 
     if status_code != 202:
         progress.report("submit_failed")
         return RunResult(
-            run_id="", workflow_id=workflow["id"], workflow_name=workflow["name"], final_status=None,
-            approvals_made=0, elapsed_s=time.monotonic() - start, error=f"run POST returned {status_code}: {created}"
+            run_id="",
+            workflow_id=workflow["id"],
+            workflow_name=workflow["name"],
+            final_status=None,
+            approvals_made=0,
+            elapsed_s=time.monotonic() - start,
+            error=f"run POST returned {status_code}: {created}",
         )
     run_id = created["run_id"]
     approvals = 0
@@ -141,14 +146,23 @@ def _drive_one(base: str, token: str, workflow: dict, timeout: float, progress: 
     else:
         progress.report("timed_out")
         return RunResult(
-            run_id=run_id, workflow_id=workflow["id"], workflow_name=workflow["name"], final_status=None,
-            approvals_made=approvals, elapsed_s=time.monotonic() - start, error=f"exceeded {timeout}s per-run timeout"
+            run_id=run_id,
+            workflow_id=workflow["id"],
+            workflow_name=workflow["name"],
+            final_status=None,
+            approvals_made=approvals,
+            elapsed_s=time.monotonic() - start,
+            error=f"exceeded {timeout}s per-run timeout",
         )
     final = state["status"] if state else "unknown"
     progress.report(final)
     return RunResult(
-        run_id=run_id, workflow_id=workflow["id"], workflow_name=workflow["name"], final_status=final,
-        approvals_made=approvals, elapsed_s=time.monotonic() - start,
+        run_id=run_id,
+        workflow_id=workflow["id"],
+        workflow_name=workflow["name"],
+        final_status=final,
+        approvals_made=approvals,
+        elapsed_s=time.monotonic() - start,
     )
 
 
@@ -258,9 +272,7 @@ def cmd_report(args: argparse.Namespace) -> None:
 
     with psycopg.connect(args.database_url, row_factory=dict_row) as conn:
         if not workflow_names:
-            rows = conn.execute(
-                "SELECT id, name FROM workflows WHERE id = ANY(%s)", (workflow_ids,)
-            ).fetchall()
+            rows = conn.execute("SELECT id, name FROM workflows WHERE id = ANY(%s)", (workflow_ids,)).fetchall()
             workflow_names = {str(r["id"]): r["name"] for r in rows}
 
         runs = conn.execute(
@@ -377,9 +389,7 @@ def _build_report(
 
     # ---- run duration p50/p95 (finished runs only)
     run_durations = [
-        (r["completed_at"] - r["started_at"]).total_seconds()
-        for r in runs
-        if r["started_at"] and r["completed_at"]
+        (r["completed_at"] - r["started_at"]).total_seconds() for r in runs if r["started_at"] and r["completed_at"]
     ]
 
     # ---- approvals vs gates hit: a gate is "hit" if its log row is currently parked, or has a
@@ -403,7 +413,8 @@ def _build_report(
     lines.append(f"| Total node handoffs | — | {total_handoffs} |")
     lines.append(f"| Successful handoffs | — | {successful_handoffs} |")
     lines.append(
-        f"| **Handoff success rate** | **≥ 99%** | **{handoff_rate:.2f}%**" if handoff_rate is not None
+        f"| **Handoff success rate** | **≥ 99%** | **{handoff_rate:.2f}%**"
+        if handoff_rate is not None
         else "| **Handoff success rate** | **≥ 99%** | n/a (no handoffs) |"
     )
     lines.append(f"| Runs completing without retry | — | {runs_no_retry} / {total_runs} |")
@@ -411,7 +422,8 @@ def _build_report(
     lines.append("")
     lines.append(
         f"Run success rate (terminal status `succeeded` ÷ total runs): "
-        f"**{run_success_rate:.2f}%** ({succeeded}/{total_runs})." if total_runs
+        f"**{run_success_rate:.2f}%** ({succeeded}/{total_runs})."
+        if total_runs
         else "No runs in this window."
     )
     lines.append("")
@@ -463,7 +475,7 @@ def _build_report(
         lines.append("| Error message (first line, truncated) | Count |")
         lines.append("|---|---|")
         for msg, count in failure_causes.most_common(20):
-            lines.append(f"| {msg.replace('|', chr(0x7c))} | {count} |")
+            lines.append(f"| {msg.replace('|', chr(0x7C))} | {count} |")
     else:
         lines.append("No failed node handoffs in this window.")
     lines.append("")
@@ -512,10 +524,7 @@ def _build_report(
     lines.append("")
     lines.append("```")
     lines.append("docker compose up -d --build db redis migrate api worker")
-    lines.append(
-        "python scripts/reliability_campaign.py both --runs 60 --concurrency 2 "
-        f"--label {label}"
-    )
+    lines.append(f"python scripts/reliability_campaign.py both --runs 60 --concurrency 2 --label {label}")
     lines.append("```")
     lines.append("")
     lines.append(
@@ -700,7 +709,9 @@ def main(argv: list[str] | None = None) -> int:
     if getattr(args, "window", None) is None:
         args.window = DEFAULT_CSV_DIR / f"reliability-{args.label}-window.json"
     if hasattr(args, "database_url") and not args.database_url:
-        args.database_url = os.environ.get("DATABASE_URL_HOST") or os.environ.get("DATABASE_URL") or DEFAULT_DATABASE_URL
+        args.database_url = (
+            os.environ.get("DATABASE_URL_HOST") or os.environ.get("DATABASE_URL") or DEFAULT_DATABASE_URL
+        )
         # A DATABASE_URL of postgresql://...@db:5432/... (the in-container hostname) is useless
         # from the host running this script — fall back to the documented host-side default.
         if "@db:" in args.database_url:
