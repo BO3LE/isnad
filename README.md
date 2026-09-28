@@ -26,6 +26,7 @@ Prove the whole stack works:
 
 ```bash
 python3 scripts/smoke_test.py
+# Windows (Git Bash): python -X utf8 scripts/smoke_test.py — see SETUP.md's Windows notes
 ```
 
 Full setup, local development without Docker, and troubleshooting: **[SETUP.md](SETUP.md)**. How we work: **[CONTRIBUTING.md](CONTRIBUTING.md)**.

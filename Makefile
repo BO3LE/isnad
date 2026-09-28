@@ -76,6 +76,13 @@ openapi: ## Regenerate contracts/openapi.json and the frontend API types
 	$(VENV) python -m api.export_openapi
 	cd frontend && npm run gen:api
 
+# ---------------------------------------------------------------- CD/DVD (W12)
+dist: ## Build dist/isnad-cd/ + dist/isnad-cd.zip: source + SETUP.md + TOOLS.md + report/ placeholder
+	$(VENV) python scripts/make_dist.py
+
+fresh-machine-test: ## W11: clone HEAD into a temp dir, docker compose up --build, smoke test, teardown
+	scripts/fresh_machine_test.sh
+
 # ---------------------------------------------------------------- Landing page
 landing: ## Rebuild landing/site/index.html from landing/index.html
 	python3 landing/build-site.py
@@ -86,4 +93,4 @@ landing-check: ## Fail if landing/site/index.html is out of date
 
 check: lint test ## Everything CI runs, locally
 
-.PHONY: help up down reset logs measure-video migrate revision bootstrap test test-integration reliability latency lint format hooks hooks-all openapi landing landing-check check
+.PHONY: help up down reset logs measure-video migrate revision bootstrap test test-integration reliability latency lint format hooks hooks-all openapi dist fresh-machine-test landing landing-check check
