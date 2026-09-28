@@ -47,6 +47,18 @@ reliability: ## W10: drive 60 runs through the real stack and write docs/metrics
 	docker compose up -d --build db redis migrate api worker
 	$(VENV) python scripts/reliability_campaign.py both --runs $(or $(RUNS),60) --concurrency $(or $(CONCURRENCY),2)
 
+latency: ## W9: measure p95 API latency idle vs during a 1080p video render, writes docs/metrics/api-latency.md
+	docker compose up -d --build db redis migrate api
+	docker build -q -f worker/Dockerfile --target prod -t isnad-worker-prod .
+	docker run -d --rm --name isnad-worker-latency --network isnad_default --network-alias worker \
+	  --cpus 2 --memory 4g \
+	  -e DATABASE_URL=postgresql://postgres:postgres@db:5432/gp -e REDIS_URL=redis://redis:6379/0 \
+	  -e STORAGE_ROOT=/data/artifacts -e PUBLIC_FILES_URL=http://localhost:8000/files \
+	  -v isnad_artifacts:/data/artifacts isnad-worker-prod
+	$(VENV) python scripts/measure_api_latency.py both --duration $(or $(DURATION),30) \
+	  --concurrency $(or $(CONCURRENCY),8) --videos $(or $(VIDEOS),2)
+	docker stop isnad-worker-latency
+
 lint: ## ruff + format check + import boundaries + agent shape + frontend lint
 	$(VENV) ruff check . && ruff format --check . && lint-imports && python scripts/validate_manifests.py
 	cd frontend && npm run lint && npm run typecheck
@@ -74,4 +86,4 @@ landing-check: ## Fail if landing/site/index.html is out of date
 
 check: lint test ## Everything CI runs, locally
 
-.PHONY: help up down reset logs measure-video migrate revision bootstrap test test-integration reliability lint format hooks hooks-all openapi landing landing-check check
+.PHONY: help up down reset logs measure-video migrate revision bootstrap test test-integration reliability latency lint format hooks hooks-all openapi landing landing-check check
