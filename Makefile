@@ -43,6 +43,10 @@ test-integration: ## Run tests/integration (full run lifecycle) against the Dock
 	docker compose up -d --wait db
 	$(VENV) INTEGRATION_DATABASE_URL=$${INTEGRATION_DATABASE_URL:-postgresql://postgres:postgres@localhost:$${DB_HOST_PORT:-5433}/gp} python -m pytest tests/integration -q
 
+reliability: ## W10: drive 60 runs through the real stack and write docs/metrics/reliability.md (needs `make up` running)
+	docker compose up -d --build db redis migrate api worker
+	$(VENV) python scripts/reliability_campaign.py both --runs $(or $(RUNS),60) --concurrency $(or $(CONCURRENCY),2)
+
 lint: ## ruff + format check + import boundaries + agent shape + frontend lint
 	$(VENV) ruff check . && ruff format --check . && lint-imports && python scripts/validate_manifests.py
 	cd frontend && npm run lint && npm run typecheck
@@ -70,4 +74,4 @@ landing-check: ## Fail if landing/site/index.html is out of date
 
 check: lint test ## Everything CI runs, locally
 
-.PHONY: help up down reset logs measure-video migrate revision bootstrap test test-integration lint format hooks hooks-all openapi landing landing-check check
+.PHONY: help up down reset logs measure-video migrate revision bootstrap test test-integration reliability lint format hooks hooks-all openapi landing landing-check check
