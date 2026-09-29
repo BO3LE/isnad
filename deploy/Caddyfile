@@ -1,0 +1,24 @@
+# Public entry point for docker-compose.prod.yml.
+#
+# SITE_ADDRESS comes from DOMAIN in .env.production:
+#   isnad.example.com        -> HTTPS with an automatic Let's Encrypt certificate (HTTP redirects to it)
+#   203-0-113-10.sslip.io    -> same, with no domain of your own (the name resolves to that IP)
+#   http://203.0.113.10      -> plain HTTP on the IP, no certificate (smoke test only: Google
+#                               sign-in needs an https:// redirect URI)
+#   http://localhost         -> local testing of the production stack
+#
+# Everything goes to `web` (nginx), which serves the SPA and proxies /api/* to the API with the
+# prefix stripped (frontend/nginx.conf) — so paths are the same with or without Caddy in front.
+# Certificates live in the caddy_data volume; don't delete it (Let's Encrypt rate-limits reissues).
+
+{$SITE_ADDRESS} {
+	encode zstd gzip
+
+	header {
+		X-Content-Type-Options nosniff
+		Referrer-Policy strict-origin-when-cross-origin
+		-Server
+	}
+
+	reverse_proxy web:80
+}
