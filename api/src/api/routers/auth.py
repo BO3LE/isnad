@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 
 from api.auth import InvalidToken, issue_oauth_state, issue_token, verify_oauth_state
 from api.deps import get_current_user, get_session
-from api.schemas import DevLoginRequest, GoogleConnect, GoogleConnectRequest, GoogleConnectionStatus, Me, TokenResponse
+from api.schemas import DevLoginRequest, GoogleConnect, GoogleConnectionStatus, GoogleConnectRequest, Me, TokenResponse
 from api.settings import ApiSettings, get_settings
 from db.credentials import encrypt_payload
 from db.models import Credential, User
@@ -130,13 +130,19 @@ def google_callback(
         "scopes": list(credentials.scopes or []),
     }
     existing = session.scalar(
-        select(Credential).where(Credential.user_id == user_id, Credential.provider == provider).order_by(Credential.created_at.desc())
+        select(Credential)
+        .where(Credential.user_id == user_id, Credential.provider == provider)
+        .order_by(Credential.created_at.desc())
     )
     encrypted = encrypt_payload(settings.jwt_secret, payload)
     if existing:
         existing.encrypted_payload = encrypted
         existing.expires_at = credentials.expiry
     else:
-        session.add(Credential(user_id=user_id, provider=provider, encrypted_payload=encrypted, expires_at=credentials.expiry))
+        session.add(
+            Credential(user_id=user_id, provider=provider, encrypted_payload=encrypted, expires_at=credentials.expiry)
+        )
     session.commit()
-    return RedirectResponse(f"{settings.google_oauth_success_url}?youtube=connected", status_code=status.HTTP_303_SEE_OTHER)
+    return RedirectResponse(
+        f"{settings.google_oauth_success_url}?youtube=connected", status_code=status.HTTP_303_SEE_OTHER
+    )

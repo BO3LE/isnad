@@ -14,8 +14,8 @@ from __future__ import annotations
 
 import uuid
 from datetime import UTC, datetime, timedelta
-from typing import Literal
 from functools import lru_cache
+from typing import Literal
 
 import jwt
 from jwt import PyJWKClient
@@ -61,7 +61,13 @@ def verify_token(settings: ApiSettings, token: str) -> tuple[uuid.UUID, str]:
 def issue_oauth_state(settings: ApiSettings, user_id: uuid.UUID, provider: Literal["youtube", "drive"]) -> str:
     now = datetime.now(UTC)
     return jwt.encode(
-        {"sub": str(user_id), "provider": provider, "purpose": "google_oauth", "iat": now, "exp": now + timedelta(minutes=10)},
+        {
+            "sub": str(user_id),
+            "provider": provider,
+            "purpose": "google_oauth",
+            "iat": now,
+            "exp": now + timedelta(minutes=10),
+        },
         settings.jwt_secret,
         algorithm="HS256",
     )
