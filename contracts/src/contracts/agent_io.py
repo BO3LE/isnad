@@ -22,6 +22,7 @@ from typing import Literal
 from pydantic import AliasChoices, BaseModel, ConfigDict, Field, field_validator
 
 from contracts.ports import Source
+from contracts.run import UUID_PATTERN
 
 EMAIL_PATTERN = r"^[^@\s]+@[^@\s]+\.[^@\s]+$"
 
@@ -36,6 +37,16 @@ class _Out(BaseModel):
 
 class _Config(BaseModel):
     model_config = ConfigDict(extra="forbid")
+
+
+def _credential_field():
+    """A connected Google account, by reference (D-09). Holds a `credentials.id`, never a token."""
+    return Field(
+        None,
+        title="Google account",
+        pattern=UUID_PATTERN,
+        json_schema_extra={"x-widget": "credential", "x-provider": "google", "format": "uuid"},
+    )
 
 
 # ---------------------------------------------------------------- Researcher
@@ -128,9 +139,7 @@ class PublishConfig(_Config):
         title="Publish to",
         json_schema_extra={"x-enum-labels": {"youtube": "YouTube", "drive": "Google Drive"}},
     )
-    credential_id: str | None = Field(
-        None, title="Google account", json_schema_extra={"x-widget": "credential", "x-provider": "google"}
-    )
+    credential_id: str | None = _credential_field()
     title: str | None = Field(None, max_length=100, title="Title", description="Leave empty to use the article title.")
     tags: list[str] = Field(default_factory=list, title="Tags")
     privacy: Literal["unlisted", "private", "public"] = Field(
@@ -141,7 +150,7 @@ class PublishConfig(_Config):
 class PublishInput(_In):
     file_path: str = Field(validation_alias=AliasChoices("file_path", "video_path"))
     platform: Literal["youtube", "drive"] = "youtube"
-    credential_id: str | None = None
+    credential_id: str | None = Field(None, pattern=UUID_PATTERN)
     title: str = Field(min_length=1, max_length=100)
     description: str = Field("", validation_alias=AliasChoices("description", "summary"))
     tags: list[str] = Field(default_factory=list)
@@ -156,6 +165,7 @@ class PublishOutput(_Out):
 
 # ---------------------------------------------------------------- Email
 class EmailConfig(_Config):
+    credential_id: str | None = _credential_field()
     recipients: list[str] = Field(
         min_length=1, title="To", json_schema_extra={"items": {"type": "string", "format": "email"}}
     )
@@ -171,6 +181,7 @@ class EmailConfig(_Config):
 
 
 class EmailInput(_In):
+    credential_id: str | None = Field(None, pattern=UUID_PATTERN)
     recipients: list[str] = Field(min_length=1)
     subject: str = Field(min_length=1, max_length=150, validation_alias=AliasChoices("subject", "title"))
     body: str = Field("", validation_alias=AliasChoices("body", "summary"))

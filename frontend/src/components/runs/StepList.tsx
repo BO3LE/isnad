@@ -6,6 +6,7 @@ import { agentTitle, manifestFor } from "@/design-system/agents/agentMeta";
 import { StatusChip } from "@/design-system/status/StatusChip";
 import { nodeStatusMeta, rejectedMeta } from "@/design-system/status/statusMeta";
 import { formatAbsoluteTime, formatDuration } from "@/lib/format";
+import { retryLabel } from "@/lib/logs";
 import { stepError } from "@/lib/runPlayback";
 import type { AgentManifest, NodeState } from "@/lib/api";
 
@@ -24,8 +25,9 @@ export interface StepListProps {
 
 function attempts(step: NodeState): string | null {
   if (step.retry_count < 1) return null;
-  const tried = step.retry_count + 1;
-  return step.status === "retrying" ? `Trying again — attempt ${tried}` : `Took ${tried} attempts`;
+  // While it is between attempts the node and this row say the same thing (§16.5). Afterwards the
+  // useful number is how many tries it took, which is the retries plus the first attempt.
+  return step.status === "retrying" ? retryLabel(step.retry_count) : `Took ${step.retry_count + 1} attempts`;
 }
 
 export function StepList({ steps, agents, actionFor }: StepListProps) {

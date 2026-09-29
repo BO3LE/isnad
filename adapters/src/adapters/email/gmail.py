@@ -4,6 +4,9 @@ from __future__ import annotations
 class GmailEmail:
     """EmailPort for the Gmail API, with SMTP as a fallback. Install with `gp-adapters[google]`.
 
+    `credentials_json`: a resolved, fresh credential (shape in `adapters._google`), built per node
+    by the worker from the connection the step names. Never read from env or the graph.
+
     TODO(W7, Zain): send via users.messages.send; fall back to SMTP when configured.
     """
 

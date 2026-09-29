@@ -7,13 +7,24 @@ messages as-is and never invents its own rules.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
+
 from api.schemas import ValidationIssue
+from api.services.credentials import status_of
 from contracts.graph import find_cycle
 from contracts.manifest import AgentManifest
 from contracts.run import WorkflowGraph
+from db.models import Credential
 
 
-def validate_graph(graph: WorkflowGraph, catalog: list[AgentManifest] | None) -> list[ValidationIssue]:
+def validate_graph(
+    graph: WorkflowGraph,
+    catalog: list[AgentManifest] | None,
+    credentials: Mapping[str, Credential] | None = None,
+    *,
+    require_credentials: bool = False,
+) -> list[ValidationIssue]:
+    """`credentials` (id → the owner's rows) turns on the connection checks; None skips them."""
     issues: list[ValidationIssue] = []
     by_type = {m.name: m for m in catalog or []}
     nodes = {n.id: n for n in graph.nodes}
@@ -103,4 +114,34 @@ def validate_graph(graph: WorkflowGraph, catalog: list[AgentManifest] | None) ->
                         code="missing_config", node_id=node.id, message=f"{manifest.title} is missing {label.lower()}."
                     )
                 )
+        if credentials is not None:
+            issues.extend(_credential_issues(node, manifest, properties, credentials, require_credentials))
     return issues
+
+
+def _credential_issues(node, manifest: AgentManifest, properties: dict, credentials, required: bool):
+    """Fields marked `x-widget: credential` hold a reference to one of this user's connections.
+
+    With real adapters a missing or expired connection blocks the run; with fakes (nothing is really
+    sent) it is only a warning, so the templates still run on a fresh checkout.
+    """
+    severity = "error" if required else "warning"
+    for field, prop in properties.items():
+        if prop.get("x-widget") != "credential":
+            continue
+        ref = node.configuration.get(field)
+        row = credentials.get(str(ref)) if ref else None
+        if row is None:
+            yield ValidationIssue(
+                code="missing_credential",
+                node_id=node.id,
+                severity=severity,
+                message=f"{manifest.title} needs a Google connection.",
+            )
+        elif status_of(row) == "expired":
+            yield ValidationIssue(
+                code="expired_credential",
+                node_id=node.id,
+                severity=severity,
+                message=f"{manifest.title}'s Google connection has expired.",
+            )

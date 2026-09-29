@@ -174,6 +174,99 @@
         "title": "ApprovalDecision",
         "type": "string"
       },
+      "ApprovalInfo": {
+        "description": "The recorded human decision for a node that required approval (UC-04 audit trail).",
+        "properties": {
+          "decided_at": {
+            "format": "date-time",
+            "title": "Decided At",
+            "type": "string"
+          },
+          "decided_by_email": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Decided By Email"
+          },
+          "decision": {
+            "$ref": "#/components/schemas/ApprovalDecision"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          }
+        },
+        "required": [
+          "decision",
+          "decided_at"
+        ],
+        "title": "ApprovalInfo",
+        "type": "object"
+      },
+      "ApprovalRecord": {
+        "description": "One decision in a run's audit trail \u2014 GET /runs/{run_id}/approvals (UC-04, S-06).",
+        "properties": {
+          "agent_type": {
+            "title": "Agent Type",
+            "type": "string"
+          },
+          "decided_at": {
+            "format": "date-time",
+            "title": "Decided At",
+            "type": "string"
+          },
+          "decided_by_email": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Decided By Email"
+          },
+          "decision": {
+            "$ref": "#/components/schemas/ApprovalDecision"
+          },
+          "node_id": {
+            "format": "uuid",
+            "title": "Node Id",
+            "type": "string"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          }
+        },
+        "required": [
+          "decision",
+          "decided_at",
+          "node_id",
+          "agent_type"
+        ],
+        "title": "ApprovalRecord",
+        "type": "object"
+      },
       "ApprovalRequest": {
         "properties": {
           "decision": {
@@ -196,6 +289,87 @@
           "decision"
         ],
         "title": "ApprovalRequest",
+        "type": "object"
+      },
+      "ConnectStart": {
+        "description": "Send the browser (or a popup) here. Valid for 10 minutes, in the browser that asked.",
+        "properties": {
+          "authorization_url": {
+            "title": "Authorization Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "authorization_url"
+        ],
+        "title": "ConnectStart",
+        "type": "object"
+      },
+      "Connection": {
+        "description": "A connected account on S-09 and in the credential picker (D-09). Never carries a token.\n\n`status`: `expired` once Google has refused the connection or `expires_at` has passed;\n`expiring` within 7 days of `expires_at`; otherwise `connected`. `expires_at` is empty when\nGoogle gave no end date. `scopes` are the granted services as a person reads them\n(\"YouTube\", \"Drive\", \"Gmail\"). `used_by` counts this user's workflows whose steps reference it.",
+        "properties": {
+          "account_email": {
+            "title": "Account Email",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "expires_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expires At"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "provider": {
+            "const": "google",
+            "title": "Provider",
+            "type": "string"
+          },
+          "scopes": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Scopes",
+            "type": "array"
+          },
+          "status": {
+            "enum": [
+              "connected",
+              "expiring",
+              "expired"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "used_by": {
+            "title": "Used By",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "provider",
+          "account_email",
+          "scopes",
+          "status",
+          "created_at",
+          "used_by"
+        ],
+        "title": "Connection",
         "type": "object"
       },
       "DevLoginRequest": {
@@ -296,6 +470,16 @@
           "agent_type": {
             "title": "Agent Type",
             "type": "string"
+          },
+          "approval": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ApprovalInfo"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "completed_at": {
             "anyOf": [
@@ -403,6 +587,16 @@
           "agent_type": {
             "title": "Agent Type",
             "type": "string"
+          },
+          "approval": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ApprovalInfo"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "completed_at": {
             "anyOf": [
@@ -1174,6 +1368,136 @@
         ]
       }
     },
+    "/connections": {
+      "get": {
+        "operationId": "list_connections_connections_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/Connection"
+                  },
+                  "title": "Response List Connections Connections Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "List Connections",
+        "tags": [
+          "connections"
+        ]
+      }
+    },
+    "/connections/google/start": {
+      "post": {
+        "description": "Begin connecting a Google account. Call with `credentials: \"include\"` so the browser keeps the\ncookie that ties Google's answer to this browser; then open `authorization_url`.",
+        "operationId": "start_google_connections_google_start_post",
+        "parameters": [
+          {
+            "description": "`popup`: the callback answers with a page that tells the opener and closes.",
+            "in": "query",
+            "name": "mode",
+            "required": false,
+            "schema": {
+              "default": "redirect",
+              "description": "`popup`: the callback answers with a page that tells the opener and closes.",
+              "enum": [
+                "redirect",
+                "popup"
+              ],
+              "title": "Mode",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConnectStart"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "503": {
+            "description": "Google connections aren't configured on this server"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Start Google",
+        "tags": [
+          "connections"
+        ]
+      }
+    },
+    "/connections/{credential_id}": {
+      "delete": {
+        "description": "Forget a connection. Steps that used it then show \"needs a Google connection\".",
+        "operationId": "disconnect_connections__credential_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "credential_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Credential Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Disconnect",
+        "tags": [
+          "connections"
+        ]
+      }
+    },
     "/health": {
       "get": {
         "description": "Liveness. Cheap, no dependencies.",
@@ -1226,7 +1550,7 @@
     },
     "/outputs/{output_id}": {
       "get": {
-        "description": "Return a download URL \u2014 the API never streams files itself.\n\nDevelopment serves files from STORAGE_ROOT at /files. TODO(W4): Supabase signed URLs in production.",
+        "description": "Return a download URL \u2014 the API never streams files itself.\n\nWith STORAGE_BACKEND=supabase the URL is a short-lived signed link into the private bucket;\notherwise (development) files are served from STORAGE_ROOT at /files. Either way only the\noutput's owner gets a link \u2014 anyone else gets 404.",
         "operationId": "download_outputs__output_id__get",
         "parameters": [
           {
@@ -1316,6 +1640,59 @@
           }
         ],
         "summary": "Get Run",
+        "tags": [
+          "runs"
+        ]
+      }
+    },
+    "/runs/{run_id}/approvals": {
+      "get": {
+        "description": "UC-04 audit trail: every decision recorded against this run, oldest first (S-06, report evidence).",
+        "operationId": "run_approvals_runs__run_id__approvals_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Run Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ApprovalRecord"
+                  },
+                  "title": "Response Run Approvals Runs  Run Id  Approvals Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Run Approvals",
         "tags": [
           "runs"
         ]

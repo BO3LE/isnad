@@ -11,7 +11,9 @@ x-python-env: &python-env
   DATABASE_URL: postgresql://postgres:postgres@db:5432/gp
   REDIS_URL: redis://redis:6379/0
   STORAGE_ROOT: /data/artifacts
-  PUBLIC_FILES_URL: http://localhost:8000/files
+  # The browser fetches files straight from this URL, so it has to carry whatever host port `api`
+  # is actually published on (API_HOST_PORT below) — not just the in-network default.
+  PUBLIC_FILES_URL: http://localhost:${API_HOST_PORT:-8000}/files
 
 services:
   db:
@@ -54,7 +56,9 @@ services:
     build: { context: ., dockerfile: api/Dockerfile, target: dev }
     env_file: [{ path: .env, required: false }]
     environment: *python-env
-    ports: ["8000:8000"]
+    # API_HOST_PORT lets a second stack (e.g. `docker compose -p isnad-e2e`) run alongside the
+    # default one without colliding on 8000.
+    ports: ["${API_HOST_PORT:-8000}:8000"]
     volumes:
       - ./api:/app/api
       - ./contracts:/app/contracts
@@ -65,7 +69,10 @@ services:
       redis: { condition: service_healthy }
 
   worker:
-    build: { context: ., dockerfile: worker/Dockerfile, target: dev }
+    # On some Docker Desktop / WSL2 hosts the dev target's watchfiles reloader crashes with "Cannot
+    # allocate memory". If that happens, run with WORKER_BUILD_TARGET=prod (loses autoreload; the
+    # worker still installs every agent under agents/, just not live-edited).
+    build: { context: ., dockerfile: worker/Dockerfile, target: "${WORKER_BUILD_TARGET:-dev}" }
     env_file: [{ path: .env, required: false }]
     environment: *python-env
     volumes:
@@ -83,8 +90,17 @@ services:
   frontend:
     build: { context: frontend, target: dev }
     environment:
-      VITE_API_URL: http://localhost:8000
-    ports: ["5173:5173"]
+      # The browser talks to `api` directly (not over the compose network), so this has to be the
+      # same host port api actually publishes on — see API_HOST_PORT above.
+      VITE_API_URL: http://localhost:${API_HOST_PORT:-8000}
+      # Set VITE_AUTH_MODE=supabase in .env to switch P-01/P-02 off dev sign-in (needs JWT_SECRET
+      # above to match, since the API verifies whatever mode issued the token — see INF-06).
+      VITE_AUTH_MODE: ${VITE_AUTH_MODE:-dev}
+      VITE_SUPABASE_URL: ${VITE_SUPABASE_URL:-https://wawbngrkbmlidliybkbw.supabase.co}
+      VITE_SUPABASE_ANON_KEY: ${VITE_SUPABASE_ANON_KEY:-}
+    # FRONTEND_HOST_PORT: same reason as API_HOST_PORT — lets a second stack run alongside the
+    # default one (used by the W10 fullstack Playwright suite, `docker compose -p isnad-e2e`).
+    ports: ["${FRONTEND_HOST_PORT:-5173}:5173"]
     volumes:
       - ./frontend:/app
       - /app/node_modules

@@ -29,11 +29,15 @@ from contracts.run import (
     RunStatus,
 )
 from worker.registry import Registry, UnknownAgentError
+from worker.run_storage import run_ports
 from worker.store import RunSnapshot, RunStore
 
 log = logging.getLogger(__name__)
 
 Sleep = Callable[[float], Awaitable[None]]
+# Ports for one node. The default hands every node the same ports; in real mode the worker passes
+# `worker.credentials.CredentialPorts`, which swaps in Google ports for a node that names an account.
+PortsFor = Callable[[UUID, GraphNode], Awaitable[Ports]]
 
 
 def backoff_delay(attempt: int, jitter: float) -> float:
@@ -51,10 +55,12 @@ class Orchestrator:
         max_retries: int = MAX_RETRIES,
         sleep: Sleep = asyncio.sleep,
         jitter: Callable[[], float] = random.random,
+        ports_for: PortsFor | None = None,
     ):
         self.store = store
         self.registry = registry
         self.ports = ports
+        self._ports_for = ports_for
         self.max_retries = max_retries
         self._sleep = sleep
         self._jitter = jitter
@@ -128,7 +134,11 @@ class Orchestrator:
         self.store.set_node_status(run_id, node.id, NodeStatus.RUNNING, retry_count=retry_count)
         while True:
             try:
-                produced = await agent.execute(input_obj, self.ports)
+                # Resolved per attempt, inside the retry loop: a network blip while refreshing a
+                # Google token is retried; an expired connection (not retryable) fails at once.
+                base = await self._ports_for(run_id, node) if self._ports_for else self.ports
+                ports = run_ports(base, snap.user_id, run_id)  # files land under {user_id}/{run_id}/
+                produced = await agent.execute(input_obj, ports)
                 payload = produced.model_dump() if isinstance(produced, BaseModel) else produced
                 output = agent.output_model.model_validate(payload).model_dump(mode="json")
             except Exception as exc:

@@ -117,6 +117,70 @@ def test_reject_needs_a_note(client, headers, sessions):
     assert response.status_code == 422
 
 
+# ---------------------------------------------------------------- approvals audit trail (W7)
+
+
+def test_node_state_carries_the_approval_once_decided(client, headers, sessions):
+    run_id, node_id = _parked_run(client, headers, sessions)
+    before = client.get(f"/runs/{run_id}", headers=headers).json()
+    decided_node = next(n for n in before["nodes"] if n["node_id"] == node_id)
+    assert decided_node["approval"] is None
+
+    client.post(f"/runs/{run_id}/nodes/{node_id}/approve", json={"decision": "approve"}, headers=headers)
+
+    after = client.get(f"/runs/{run_id}", headers=headers).json()
+    decided_node = next(n for n in after["nodes"] if n["node_id"] == node_id)
+    assert decided_node["approval"]["decision"] == "approve"
+    assert decided_node["approval"]["decided_by_email"] == "hasan@gp.local"
+    assert decided_node["approval"]["note"] is None
+    assert decided_node["approval"]["decided_at"] is not None
+    # Untouched nodes still carry no decision.
+    other = next(n for n in after["nodes"] if n["node_id"] != node_id)
+    assert other["approval"] is None
+
+
+def test_node_state_carries_a_rejection_with_its_note(client, headers, sessions):
+    run_id, node_id = _parked_run(client, headers, sessions)
+    response = client.post(
+        f"/runs/{run_id}/nodes/{node_id}/approve",
+        json={"decision": "reject", "note": "Wrong tone for the audience."},
+        headers=headers,
+    )
+    assert response.status_code == 202
+
+    state = client.get(f"/runs/{run_id}", headers=headers).json()
+    decided_node = next(n for n in state["nodes"] if n["node_id"] == node_id)
+    assert decided_node["approval"]["decision"] == "reject"
+    assert decided_node["approval"]["note"] == "Wrong tone for the audience."
+
+
+def test_approvals_endpoint_lists_decisions_ordered_by_decided_at(client, headers, sessions):
+    run_id, node_id = _parked_run(client, headers, sessions)
+    assert client.get(f"/runs/{run_id}/approvals", headers=headers).json() == []
+
+    client.post(
+        f"/runs/{run_id}/nodes/{node_id}/approve",
+        json={"decision": "reject", "note": "Needs another pass."},
+        headers=headers,
+    )
+
+    trail = client.get(f"/runs/{run_id}/approvals", headers=headers).json()
+    assert len(trail) == 1
+    assert trail[0]["node_id"] == node_id
+    assert trail[0]["agent_type"] == "writer"
+    assert trail[0]["decision"] == "reject"
+    assert trail[0]["decided_by_email"] == "hasan@gp.local"
+    assert trail[0]["note"] == "Needs another pass."
+
+
+def test_approvals_endpoint_404s_for_another_users_run(client, headers, sessions):
+    run_id, node_id = _parked_run(client, headers, sessions)
+    client.post(f"/runs/{run_id}/nodes/{node_id}/approve", json={"decision": "approve"}, headers=headers)
+
+    other = auth_headers(sessions, email="someone-else@gp.local")
+    assert client.get(f"/runs/{run_id}/approvals", headers=other).status_code == 404
+
+
 def test_cancel_skips_steps_that_have_not_started(client, headers, sessions):
     run_id, _ = _parked_run(client, headers, sessions)
     state = client.post(f"/runs/{run_id}/cancel", headers=headers).json()

@@ -19,9 +19,11 @@ from api.schemas import (
     WorkflowSummary,
     WorkflowUpdate,
 )
+from api.services.credentials import secrets_in, user_credentials
 from api.services.run_reason import rejected_runs
 from api.services.validation import validate_graph
 from api.services.workflows import ordered_nodes, save_graph
+from api.settings import ApiSettings, get_settings
 from contracts.run import NodeStatus, RunStatus, WorkflowGraph
 from db.models import ExecutionLog, ExecutionRun, User, Workflow
 
@@ -35,6 +37,25 @@ def _load(session: Session, user: User, workflow_id: UUID) -> Workflow:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "This workflow doesn't exist or isn't yours.")
     owned(user, workflow.user_id)
     return workflow
+
+
+def _refuse_secrets(graph: WorkflowGraph) -> None:
+    """Invariant 4: no secret in the graph JSON. A step names an account by its connection id."""
+    if secrets_in(graph):
+        raise HTTPException(
+            422,
+            "A step's settings contain what looks like a password or token. Remove it and choose a "
+            "connected account instead — tokens are never stored in a workflow.",
+        )
+
+
+def _check(session: Session, user: User, settings: ApiSettings, graph: WorkflowGraph, catalog: CatalogSource):
+    return validate_graph(
+        graph,
+        catalog.agents(),
+        user_credentials(session, user.id),
+        require_credentials=not settings.fake_adapters,
+    )
 
 
 def _out(workflow: Workflow) -> WorkflowOut:
@@ -96,6 +117,7 @@ def list_workflows(user: User = Depends(get_current_user), session: Session = De
 def create_workflow(
     body: WorkflowCreate, user: User = Depends(get_current_user), session: Session = Depends(get_session)
 ):
+    _refuse_secrets(body.graph)
     workflow = Workflow(user_id=user.id, name=body.name)
     session.add(workflow)
     save_graph(session, workflow, body.graph)
@@ -120,6 +142,7 @@ def update_workflow(
     if body.name is not None:
         workflow.name = body.name
     if body.graph is not None:
+        _refuse_secrets(body.graph)
         save_graph(session, workflow, body.graph)
     session.commit()
     session.refresh(workflow)
@@ -139,9 +162,10 @@ def validate_workflow(
     user: User = Depends(get_current_user),
     session: Session = Depends(get_session),
     catalog: CatalogSource = Depends(get_catalog),
+    settings: ApiSettings = Depends(get_settings),
 ):
     graph = WorkflowGraph.model_validate(_load(session, user, workflow_id).graph_definition or {})
-    issues = validate_graph(graph, catalog.agents())
+    issues = _check(session, user, settings, graph, catalog)
     return ValidationResult(valid=not any(i.severity == "error" for i in issues), issues=issues)
 
 
@@ -160,11 +184,12 @@ def run_workflow(
     session: Session = Depends(get_session),
     catalog: CatalogSource = Depends(get_catalog),
     enqueuer: Enqueuer = Depends(get_enqueuer),
+    settings: ApiSettings = Depends(get_settings),
 ):
     """Enqueue a run and return immediately with 202 — the run has not finished (NFR-01)."""
     workflow = _load(session, user, workflow_id)
     graph = WorkflowGraph.model_validate(workflow.graph_definition or {})
-    issues = validate_graph(graph, catalog.agents())
+    issues = _check(session, user, settings, graph, catalog)
     if any(i.severity == "error" for i in issues):
         raise HTTPException(
             422,

@@ -58,14 +58,14 @@ jobs:
           - component: db
             install: ./db
           - component: adapters
-            install: ./contracts ./adapters
+            install: ./contracts "./adapters[storage]"
           - component: exporters
             install: "./exporters[all,test]"
             ffmpeg: true
             pango: true # WeasyPrint (to_pdf) needs Pango at runtime, not just at pip-install time
           # The worker suite runs with NO agents installed — the C3 decoupling test.
           - component: worker
-            install: ./contracts ./db ./adapters ./worker
+            install: ./contracts ./db "./adapters[storage]" ./worker
           # The API suite runs with no worker, Redis or PostgreSQL — the C2 decoupling test.
           - component: api
             install: ./contracts ./db ./api[test]
@@ -123,8 +123,42 @@ jobs:
           alembic downgrade base
           alembic upgrade head
           alembic check
+      - name: Row Level Security (plain Postgres, then a simulated Supabase)
+        env:
+          RLS_TEST_DATABASE_URL: ${{ env.DATABASE_URL }}
+        run: pip install -c constraints.txt pytest pytest-asyncio && python -m pytest -q db/tests/test_rls.py
       - name: Seed twice (must be idempotent)
         run: python -m db.seed && python -m db.seed
+
+  # ------------------------------------------------------------------ run lifecycle
+  # GP-plan W3 (C7): a whole run — queued → running → awaiting_approval → succeeded/failed — through
+  # the real orchestrator, SqlRunStore and installed agents against PostgreSQL 15, with fake adapters.
+  # No Redis or Celery: the test calls the orchestrator the way the Celery task does. Unlike the
+  # docker-compose `integration` job this is cheap, so it runs on every pull request and gates the merge.
+  run-lifecycle:
+    name: Integration · run lifecycle on PostgreSQL 15
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    services:
+      postgres:
+        image: postgres:15
+        env: { POSTGRES_PASSWORD: postgres, POSTGRES_DB: gp }
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres" --health-interval 3s --health-timeout 3s --health-retries 20
+    env:
+      INTEGRATION_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/gp
+      REQUIRE_INTEGRATION_DB: "1"  # a missing database or FFmpeg is a failure here, not a skip
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with: { python-version: "${{ env.PYTHON_VERSION }}", cache: pip }
+      - name: Install FFmpeg (the video template renders a real MP4)
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg
+      - name: Install the worker, its dependencies and every agent (no api)
+        run: pip install -c constraints.txt ./contracts ./db ./adapters ./exporters ./worker ./agents/*/ pytest pytest-asyncio
+      - name: Migrate, seed and run a full lifecycle per template
+        run: python -m pytest tests/integration -q
 
   # ------------------------------------------------------------------ contract drift
   api-contract:
@@ -175,6 +209,63 @@ jobs:
         if: failure()
         with: { name: playwright-report, path: frontend/playwright-report, retention-days: 7 }
 
+  # ------------------------------------------------------------------ fullstack e2e (Playwright)
+  # GP-plan W10 (C7): the same three template workflows as scripts/smoke_test.py, but driven through
+  # the real UI (frontend/e2e-fullstack) against the real stack — sign in, run, approve each
+  # template's gate, and check what actually landed on the Outputs page. Complements `e2e` above
+  # (mocked API, no backend) rather than replacing it.
+  #
+  # NOT in ci-ok's `needs` below: building the FFmpeg worker image from scratch plus three real runs
+  # (one of them rendering a video) is slower and more environment-dependent than the rest of this
+  # workflow, and it has no track record yet. It runs on every pull request so regressions are
+  # visible, but it does not block merging. Promote it to ci-ok once it has proven reliable and
+  # comfortably under ~10 minutes.
+  e2e-fullstack:
+    name: Frontend end-to-end (real stack, fake adapters) — informational, not required
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with: { node-version: "${{ env.NODE_VERSION }}", cache: npm, cache-dependency-path: frontend/package-lock.json }
+      # Install BEFORE starting the stack: the frontend service bind-mounts ./frontend with an anonymous
+      # volume on /app/node_modules, so Docker creates frontend/node_modules on the runner owned by root,
+      # and a later `npm ci` can't remove it (EACCES, exit 243).
+      - working-directory: frontend
+        run: npm ci
+      - working-directory: frontend
+        run: npx playwright install --with-deps chromium
+      - name: Start the stack with fake adapters (separate compose project, default ports — CI runner is isolated)
+        run: docker compose -p isnad-e2e up -d --build db redis migrate api worker frontend
+      - name: Wait for the API, the worker catalog and the frontend to be reachable
+        run: |
+          ready() {
+            curl -sf http://localhost:8000/health/ready \
+              | python3 -c 'import json,sys; c=json.load(sys.stdin)["checks"]; sys.exit(0 if c.get("database")=="ok" and c.get("worker_catalog","").startswith(tuple("123456789")) else 1)'
+          }
+          for i in $(seq 1 90); do
+            if ready && curl -sf -o /dev/null http://localhost:5173; then
+              echo "stack is ready"; exit 0
+            fi
+            sleep 2
+          done
+          echo "::error::stack did not become ready in time"
+          docker compose -p isnad-e2e logs --no-color api worker migrate frontend
+          exit 1
+      - name: Run the fullstack Playwright specs against the running stack
+        working-directory: frontend
+        env:
+          E2E_BASE_URL: http://localhost:5173
+        run: npm run test:e2e:fullstack
+      - uses: actions/upload-artifact@v7
+        if: failure()
+        with: { name: playwright-fullstack-report, path: frontend/playwright-report, retention-days: 7 }
+      - name: Logs
+        if: failure()
+        run: docker compose -p isnad-e2e logs --no-color api worker migrate frontend
+      - if: always()
+        run: docker compose -p isnad-e2e down -v
+
   # ------------------------------------------------------------------ whole stack
   integration:
     name: Integration · docker compose + smoke test
@@ -205,7 +296,7 @@ jobs:
   ci-ok:
     name: CI passed
     if: always()
-    needs: [boundaries, python-tests, db-migrations, api-contract, frontend, e2e]
+    needs: [boundaries, python-tests, db-migrations, run-lifecycle, api-contract, frontend, e2e]
     runs-on: ubuntu-latest
     steps:
       - name: Every required job succeeded
