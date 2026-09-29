@@ -30,6 +30,10 @@ frontend/test-results/
 *.mp4
 *.mp3
 *.wav
+# ...except the e2e fixtures, which are test inputs rather than anything a run produced. A browser
+# cannot tell a real preview from a broken one without real bytes to decode.
+!frontend/e2e/fixtures/
+!frontend/e2e/fixtures/**
 
 # OS / editors
 .DS_Store

@@ -12,9 +12,13 @@ export type AgentManifest = Schemas["AgentManifest"];
 export type ValidationResult = Schemas["ValidationResult"];
 export type RunState = Schemas["RunState"];
 export type RunCreated = Schemas["RunCreated"];
+export type NodeState = Schemas["NodeState"];
+export type RunSummary = Schemas["RunSummary"];
+export type RunOutput = Schemas["RunOutput"];
+export type LogEntry = Schemas["LogEntry"];
+export type OutputLink = Schemas["OutputLink"];
 export type NodeStatus = Schemas["NodeStatus"];
 export type RunStatus = Schemas["RunStatus"];
-export type RunOutput = Schemas["RunOutput"];
 export type GoogleConnect = Schemas["GoogleConnect"];
 export type GoogleConnectRequest = Schemas["GoogleConnectRequest"];
 export type GoogleConnectionStatus = Schemas["GoogleConnectionStatus"];
@@ -68,12 +72,15 @@ export const endpoints = {
   deleteWorkflow: (id: string) => api<void>(`/workflows/${id}`, { method: "DELETE" }),
   validate: (id: string) => api<ValidationResult>(`/workflows/${id}/validate`, { method: "POST" }),
   run: (id: string) => api<RunCreated>(`/workflows/${id}/run`, { method: "POST" }),
-  workflowRuns: (id: string) => api<Schemas["RunSummary"][]>(`/workflows/${id}/runs`),
+  workflowRuns: (id: string) => api<RunSummary[]>(`/workflows/${id}/runs`),
   runState: (id: string) => api<RunState>(`/runs/${id}`),
   runOutputs: (id: string) => api<RunOutput[]>(`/runs/${id}/outputs`),
   approve: (runId: string, nodeId: string, decision: "approve" | "reject", note?: string) =>
     api<RunCreated>(`/runs/${runId}/nodes/${nodeId}/approve`, { method: "POST", body: JSON.stringify({ decision, note }) }),
   cancel: (runId: string) => api<RunState>(`/runs/${runId}/cancel`, { method: "POST" }),
+  runLogs: (runId: string) => api<LogEntry[]>(`/runs/${runId}/logs`),
+  /** A file's download URL, or the words themselves for text (api/routers/outputs.py). */
+  output: (outputId: string) => api<OutputLink>(`/outputs/${outputId}`),
 };
 
 /**

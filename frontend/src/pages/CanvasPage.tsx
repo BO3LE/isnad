@@ -771,6 +771,8 @@ function CanvasPageInner() {
         {waitingStep && (
           <ApprovalDialog
             open={reviewing}
+            runId={canvasRun.runId}
+            agents={agents}
             onClose={() => setReviewing(false)}
             stepTitle={agentTitle(waitingStep.data.agentType, agents)}
             manifest={agents.find((a) => a.name === waitingStep.data.agentType)}
@@ -785,6 +787,7 @@ function CanvasPageInner() {
 
         {selectedStep && !runMode && (
           <StepDrawer
+            workflowId={workflowId}
             stepId={selectedStep.id}
             data={selectedStep.data}
             manifest={agents.find((a) => a.name === selectedStep.data.agentType)}

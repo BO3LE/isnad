@@ -117,6 +117,70 @@ def test_reject_needs_a_note(client, headers, sessions):
     assert response.status_code == 422
 
 
+# ---------------------------------------------------------------- approvals audit trail (W7)
+
+
+def test_node_state_carries_the_approval_once_decided(client, headers, sessions):
+    run_id, node_id = _parked_run(client, headers, sessions)
+    before = client.get(f"/runs/{run_id}", headers=headers).json()
+    decided_node = next(n for n in before["nodes"] if n["node_id"] == node_id)
+    assert decided_node["approval"] is None
+
+    client.post(f"/runs/{run_id}/nodes/{node_id}/approve", json={"decision": "approve"}, headers=headers)
+
+    after = client.get(f"/runs/{run_id}", headers=headers).json()
+    decided_node = next(n for n in after["nodes"] if n["node_id"] == node_id)
+    assert decided_node["approval"]["decision"] == "approve"
+    assert decided_node["approval"]["decided_by_email"] == "hasan@gp.local"
+    assert decided_node["approval"]["note"] is None
+    assert decided_node["approval"]["decided_at"] is not None
+    # Untouched nodes still carry no decision.
+    other = next(n for n in after["nodes"] if n["node_id"] != node_id)
+    assert other["approval"] is None
+
+
+def test_node_state_carries_a_rejection_with_its_note(client, headers, sessions):
+    run_id, node_id = _parked_run(client, headers, sessions)
+    response = client.post(
+        f"/runs/{run_id}/nodes/{node_id}/approve",
+        json={"decision": "reject", "note": "Wrong tone for the audience."},
+        headers=headers,
+    )
+    assert response.status_code == 202
+
+    state = client.get(f"/runs/{run_id}", headers=headers).json()
+    decided_node = next(n for n in state["nodes"] if n["node_id"] == node_id)
+    assert decided_node["approval"]["decision"] == "reject"
+    assert decided_node["approval"]["note"] == "Wrong tone for the audience."
+
+
+def test_approvals_endpoint_lists_decisions_ordered_by_decided_at(client, headers, sessions):
+    run_id, node_id = _parked_run(client, headers, sessions)
+    assert client.get(f"/runs/{run_id}/approvals", headers=headers).json() == []
+
+    client.post(
+        f"/runs/{run_id}/nodes/{node_id}/approve",
+        json={"decision": "reject", "note": "Needs another pass."},
+        headers=headers,
+    )
+
+    trail = client.get(f"/runs/{run_id}/approvals", headers=headers).json()
+    assert len(trail) == 1
+    assert trail[0]["node_id"] == node_id
+    assert trail[0]["agent_type"] == "writer"
+    assert trail[0]["decision"] == "reject"
+    assert trail[0]["decided_by_email"] == "hasan@gp.local"
+    assert trail[0]["note"] == "Needs another pass."
+
+
+def test_approvals_endpoint_404s_for_another_users_run(client, headers, sessions):
+    run_id, node_id = _parked_run(client, headers, sessions)
+    client.post(f"/runs/{run_id}/nodes/{node_id}/approve", json={"decision": "approve"}, headers=headers)
+
+    other = auth_headers(sessions, email="someone-else@gp.local")
+    assert client.get(f"/runs/{run_id}/approvals", headers=other).status_code == 404
+
+
 def test_cancel_skips_steps_that_have_not_started(client, headers, sessions):
     run_id, _ = _parked_run(client, headers, sessions)
     state = client.post(f"/runs/{run_id}/cancel", headers=headers).json()
@@ -141,3 +205,157 @@ def test_run_outputs_belong_to_the_run_owner(client, headers, sessions):
 def test_catalog_is_served_from_the_worker_published_source(client, headers):
     names = [a["name"] for a in client.get("/agents/catalog", headers=headers).json()]
     assert names == ["researcher", "writer"]
+
+
+# ---------------------------------------------------------------- what a run produced (Part 3)
+
+
+def _finished_run(client, headers, sessions, *, rejected: bool = False):
+    """A run whose two steps have finished, with an output recorded against each."""
+    wf = client.post(
+        "/workflows", json={"graph": graph("researcher", "writer", configs=[{"topic": "solar"}, {}])}, headers=headers
+    ).json()
+    run_id = client.post(f"/workflows/{wf['id']}/run", headers=headers).json()["run_id"]
+    with sessions() as s:
+        logs = s.query(ExecutionLog).order_by(ExecutionLog.position_order).all()
+        for log in logs:
+            log.status = "success"
+        s.add(AgentOutput(log_id=logs[0].id, output_type="text", content="notes about solar"))
+        s.add(
+            AgentOutput(
+                log_id=logs[1].id,
+                output_type="file",
+                storage_path="runs/abc/article.md",
+                mime_type="text/markdown",
+                bytes=2048,
+            )
+        )
+        run = s.query(ExecutionRun).one()
+        if rejected:
+            run.status = "failed"
+            logs[1].status = "failed"
+            logs[1].error_message = "[attempt 1] Rejected by reviewer."
+        else:
+            run.status = "succeeded"
+        s.commit()
+    return wf["id"], run_id
+
+
+def test_a_run_lists_what_it_produced_in_step_order(client, headers, sessions):
+    _, run_id = _finished_run(client, headers, sessions)
+    outputs = client.get(f"/runs/{run_id}/outputs", headers=headers).json()
+
+    assert [o["agent_type"] for o in outputs] == ["researcher", "writer"]
+    assert outputs[0]["kind"] == "text"
+    assert outputs[0]["filename"] is None
+    # A stored file is named by the last segment of its path — there is no filename column.
+    assert outputs[1]["filename"] == "article.md"
+    assert outputs[1]["mime_type"] == "text/markdown"
+    assert outputs[1]["bytes"] == 2048
+    # Every id has to lead somewhere: a file to a download, and text to its content.
+    link = client.get(f"/outputs/{outputs[1]['id']}", headers=headers).json()
+    assert link["url"].endswith("runs/abc/article.md")
+    written = client.get(f"/outputs/{outputs[0]['id']}", headers=headers)
+    assert written.status_code == 200
+    assert written.json()["text"] == "notes about solar"
+
+
+def test_an_agents_own_output_shape_is_readable_whatever_it_is(client, headers, sessions):
+    """AT-12 reaches the preview too: the platform cannot know which fields an agent publishes."""
+    _, run_id = _finished_run(client, headers, sessions)
+    with sessions() as s:
+        log = s.query(ExecutionLog).order_by(ExecutionLog.position_order).all()[0]
+        s.add(
+            AgentOutput(
+                log_id=log.id,
+                output_type="text",
+                content_json={
+                    "notes": ["Finding one", "Finding two"],
+                    "sources": [{"title": "IRENA", "url": "https://example.org/1"}],
+                    "confidence": 0.9,
+                    "checked": True,
+                    "nothing": None,
+                },
+            )
+        )
+        s.commit()
+
+    outputs = client.get(f"/runs/{run_id}/outputs", headers=headers).json()
+    written = [client.get(f"/outputs/{o['id']}", headers=headers).json() for o in outputs if o["kind"] == "text"]
+    shaped = next(w for w in written if "Finding one" in (w.get("text") or ""))["text"]
+
+    assert "notes:" in shaped and "- Finding one" in shaped and "- Finding two" in shaped
+    assert "title: IRENA" in shaped and "https://example.org/1" in shaped
+    assert "confidence: 0.9" in shaped and "checked: yes" in shaped
+    # A field with nothing in it is not shown as an empty line.
+    assert "nothing" not in shaped
+
+
+def test_fields_are_named_the_way_the_agent_names_them(client, headers, sessions):
+    """The catalog publishes a word per output field; the mechanical key is only a fallback."""
+    _, run_id = _finished_run(client, headers, sessions)
+    article = "# The Future of Solar Energy\n\n" + ("Saudi Arabia receives strong sunlight. " * 12)
+    with sessions() as s:
+        log = s.query(ExecutionLog).order_by(ExecutionLog.position_order).all()[1]
+        s.add(
+            AgentOutput(
+                log_id=log.id,
+                output_type="text",
+                content_json={"title": "The Future of Solar Energy", "article_md": article},
+            )
+        )
+        s.commit()
+
+    outputs = client.get(f"/runs/{run_id}/outputs", headers=headers).json()
+    written = [client.get(f"/outputs/{o['id']}", headers=headers).json().get("text") or "" for o in outputs]
+    shown = next(t for t in written if "Saudi Arabia receives" in t)
+
+    # writer's manifest calls the field "article", so that is what a person reads — not "article md".
+    assert "article:" in shown and "article md:" not in shown
+    assert "title: The Future of Solar Energy" in shown
+    assert shown.rstrip().endswith("strong sunlight.")
+
+
+def test_another_users_outputs_are_not_listed(client, headers, sessions):
+    _, run_id = _finished_run(client, headers, sessions)
+    # Assert the owner is served first: a bare 404 for the stranger is also what a missing route
+    # returns, so on its own it would pass against an API with no ownership check at all.
+    mine = client.get(f"/runs/{run_id}/outputs", headers=headers)
+    assert mine.status_code == 200 and mine.json() != []
+
+    other = auth_headers(sessions, email="someone-else@gp.local")
+    assert client.get(f"/runs/{run_id}/outputs", headers=other).status_code == 404
+
+
+def test_a_run_with_nothing_to_show_says_so_rather_than_failing(client, headers, sessions):
+    run_id, _ = _parked_run(client, headers, sessions)
+    response = client.get(f"/runs/{run_id}/outputs", headers=headers)
+    assert response.status_code == 200
+    assert response.json() == []
+
+
+def test_a_rejected_run_is_not_reported_as_a_failure(client, headers, sessions):
+    workflow_id, _run_id = _finished_run(client, headers, sessions, rejected=True)
+
+    listed = client.get("/workflows", headers=headers).json()
+    summary = next(w for w in listed if w["id"] == workflow_id)["last_run"]
+    assert summary["status"] == "failed"
+    assert summary["reason"] == "rejected"
+
+    history = client.get(f"/workflows/{workflow_id}/runs", headers=headers).json()
+    assert history[0]["reason"] == "rejected"
+
+
+def test_a_genuine_failure_carries_no_reason(client, headers, sessions):
+    workflow_id, _ = _finished_run(client, headers, sessions)
+    with sessions() as s:
+        run = s.query(ExecutionRun).one()
+        run.status = "failed"
+        log = s.query(ExecutionLog).order_by(ExecutionLog.position_order).all()[1]
+        log.status = "failed"
+        log.error_message = "[attempt 3] YouTube refused the file"
+        s.commit()
+
+    summary = next(w for w in client.get("/workflows", headers=headers).json() if w["id"] == workflow_id)["last_run"]
+    assert summary["status"] == "failed"
+    assert summary["reason"] is None

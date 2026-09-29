@@ -1,4 +1,4 @@
-import { formatDuration, formatRelativeTime, pluralise } from "./format";
+import { formatBytes, formatDuration, formatRelativeTime, formatTimeOfDay, pluralise } from "./format";
 
 const NOW = new Date("2026-09-16T12:00:00Z");
 const ago = (seconds: number) => new Date(NOW.getTime() - seconds * 1000);
@@ -41,5 +41,64 @@ describe("formatDuration", () => {
   it("uses one decimal under a minute and m/s above", () => {
     expect(formatDuration(18.4)).toBe("18.4 s");
     expect(formatDuration(84.2)).toBe("1m 24s");
+  });
+});
+
+describe("formatBytes", () => {
+  it("writes sizes the way §23.1 does — 1 KB is 1000 bytes", () => {
+    expect(formatBytes(312_000)).toBe("312 KB");
+    expect(formatBytes(24_000_000)).toBe("24 MB");
+  });
+
+  it("keeps one decimal under ten of a unit", () => {
+    expect(formatBytes(4_200_000)).toBe("4.2 MB");
+    expect(formatBytes(4036)).toBe("4.0 KB");
+  });
+
+  it("leaves small files in bytes, and says nothing about a size it cannot read", () => {
+    expect(formatBytes(0)).toBe("0 B");
+    expect(formatBytes(999)).toBe("999 B");
+    expect(formatBytes(-1)).toBe("");
+    expect(formatBytes(Number.NaN)).toBe("");
+  });
+});
+
+describe("formatBytes at a unit boundary", () => {
+  it("steps up rather than showing a thousand of the smaller unit", () => {
+    expect(formatBytes(999_999)).toBe("1.0 MB");
+    expect(formatBytes(999_999_999)).toBe("1.0 GB");
+    expect(formatBytes(1_000_000)).toBe("1.0 MB");
+  });
+});
+
+// The log table's clock (§21 S-07). The suite pins TZ=Asia/Riyadh (vite.config.ts) precisely so
+// these two are different: on a UTC machine every assertion here would hold whether or not
+// `formatTimeOfDay` looked at its `zone` argument at all.
+describe("formatTimeOfDay (§21 S-07)", () => {
+  const AT = "2026-09-20T16:05:02Z";
+
+  it("reads the clock in the viewer's own zone by default", () => {
+    expect(formatTimeOfDay(AT)).toBe("19:05:02");
+  });
+
+  it("reads it in UTC when asked", () => {
+    expect(formatTimeOfDay(AT, "utc")).toBe("16:05:02");
+  });
+
+  it("actually changes with the zone, rather than ignoring the argument", () => {
+    expect(formatTimeOfDay(AT, "utc")).not.toBe(formatTimeOfDay(AT, "local"));
+  });
+
+  it("keeps seconds, because steps finish seconds apart", () => {
+    // Rounded to the minute, several rows of a fast run would claim the same start time.
+    expect(formatTimeOfDay("2026-09-20T16:05:59Z", "utc")).toBe("16:05:59");
+  });
+
+  it("accepts a Date as readily as a string", () => {
+    expect(formatTimeOfDay(new Date(AT), "utc")).toBe("16:05:02");
+  });
+
+  it("says nothing at all about a date it cannot read", () => {
+    expect(formatTimeOfDay("not-a-date")).toBe("");
   });
 });

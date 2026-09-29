@@ -8,7 +8,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field
 
-from contracts.run import ApprovalDecision, OutputType, RunStatus, WorkflowGraph
+from contracts.run import ApprovalDecision, ApprovalInfo, RunStatus, WorkflowGraph
 
 
 class Message(BaseModel):
@@ -47,6 +47,9 @@ class RunSummary(BaseModel):
     status: RunStatus
     created_at: datetime
     completed_at: datetime | None = None
+    # A failed run and a run a person stopped look identical from the outside, so the list called
+    # both "Failed". Present only when the run ended for a reason the status cannot express.
+    reason: Literal["rejected"] | None = None
 
 
 class WorkflowCreate(BaseModel):
@@ -100,22 +103,59 @@ class ApprovalRequest(BaseModel):
     note: str | None = Field(None, max_length=2000)
 
 
+class ApprovalRecord(ApprovalInfo):
+    """One decision in a run's audit trail — GET /runs/{run_id}/approvals (UC-04, S-06)."""
+
+    node_id: UUID
+    agent_type: str
+
+
 class OutputLink(BaseModel):
+    """How to get at one output: a URL for a file, the words themselves for text."""
+
     id: UUID
-    url: str
-    expires_in: int
+    url: str | None = None
+    expires_in: int = 0
+    text: str | None = None
 
 
 class RunOutput(BaseModel):
-    """One saved result from a workflow step, safe to show to its owner."""
+    """One thing a run produced.
+
+    `id` is what GET /outputs/{id} resolves: a download URL for a file, the content itself for
+    text. `filename`, `mime_type` and `bytes` are a file's; text and links carry none of them.
+    """
 
     id: UUID
     node_id: UUID
     agent_type: str
-    output_type: OutputType
-    content: str | None = None
-    content_json: dict[str, Any] | None = None
-    storage_path: str | None = None
+    kind: Literal["text", "file", "url"]
+    filename: str | None = None
     mime_type: str | None = None
     bytes: int | None = None
     created_at: datetime
+
+
+class Connection(BaseModel):
+    """A connected account on S-09 and in the credential picker (D-09). Never carries a token.
+
+    `status`: `expired` once Google has refused the connection or `expires_at` has passed;
+    `expiring` within 7 days of `expires_at`; otherwise `connected`. `expires_at` is empty when
+    Google gave no end date. `scopes` are the granted services as a person reads them
+    ("YouTube", "Drive", "Gmail"). `used_by` counts this user's workflows whose steps reference it.
+    """
+
+    id: UUID
+    provider: Literal["google"]
+    account_email: str
+    scopes: list[str]
+    status: Literal["connected", "expiring", "expired"]
+    expires_at: datetime | None = None
+    created_at: datetime
+    used_by: int
+
+
+class ConnectStart(BaseModel):
+    """Send the browser (or a popup) here. Valid for 10 minutes, in the browser that asked."""
+
+    authorization_url: str

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import os
 from pathlib import Path, PurePosixPath
 from typing import Any
 
@@ -11,11 +12,18 @@ from contracts.ports import PublishMetadata, PublishResult
 class YouTubePublisher:
     """Publish a locally stored video through YouTube Data API v3."""
 
-    def __init__(self, credentials_json: dict[str, Any], *, client_id: str, client_secret: str, storage_root: str):
+    def __init__(
+        self,
+        credentials_json: dict[str, Any],
+        *,
+        client_id: str | None = None,
+        client_secret: str | None = None,
+        storage_root: str | None = None,
+    ):
         self._credentials_json = credentials_json
-        self._client_id = client_id
-        self._client_secret = client_secret
-        self._storage_root = Path(storage_root).resolve()
+        self._client_id = client_id or str(credentials_json.get("client_id") or "")
+        self._client_secret = client_secret or str(credentials_json.get("client_secret") or "")
+        self._storage_root = Path(storage_root or os.getenv("STORAGE_ROOT", "/data/artifacts")).resolve()
 
     async def publish(self, storage_path: str, meta: PublishMetadata) -> PublishResult:
         return await asyncio.to_thread(self._publish, storage_path, meta)

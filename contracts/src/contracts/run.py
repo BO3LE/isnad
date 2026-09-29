@@ -37,6 +37,17 @@ class RunStatus(StrEnum):
 
 TERMINAL_RUN_STATUSES = frozenset({RunStatus.SUCCEEDED, RunStatus.FAILED, RunStatus.CANCELLED})
 
+# A run the reviewer stopped is recorded as a failed node carrying this message (worker halts on a
+# reject decision). It lives here so the worker that writes it and the API that reads it cannot
+# drift apart: a rejection is a person's decision, and must never be reported as a failure.
+REJECTED_BY_REVIEWER = "Rejected by reviewer."
+
+# The configuration key that names a connected account (D-09). Its value is the id of a
+# `credentials` row — never a token. The worker resolves it just before the node runs; the API
+# checks it belongs to the workflow's owner. Config models mark it with `x-widget: credential`.
+CREDENTIAL_CONFIG_KEY = "credential_id"
+UUID_PATTERN = r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+
 
 class ApprovalDecision(StrEnum):
     APPROVE = "approve"
@@ -83,6 +94,15 @@ class WorkflowGraph(BaseModel):
     edges: list[GraphEdge] = Field(default_factory=list)
 
 
+class ApprovalInfo(BaseModel):
+    """The recorded human decision for a node that required approval (UC-04 audit trail)."""
+
+    decision: ApprovalDecision
+    decided_by_email: str | None = None
+    decided_at: datetime
+    note: str | None = None
+
+
 class NodeState(BaseModel):
     node_id: UUID
     agent_type: str
@@ -92,6 +112,8 @@ class NodeState(BaseModel):
     completed_at: datetime | None = None
     duration_ms: int | None = None
     error_message: str | None = None
+    # Present only for a node that has been approved or rejected (UC-04); null otherwise.
+    approval: ApprovalInfo | None = None
 
 
 class LogEntry(NodeState):

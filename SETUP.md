@@ -10,11 +10,14 @@ This is the environment and database how-to required on the CD/DVD (GPC guide). 
 |---|---|---|---|
 | Git | any recent | everything | `git --version` |
 | Docker Desktop (or Docker Engine + Compose v2) | 24+ | running the stack | `docker compose version` |
-| Python | 3.11 or newer | tests and linters outside Docker | `python3 --version` |
+| Python | 3.11 or newer | tests and linters outside Docker | `python3 --version` (Windows: `python --version`, see Windows notes) |
 | Node.js | 20 LTS | frontend tests and linters outside Docker | `node --version` |
 | Make | any | shortcuts (optional) | `make --version` |
 
-Windows: use WSL 2 and clone the repository inside the Linux filesystem, not under `/mnt/c`, or file watching and hot reload will be slow.
+Windows: Docker Desktop with the WSL 2 backend works directly from Git Bash — you do **not** have to clone
+into the WSL filesystem to run `docker compose up`. If you additionally do local (non-Docker) development,
+cloning inside the Linux filesystem (not under `/mnt/c`) makes file watching and hot reload faster, but
+it is not required to complete this guide. See **Windows notes** below for the gotchas this test actually hit.
 
 ## 2. Run the whole stack (Docker)
 
@@ -42,6 +45,9 @@ Check everything end to end:
 
 ```bash
 python3 scripts/smoke_test.py
+# Windows (Git Bash, native Python — not WSL): python -X utf8 scripts/smoke_test.py
+# (plain "python3" is usually a Microsoft Store stub, and plain "python" defaults to the
+# legacy cp1252 console encoding, which crashes on the script's ✓/✗ output — see Windows notes)
 ```
 
 Expected output ends with three `✓` lines — one per template workflow.
@@ -96,6 +102,7 @@ Individual pieces:
 cd worker && python -m pytest                 # one component
 cd frontend && npm run test:e2e               # Playwright; first run: npx playwright install chromium
 python3 scripts/smoke_test.py                 # full stack, needs docker compose up
+                                                # Windows (Git Bash): python -X utf8 scripts/smoke_test.py
 ```
 
 ## 5. Database
@@ -120,9 +127,61 @@ Every variable is listed, with a comment, in [`.env.example`](.env.example). The
 | `JWT_SECRET` | placeholder | Token signing secret. Generate a real one for any shared deployment. |
 | `ENABLE_DEV_LOGIN` | `true` | Password-less sign-in. Always disabled when `ENVIRONMENT=production`. |
 | `OPENAI_API_KEY`, `SEARCH_API_KEY` | empty | Used only when `FAKE_ADAPTERS=false`. |
-| `SUPABASE_*` | empty | Filled in once D-01 is approved. |
+| `STORAGE_BACKEND` | `local` | Where generated files go. `local` = `STORAGE_ROOT` on disk, served at `PUBLIC_FILES_URL` (development only). `supabase` = the private bucket `STORAGE_BUCKET`, downloaded through signed URLs. Set the same value for api and worker. Files are stored at `artifacts/{user_id}/{run_id}/…` either way. |
+| `STORAGE_BUCKET` | `artifacts` | Supabase Storage bucket for `STORAGE_BACKEND=supabase`. Must be **private**. |
+| `DOWNLOAD_URL_EXPIRES_IN` | `300` | Lifetime of a signed download URL, in seconds. |
+| `SUPABASE_URL` | the isnad project | Verifies sign-in tokens (JWKS) and, with `STORAGE_BACKEND=supabase`, is the Storage endpoint. |
+| `SUPABASE_SERVICE_KEY` | empty | Needed only for `STORAGE_BACKEND=supabase` (worker uploads, API signs links). A secret that bypasses RLS: server side only, never `VITE_`-prefixed. |
+| `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_REDIRECT_URI`, `CREDENTIALS_ENCRYPTION_KEY`, `FRONTEND_URL` | empty / local defaults | Settings → Connections (see below). Not needed with `FAKE_ADAPTERS=true`. |
 
 Never commit `.env`. Share keys through a password manager, not chat.
+
+### Connect Google (Settings → Connections, D-09)
+
+Publisher (YouTube, Drive) and Email (Gmail) act as a person's Google account. Each person connects
+theirs once; the tokens are stored encrypted in the `credentials` table and a workflow step only
+holds the connection's id. With `FAKE_ADAPTERS=true` none of this is needed.
+
+**1. Google Cloud Console** (one project for the team, <https://console.cloud.google.com>)
+
+1. *APIs & Services → Library*: enable **YouTube Data API v3**, **Google Drive API** and **Gmail API**.
+2. *APIs & Services → OAuth consent screen* (Google Auth Platform → Branding / Audience / Data access):
+   - User type **External**; app name "Isnad", support email, developer contact email.
+   - Data access → add scopes: `openid`, `.../auth/userinfo.email`, `.../auth/youtube.upload`,
+     `.../auth/drive.file`, `.../auth/gmail.send`. (`youtube.upload` and `gmail.send` are
+     *sensitive* scopes: fine unverified in Testing; publishing the app needs Google's verification.)
+   - Audience → Publishing status **Testing**, and add every team member's and every tester's Gmail
+     address under **Test users** (max 100). Anyone else gets "Access blocked".
+   - While in Testing, Google expires refresh tokens after **7 days**: the Connections screen shows
+     "expiring", then "expired — Reconnect". That is expected until the app is published.
+3. *APIs & Services → Credentials → Create credentials → OAuth client ID*:
+   - Application type **Web application**.
+   - Authorised redirect URIs (exact match, no trailing slash):
+     - local: `http://localhost:8000/connections/google/callback`
+     - production: `https://<your-host>/api/connections/google/callback` (the API sits behind `/api`)
+   - Authorised JavaScript origins are not needed (the browser never talks to Google's APIs).
+   - Copy the client ID and client secret.
+
+**2. `.env`** (and `.env.production` with the production values)
+
+```bash
+FAKE_ADAPTERS=false                  # only for real publishing; the connect flow itself works either way
+GOOGLE_CLIENT_ID=1234-abc.apps.googleusercontent.com
+GOOGLE_CLIENT_SECRET=GOCSPX-...
+GOOGLE_REDIRECT_URI=http://localhost:8000/connections/google/callback
+FRONTEND_URL=http://localhost:5173   # where the browser returns: {FRONTEND_URL}/settings/connections
+# Generate once per environment and keep it: losing it makes every stored connection unreadable.
+CREDENTIALS_ENCRYPTION_KEY=$(python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())")
+```
+
+Both the API and the worker read these (the worker needs the client ID/secret to refresh tokens and
+the key to decrypt them). To rotate the key: set `CREDENTIALS_ENCRYPTION_KEY=<new>,<old>` — new
+first — on both, and later drop the old one once every row has been refreshed or re-encrypted.
+
+**3. Check it:** sign in, open Settings → Connections, press **Connect Google**, choose a test user.
+You land back on `/settings/connections?connected=google`; `GET /connections` lists the account with
+"YouTube · Drive · Gmail". Errors come back as `?error=google_denied` (Cancel pressed),
+`google_state` (link expired, reused or opened in another browser) or `google_failed`.
 
 ## 7. Changing the API
 
@@ -147,7 +206,47 @@ Commit both files with your API change. CI fails if they are out of date.
 | Frontend doesn't hot-reload on Windows/macOS | Already enabled via polling in Docker; outside Docker nothing is needed. |
 | `ModuleNotFoundError` locally | Re-run `scripts/bootstrap.sh` and make sure `.venv` is activated. |
 | CI fails on "OpenAPI and frontend types are up to date" | Run `make openapi` and commit the two generated files. |
+| `UnicodeEncodeError: 'charmap' codec can't encode character '✓'` running a script | Native Windows Python's console defaults to `cp1252`. Run with `python -X utf8 <script>` (or set `PYTHONIOENCODING=utf-8`). |
+| Worker container restarts with "Cannot allocate memory" (seen in `docker compose logs worker`) | Known on some memory-constrained Docker Desktop hosts: the `dev` target's `watchfiles` reloader can crash on start. First try raising Docker Desktop's memory limit (Settings → Resources → Advanced). If it still crashes, change the worker service's `build.target` from `dev` to `prod` in `docker-compose.yml` and rebuild (`docker compose up -d --build worker`) — you lose auto-reload on file changes (restart the container manually instead), but the worker no longer runs the reloader. Not reproduced on the W11 test machine; documented per known host issue. |
 
-## 9. Deployment
+## 9. Windows notes
+
+Confirmed by the W11 fresh-machine test (`docs/fresh-machine-test.md`) on native Windows + Git Bash
+(Docker Desktop, WSL 2 backend) — none of these block `docker compose up`, only the non-Docker paths:
+
+- **`python3` does not exist in Git Bash by default.** It resolves to the Microsoft Store's
+  "install Python" stub, which prints a message and exits non-zero instead of running anything.
+  Use `python` (or `py -3`) instead — check which one you have with `python --version`.
+- **`python`'s console output defaults to `cp1252`, not UTF-8.** Any script that prints `✓`/`✗`
+  (e.g. `scripts/smoke_test.py`) raises `UnicodeEncodeError` under plain `python`. Run it as
+  `python -X utf8 scripts/smoke_test.py`, or `export PYTHONIOENCODING=utf-8` once per shell.
+- **`make` is not installed in Git Bash.** The table in §1 already lists it as optional for this
+  reason — every `make <target>` used in this guide has the underlying command spelled out next to
+  it (§2–§4), so you never strictly need `make`. To get it anyway: `choco install make`, or run
+  inside WSL 2, or use `winget install GnuWin32.Make`.
+- **Node installed via nvm-windows (or similar) may not be on Git Bash's `PATH`** even though
+  `node --version` works in PowerShell/cmd — the shim directory nvm adds to the Windows `PATH` isn't
+  always picked up by Git Bash until you restart the terminal (or reinstall/relink the current
+  version). If `node`/`npm` aren't found, this is the first thing to check; it only affects §3 and
+  §4's non-Docker commands, not `docker compose up`.
+- **Shell scripts stay LF automatically.** `.gitattributes` forces `*.sh` to `eol=lf` on checkout,
+  so `scripts/bootstrap.sh` and friends don't need any manual fixing even with
+  `core.autocrlf=true` — this was verified, not assumed.
+- **Docker commands with Linux-style paths from Git Bash:** if a command embeds a path like
+  `/app/...` and Docker complains it can't find it, Git Bash rewrote the path. Prefix the command
+  with `MSYS_NO_PATHCONV=1`, e.g. `MSYS_NO_PATHCONV=1 docker compose run --rm api sh -c "..."`.
+- **Ports:** if 5433, 6379, 8000 or 5173 are already in use (for example by another checkout of this
+  repo, or another project), set `DB_HOST_PORT` / `REDIS_HOST_PORT` in `.env` and, if 8000 or 5173
+  themselves collide, edit the `ports:` mapping in `docker-compose.yml` (left side only — the
+  frontend's `VITE_API_URL` and the API's `CORS_ORIGINS` assume the defaults).
+
+## 10. Deployment
 
 TODO(W1 decision, W11 execution — Mohammed): the host is not chosen yet (GP-plan §5.5). The production stack is [`docker-compose.prod.yml`](docker-compose.prod.yml): it drops the local database in favour of Supabase, builds production image targets, and serves the frontend through nginx with the API behind `/api`. Record the real deployment steps here as they are performed.
+
+---
+
+**Verified on:** Windows 11 Pro (10.0.26200), Docker Desktop 29.7.2 / Compose v5.5.0, WSL 2 backend — 2026-09-28.
+Fresh clone → `docker compose up --build` → `/health/ready` healthy → `scripts/smoke_test.py` (3/3 workflows) in
+about 3 minutes end to end (first build, warm image-layer cache; see `docs/fresh-machine-test.md` for the full log
+and timings, including a completely cold-cache estimate).

@@ -1,0 +1,125 @@
+{
+  "machine": {
+    "cpu_model": "Intel(R) Core(TM) i5-14600KF",
+    "logical_cpus": 20,
+    "ram_gib": 7.6,
+    "cgroup_cpu_limit": 2.0,
+    "cgroup_mem_limit_gib": 4.0,
+    "os": "Linux 6.18.33.2-microsoft-standard-WSL2",
+    "python": "3.11.16",
+    "ffmpeg": "ffmpeg version 7.1.5-0+deb13u1 Copyright (c) 2000-2026 the FFmpeg developers"
+  },
+  "args": {
+    "durations": [
+      30,
+      60,
+      180
+    ],
+    "resolutions": [
+      "720p",
+      "1080p"
+    ],
+    "repeat": 3,
+    "parallel": 2,
+    "audio": "tone",
+    "json": "/out/limited-p2.json"
+  },
+  "results": [
+    {
+      "target_seconds": 30,
+      "resolution": "720p",
+      "parallel": 2,
+      "video_seconds": 32.08,
+      "wall_seconds": 5.91187203100003,
+      "render_s_per_video_min": 11.029611998134385,
+      "realtime_factor": 5.439901241326418,
+      "cpu_seconds": 11.91,
+      "avg_cpu_pct": 199.69339429708444,
+      "peak_cpu_pct": 277.8089844357507,
+      "peak_rss_mib": 943.05078125,
+      "peak_ffmpeg_rss_mib": 901.453125,
+      "output_mib": 0.2872734069824219,
+      "runs": 3
+    },
+    {
+      "target_seconds": 30,
+      "resolution": "1080p",
+      "parallel": 2,
+      "video_seconds": 33.2,
+      "wall_seconds": 14.906815763000054,
+      "render_s_per_video_min": 27.12840191992667,
+      "realtime_factor": 2.2117041828375488,
+      "cpu_seconds": 29.860000000000007,
+      "avg_cpu_pct": 199.67524926962477,
+      "peak_cpu_pct": 289.16033611951616,
+      "peak_rss_mib": 2212.96484375,
+      "peak_ffmpeg_rss_mib": 2168.90234375,
+      "output_mib": 0.3125038146972656,
+      "runs": 3
+    },
+    {
+      "target_seconds": 60,
+      "resolution": "720p",
+      "parallel": 2,
+      "video_seconds": 62.8,
+      "wall_seconds": 12.860012938000011,
+      "render_s_per_video_min": 12.365397055769241,
+      "realtime_factor": 4.852250172751727,
+      "cpu_seconds": 25.70999999999998,
+      "avg_cpu_pct": 199.92203836770324,
+      "peak_cpu_pct": 297.87284533051746,
+      "peak_rss_mib": 951.83203125,
+      "peak_ffmpeg_rss_mib": 903.21484375,
+      "output_mib": 0.5722360610961914,
+      "runs": 3
+    },
+    {
+      "target_seconds": 60,
+      "resolution": "1080p",
+      "parallel": 2,
+      "video_seconds": 63.12,
+      "wall_seconds": 27.466717259999996,
+      "render_s_per_video_min": 26.444207888318353,
+      "realtime_factor": 2.268927859491863,
+      "cpu_seconds": 54.920000000000016,
+      "avg_cpu_pct": 199.9510880027169,
+      "peak_cpu_pct": 297.20889639366334,
+      "peak_rss_mib": 2220.36328125,
+      "peak_ffmpeg_rss_mib": 2171.6640625,
+      "output_mib": 0.6197805404663086,
+      "runs": 3
+    },
+    {
+      "target_seconds": 180,
+      "resolution": "720p",
+      "parallel": 2,
+      "video_seconds": 182.96,
+      "wall_seconds": 37.75999734599998,
+      "render_s_per_video_min": 12.383033672715339,
+      "realtime_factor": 4.845339323610452,
+      "cpu_seconds": 75.45999999999992,
+      "avg_cpu_pct": 199.77766723222283,
+      "peak_cpu_pct": 297.0429199097129,
+      "peak_rss_mib": 970.39453125,
+      "peak_ffmpeg_rss_mib": 904.125,
+      "output_mib": 1.713818073272705,
+      "runs": 3
+    },
+    {
+      "target_seconds": 180,
+      "resolution": "1080p",
+      "parallel": 2,
+      "video_seconds": 183.28,
+      "wall_seconds": 86.40719863599998,
+      "render_s_per_video_min": 28.286948484068084,
+      "realtime_factor": 2.1211195698183385,
+      "cpu_seconds": 172.73000000000002,
+      "avg_cpu_pct": 199.91157901351838,
+      "peak_cpu_pct": 307.45121711229626,
+      "peak_rss_mib": 2239.49609375,
+      "peak_ffmpeg_rss_mib": 2171.9765625,
+      "output_mib": 1.853139877319336,
+      "runs": 3
+    }
+  ]
+}

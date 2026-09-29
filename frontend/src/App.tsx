@@ -8,11 +8,13 @@ import { CanvasPage } from "./pages/CanvasPage";
 import { LoginPage } from "./pages/LoginPage";
 import { NotFoundPage } from "./pages/NotFoundPage";
 import { RegisterPage } from "./pages/RegisterPage";
+import { LogsPage } from "@/pages/LogsPage";
+import { OutputsPage } from "@/pages/OutputsPage";
 import { RunPage } from "./pages/RunPage";
 import { WorkflowsPage } from "./pages/WorkflowsPage";
 
 // Routes follow FRONTEND-PAGES-PLAN.md §3. Pages still to build: P-05 run history,
-// P-07 approval, P-08 logs, P-09 outputs, P-10 connections.
+// P-07 approval, P-10 connections.
 const DevDesignPage = lazy(() => import("./pages/DevDesignPage").then((m) => ({ default: m.DevDesignPage })));
 
 export function App() {
@@ -37,6 +39,22 @@ export function App() {
               element={
                 <RequireAuth>
                   <CanvasPage />
+                </RequireAuth>
+              }
+            />
+            <Route
+              path="/runs/:runId/logs"
+              element={
+                <RequireAuth>
+                  <LogsPage />
+                </RequireAuth>
+              }
+            />
+            <Route
+              path="/runs/:runId/outputs"
+              element={
+                <RequireAuth>
+                  <OutputsPage />
                 </RequireAuth>
               }
             />
@@ -68,7 +86,11 @@ export function App() {
 
 function RequireAuth({ children }: { children: ReactNode }) {
   const token = useAuth((state) => state.token);
+  const hydrated = useAuth((state) => state.hydrated);
   const location = useLocation();
+  // In Supabase mode the stored session loads asynchronously; redirecting before it resolves
+  // would bounce a signed-in user to /login on every page refresh.
+  if (!hydrated) return <Spinner label="Loading your session" />;
   if (!token) return <Navigate to={`/login?next=${encodeURIComponent(location.pathname)}`} replace />;
   return <>{children}</>;
 }

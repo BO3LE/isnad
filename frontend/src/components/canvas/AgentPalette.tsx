@@ -59,7 +59,7 @@ function AgentRow({
       onClick={onAdd}
       className="flex w-full min-w-0 items-start gap-2.5 rounded-sm px-2 py-2 text-left hover:bg-surface-hover disabled:cursor-not-allowed disabled:opacity-40"
     >
-      <AgentIcon agentType={agent.name} icon={agent.icon} family={agent.family} className="mt-0.5" />
+      <AgentIcon icon={agent.icon} family={agent.family} className="mt-0.5" />
       <span className="grid min-w-0 flex-1 gap-0.5">
         <span className="flex min-w-0 items-center gap-1.5">
           <span className="truncate text-body-md font-medium text-text">{agent.title}</span>
@@ -113,7 +113,7 @@ export function AgentPalette({ catalog, loading, error, onRetry, onAdd, after, s
               className="grid h-10 w-10 place-items-center rounded-sm hover:bg-surface-hover disabled:opacity-40"
               disabled={disabled}
             >
-              <AgentIcon agentType={agent.name} icon={agent.icon} family={agent.family} />
+              <AgentIcon icon={agent.icon} family={agent.family} />
             </button>
           </Tooltip>
         ))}
@@ -190,7 +190,7 @@ export function AgentPalette({ catalog, loading, error, onRetry, onAdd, after, s
         )}
 
         {GROUPS.map(({ family, label }) => {
-          const group = matches.filter((agent) => agentFamily(agent.name, agent.family) === family);
+          const group = matches.filter((agent) => agentFamily(agent.family) === family);
           if (group.length === 0) return null;
           return (
             <section key={family} className="pb-2" aria-labelledby={`palette-${family}`}>

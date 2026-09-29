@@ -7,7 +7,9 @@ export default defineConfig({
   fullyParallel: true,
   retries: process.env.CI ? 1 : 0,
   reporter: process.env.CI ? "github" : "list",
-  use: { baseURL: "http://localhost:4173", trace: "retain-on-failure" },
+  // The timezone is pinned, not inherited. A UTC runner makes local and UTC identical, and every
+  // assertion about the Logs page's Local/UTC toggle would pass without the toggle doing anything.
+  use: { baseURL: "http://localhost:4173", trace: "retain-on-failure", timezoneId: "Asia/Riyadh" },
   projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"] } }],
   webServer: {
     command: "npm run build && npm run preview -- --port 4173 --strictPort",

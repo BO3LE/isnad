@@ -122,6 +122,64 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/connections": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Connections */
+        get: operations["list_connections_connections_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/connections/google/start": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Start Google
+         * @description Begin connecting a Google account. Call with `credentials: "include"` so the browser keeps the
+         *     cookie that ties Google's answer to this browser; then open `authorization_url`.
+         */
+        post: operations["start_google_connections_google_start_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/connections/{credential_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Disconnect
+         * @description Forget a connection. Steps that used it then show "needs a Google connection".
+         */
+        delete: operations["disconnect_connections__credential_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/health": {
         parameters: {
             query?: never;
@@ -173,7 +231,9 @@ export interface paths {
          * Download
          * @description Return a download URL — the API never streams files itself.
          *
-         *     Development serves files from STORAGE_ROOT at /files. TODO(W4): Supabase signed URLs in production.
+         *     With STORAGE_BACKEND=supabase the URL is a short-lived signed link into the private bucket;
+         *     otherwise (development) files are served from STORAGE_ROOT at /files. Either way only the
+         *     output's owner gets a link — anyone else gets 404.
          */
         get: operations["download_outputs__output_id__get"];
         put?: never;
@@ -193,6 +253,26 @@ export interface paths {
         };
         /** Get Run */
         get: operations["get_run_runs__run_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/runs/{run_id}/approvals": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Run Approvals
+         * @description UC-04 audit trail: every decision recorded against this run, oldest first (S-06, report evidence).
+         */
+        get: operations["run_approvals_runs__run_id__approvals_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -263,10 +343,13 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * Get Outputs
-         * @description List every saved result from a run, including text the user can read in the app.
+         * Run Outputs
+         * @description What this run produced, in the order the steps ran.
+         *
+         *     The worker already records every output; this exposes them so a person can see, download and
+         *     approve the actual article, image and video rather than being told a file exists somewhere.
          */
-        get: operations["get_outputs_runs__run_id__outputs_get"];
+        get: operations["run_outputs_runs__run_id__outputs_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -470,11 +553,97 @@ export interface components {
          * @enum {string}
          */
         ApprovalDecision: "approve" | "reject";
+        /**
+         * ApprovalInfo
+         * @description The recorded human decision for a node that required approval (UC-04 audit trail).
+         */
+        ApprovalInfo: {
+            /**
+             * Decided At
+             * Format: date-time
+             */
+            decided_at: string;
+            /** Decided By Email */
+            decided_by_email?: string | null;
+            decision: components["schemas"]["ApprovalDecision"];
+            /** Note */
+            note?: string | null;
+        };
+        /**
+         * ApprovalRecord
+         * @description One decision in a run's audit trail — GET /runs/{run_id}/approvals (UC-04, S-06).
+         */
+        ApprovalRecord: {
+            /** Agent Type */
+            agent_type: string;
+            /**
+             * Decided At
+             * Format: date-time
+             */
+            decided_at: string;
+            /** Decided By Email */
+            decided_by_email?: string | null;
+            decision: components["schemas"]["ApprovalDecision"];
+            /**
+             * Node Id
+             * Format: uuid
+             */
+            node_id: string;
+            /** Note */
+            note?: string | null;
+        };
         /** ApprovalRequest */
         ApprovalRequest: {
             decision: components["schemas"]["ApprovalDecision"];
             /** Note */
             note?: string | null;
+        };
+        /**
+         * ConnectStart
+         * @description Send the browser (or a popup) here. Valid for 10 minutes, in the browser that asked.
+         */
+        ConnectStart: {
+            /** Authorization Url */
+            authorization_url: string;
+        };
+        /**
+         * Connection
+         * @description A connected account on S-09 and in the credential picker (D-09). Never carries a token.
+         *
+         *     `status`: `expired` once Google has refused the connection or `expires_at` has passed;
+         *     `expiring` within 7 days of `expires_at`; otherwise `connected`. `expires_at` is empty when
+         *     Google gave no end date. `scopes` are the granted services as a person reads them
+         *     ("YouTube", "Drive", "Gmail"). `used_by` counts this user's workflows whose steps reference it.
+         */
+        Connection: {
+            /** Account Email */
+            account_email: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Expires At */
+            expires_at?: string | null;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Provider
+             * @constant
+             */
+            provider: "google";
+            /** Scopes */
+            scopes: string[];
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "connected" | "expiring" | "expired";
+            /** Used By */
+            used_by: number;
         };
         /** DevLoginRequest */
         DevLoginRequest: {
@@ -548,6 +717,7 @@ export interface components {
         LogEntry: {
             /** Agent Type */
             agent_type: string;
+            approval?: components["schemas"]["ApprovalInfo"] | null;
             /** Completed At */
             completed_at?: string | null;
             /** Duration Ms */
@@ -592,6 +762,7 @@ export interface components {
         NodeState: {
             /** Agent Type */
             agent_type: string;
+            approval?: components["schemas"]["ApprovalInfo"] | null;
             /** Completed At */
             completed_at?: string | null;
             /** Duration Ms */
@@ -617,23 +788,26 @@ export interface components {
          * @enum {string}
          */
         NodeStatus: "pending" | "running" | "retrying" | "awaiting_approval" | "success" | "failed" | "skipped";
-        /** OutputLink */
+        /**
+         * OutputLink
+         * @description How to get at one output: a URL for a file, the words themselves for text.
+         */
         OutputLink: {
-            /** Expires In */
+            /**
+             * Expires In
+             * @default 0
+             */
             expires_in: number;
             /**
              * Id
              * Format: uuid
              */
             id: string;
+            /** Text */
+            text?: string | null;
             /** Url */
-            url: string;
+            url?: string | null;
         };
-        /**
-         * OutputType
-         * @enum {string}
-         */
-        OutputType: "text" | "file" | "url";
         /** Position */
         Position: {
             /**
@@ -658,29 +832,33 @@ export interface components {
         };
         /**
          * RunOutput
-         * @description One saved result from a workflow step, safe to show to its owner.
+         * @description One thing a run produced.
+         *
+         *     `id` is what GET /outputs/{id} resolves: a download URL for a file, the content itself for
+         *     text. `filename`, `mime_type` and `bytes` are a file's; text and links carry none of them.
          */
         RunOutput: {
             /** Agent Type */
             agent_type: string;
             /** Bytes */
             bytes?: number | null;
-            /** Content */
-            content?: string | null;
-            /** Content Json */
-            content_json?: {
-                [key: string]: unknown;
-            } | null;
             /**
              * Created At
              * Format: date-time
              */
             created_at: string;
+            /** Filename */
+            filename?: string | null;
             /**
              * Id
              * Format: uuid
              */
             id: string;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "text" | "file" | "url";
             /** Mime Type */
             mime_type?: string | null;
             /**
@@ -688,9 +866,6 @@ export interface components {
              * Format: uuid
              */
             node_id: string;
-            output_type: components["schemas"]["OutputType"];
-            /** Storage Path */
-            storage_path?: string | null;
         };
         /** RunState */
         RunState: {
@@ -743,6 +918,8 @@ export interface components {
              * Format: uuid
              */
             id: string;
+            /** Reason */
+            reason?: "rejected" | null;
             status: components["schemas"]["RunStatus"];
         };
         /** TokenResponse */
@@ -1029,6 +1206,94 @@ export interface operations {
             };
         };
     };
+    list_connections_connections_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Connection"][];
+                };
+            };
+        };
+    };
+    start_google_connections_google_start_post: {
+        parameters: {
+            query?: {
+                /** @description `popup`: the callback answers with a page that tells the opener and closes. */
+                mode?: "redirect" | "popup";
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConnectStart"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Google connections aren't configured on this server */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    disconnect_connections__credential_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                credential_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     health_health_get: {
         parameters: {
             query?: never;
@@ -1122,6 +1387,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["RunState"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    run_approvals_runs__run_id__approvals_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApprovalRecord"][];
                 };
             };
             /** @description Validation Error */
@@ -1233,7 +1529,7 @@ export interface operations {
             };
         };
     };
-    get_outputs_runs__run_id__outputs_get: {
+    run_outputs_runs__run_id__outputs_get: {
         parameters: {
             query?: never;
             header?: never;

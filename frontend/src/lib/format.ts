@@ -54,7 +54,50 @@ export function formatAbsoluteTime(value: string | Date): string {
   return RELATIVE_ABSOLUTE.format(date).replace(",", ",");
 }
 
+/** The zone a log table's timestamps are read in (§21 S-07 offers both). */
+export type TimeZonePreference = "local" | "utc";
+
+const TIME_OF_DAY = new Intl.DateTimeFormat("en-GB", { hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false });
+const TIME_OF_DAY_UTC = new Intl.DateTimeFormat("en-GB", {
+  hour: "2-digit",
+  minute: "2-digit",
+  second: "2-digit",
+  hour12: false,
+  timeZone: "UTC",
+});
+
+/**
+ * `16:05:02` — the log table's clock (§21 S-07), in the reader's own zone or in UTC.
+ *
+ * Seconds matter here in a way they do not elsewhere: steps finish within seconds of each other,
+ * and a table that rounded to the minute would show several rows starting at the same time.
+ */
+export function formatTimeOfDay(value: string | Date, zone: TimeZonePreference = "local"): string {
+  const date = typeof value === "string" ? new Date(value) : value;
+  if (Number.isNaN(date.getTime())) return "";
+  return (zone === "utc" ? TIME_OF_DAY_UTC : TIME_OF_DAY).format(date);
+}
+
 /** "1 step" / "5 steps" — numerals always, pluralised correctly (§23.1). */
 export function pluralise(count: number, singular: string, plural = `${singular}s`): string {
   return `${count} ${count === 1 ? singular : plural}`;
+}
+
+/**
+ * A file size as §23.1 writes it: 1 KB is 1000 bytes, and anything under 10 of its unit keeps one
+ * decimal — "312 KB", "4.2 MB", "24 MB".
+ */
+export function formatBytes(bytes: number): string {
+  if (!Number.isFinite(bytes) || bytes < 0) return "";
+  if (bytes < 1000) return `${Math.round(bytes)} B`;
+  const units = ["KB", "MB", "GB", "TB"];
+  let value = bytes / 1000;
+  let unit = 0;
+  // Step up on what will be *shown*, not on the raw value: 999,999 B rounds to 1000, which has to
+  // read "1.0 MB" rather than "1000 KB".
+  while (Math.round(value) >= 1000 && unit < units.length - 1) {
+    value /= 1000;
+    unit += 1;
+  }
+  return `${value < 10 ? value.toFixed(1) : Math.round(value)} ${units[unit]}`;
 }
