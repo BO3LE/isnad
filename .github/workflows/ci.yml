@@ -60,8 +60,9 @@ jobs:
           - component: adapters
             install: ./contracts ./adapters
           - component: exporters
-            install: ./exporters
+            install: "./exporters[all,test]"
             ffmpeg: true
+            pango: true # WeasyPrint (to_pdf) needs Pango at runtime, not just at pip-install time
           # The worker suite runs with NO agents installed — the C3 decoupling test.
           - component: worker
             install: ./contracts ./db ./adapters ./worker
@@ -78,6 +79,9 @@ jobs:
       - name: Install FFmpeg
         if: matrix.ffmpeg
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg
+      - name: Install Pango (WeasyPrint's only native dependency since it dropped Cairo)
+        if: matrix.pango
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libpango-1.0-0 libpangoft2-1.0-0
       - name: Install ${{ matrix.component }} and only what it depends on
         run: pip install -c constraints.txt ${{ matrix.install }} pytest pytest-asyncio
       - name: Run tests
