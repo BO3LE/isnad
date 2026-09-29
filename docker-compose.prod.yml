@@ -1,47 +1,148 @@
-# Production stack: no local database (Supabase), production image targets, no source mounts.
+# Production stack — host-agnostic: any Linux VM with Docker. Guide: docs/deployment.md.
 #
+#   cp .env.production.example .env.production    # fill it in
+#   scripts/deploy.sh                              # or, by hand:
 #   docker compose -f docker-compose.prod.yml --env-file .env.production up -d --build
 #
-# Required in .env.production: DATABASE_URL (Supabase), REDIS_URL, JWT_SECRET (Supabase JWT secret),
-# CORS_ORIGINS, PUBLIC_FILES_URL, and the adapter keys. ENVIRONMENT is forced to production.
-# Run migrations once per release:
-#   docker compose -f docker-compose.prod.yml run --rm api sh -c "cd /app/db && alembic upgrade head"
-# (TODO W11, Mohammed: choose the host and fill in the deployment section of SETUP.md.)
+#   caddy    :80 :443  the only published ports; HTTPS via Let's Encrypt for DOMAIN
+#   web      —         nginx: the built SPA, and /api/* proxied to api (prefix stripped)
+#   api      —         FastAPI (C2)
+#   worker   —         Celery + FFmpeg + agents (C3, C4), capped at 2 CPU / 4 GiB
+#   redis    —         broker + result backend + agent catalog
+#   migrate  —         one-shot on every `up`: alembic upgrade head (+ optional demo seed)
+#
+# Postgres, Auth and Storage are Supabase — there is no database service here. Generated files go
+# to the private Supabase Storage bucket (STORAGE_BACKEND=supabase); the API does not serve /files
+# when ENVIRONMENT=production, so local file storage is not supported in this stack.
+#
+# Every `${VAR}` below is read from --env-file .env.production; every container also gets the whole
+# file through env_file.
+
+x-logging: &logging
+  driver: json-file
+  options: { max-size: "10m", max-file: "3" }
+
+x-backend-env: &backend-env
+  ENVIRONMENT: production
+  REDIS_URL: redis://redis:6379/0
+  STORAGE_BACKEND: ${STORAGE_BACKEND:-supabase}
+  FAKE_ADAPTERS: ${FAKE_ADAPTERS:?set FAKE_ADAPTERS=true or false in .env.production}
+  # One origin for everything (the SPA calls /api on the same host), so these all derive from
+  # PUBLIC_URL unless set explicitly in .env.production.
+  FRONTEND_URL: ${FRONTEND_URL:-${PUBLIC_URL:?set PUBLIC_URL in .env.production}}
+  CORS_ORIGINS: ${CORS_ORIGINS:-["${PUBLIC_URL}"]}
+  GOOGLE_REDIRECT_URI: ${GOOGLE_REDIRECT_URI:-${PUBLIC_URL}/api/connections/google/callback}
 
 services:
-  redis:
-    image: redis:7-alpine
+  caddy:
+    image: caddy:2-alpine
     restart: unless-stopped
-    command: ["redis-server", "--appendonly", "yes"]
-    volumes: [redisdata:/data]
+    environment:
+      SITE_ADDRESS: ${DOMAIN:?set DOMAIN in .env.production}
+    ports:
+      - "${HTTP_PORT:-80}:80"
+      - "${HTTPS_PORT:-443}:443"
+      - "${HTTPS_PORT:-443}:443/udp" # HTTP/3
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data # certificates — keep across redeploys
+      - caddy_config:/config
+    depends_on:
+      web: { condition: service_healthy }
+    logging: *logging
+
+  web:
+    build:
+      context: frontend
+      target: prod
+      args:
+        VITE_API_URL: /api
+        VITE_AUTH_MODE: ${VITE_AUTH_MODE:-supabase} # dev sign-in is disabled in production
+        VITE_SUPABASE_URL: ${VITE_SUPABASE_URL:-${SUPABASE_URL:-}}
+        VITE_SUPABASE_ANON_KEY: ${VITE_SUPABASE_ANON_KEY:-${SUPABASE_ANON_KEY:-}}
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1/"]
+      interval: 30s
+      timeout: 5s
+      start_period: 5s
+      retries: 3
+    depends_on:
+      api: { condition: service_healthy }
+    logging: *logging
 
   api:
     build: { context: ., dockerfile: api/Dockerfile, target: prod }
     env_file: [.env.production]
     environment:
-      ENVIRONMENT: production
+      <<: *backend-env
       ENABLE_DEV_LOGIN: "false"
     restart: unless-stopped
-    depends_on: [redis]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=3)"]
+      interval: 15s
+      timeout: 5s
+      start_period: 20s
+      retries: 3
+    depends_on:
+      redis: { condition: service_healthy }
+      migrate: { condition: service_completed_successfully }
+    logging: *logging
 
   worker:
     build: { context: ., dockerfile: worker/Dockerfile, target: prod }
     env_file: [.env.production]
-    environment:
-      ENVIRONMENT: production
+    environment: *backend-env
     restart: unless-stopped
-    volumes: [artifacts:/data/artifacts]
-    depends_on: [redis]
+    healthcheck:
+      test: ["CMD-SHELL", "celery -A worker.celery_app inspect ping -d celery@$$HOSTNAME --timeout 10 >/dev/null"]
+      interval: 60s
+      timeout: 30s
+      start_period: 60s
+      retries: 3
+    stop_grace_period: 2m # let an in-flight render finish its current step
+    depends_on:
+      redis: { condition: service_healthy }
+      migrate: { condition: service_completed_successfully }
     deploy:
       resources:
         limits: { cpus: "2", memory: 4g } # W5 sizing test: 2 × 1080p renders peak at 2.2 GiB — docs/metrics/video-worker.md
+    logging: *logging
 
-  web:
-    build: { context: frontend, target: prod, args: { VITE_API_URL: "${PUBLIC_API_URL:-/api}" } }
+  redis:
+    image: redis:7-alpine
     restart: unless-stopped
-    ports: ["80:80"]
-    depends_on: [api]
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes: [redisdata:/data]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+    logging: *logging
+
+  # Runs before api/worker on every `up`. Idempotent: alembic only applies what's missing.
+  # Supabase: use the SESSION pooler (port 5432) or the direct connection, never the transaction
+  # pooler (6543) — Alembic needs a real session for DDL (db/src/db/session.py). Set
+  # MIGRATE_DATABASE_URL only if migrations must use a different URL from the app.
+  migrate:
+    build: { context: ., dockerfile: api/Dockerfile, target: prod }
+    env_file: [.env.production]
+    environment:
+      ENVIRONMENT: production
+    working_dir: /app/db
+    command:
+      - sh
+      - -c
+      - |
+        set -e
+        export DATABASE_URL="$${MIGRATE_DATABASE_URL:-$$DATABASE_URL}"
+        alembic upgrade head
+        if [ "$${SEED_DEMO_DATA:-false}" = "true" ]; then python -m db.seed; fi
+    restart: "no"
+    logging: *logging
 
 volumes:
   redisdata:
-  artifacts:
+  caddy_data:
+  caddy_config:
