@@ -167,20 +167,6 @@ class SqlRunStore:
             )
             return ApprovalDecision(decision) if decision else None
 
-    def google_credential(self, run_id: UUID, provider: str, secret: str) -> dict[str, Any] | None:
-        """Return the run owner's latest encrypted token for one Google provider."""
-        with self._sessions() as s:
-            owner = s.scalar(select(ExecutionRun.triggered_by).where(ExecutionRun.id == run_id))
-            if owner is None:
-                return None
-            credential = s.scalar(
-                select(Credential)
-                .where(Credential.user_id == owner, Credential.provider == provider)
-                .order_by(Credential.created_at.desc())
-                .limit(1)
-            )
-            return decrypt_payload(secret, credential.encrypted_payload) if credential else None
-
     def mark_interrupted(self, run_id: UUID) -> None:
         """Used when a worker restarts mid-node (RB-01): a `running` node is put back to `pending`."""
         with self._sessions.begin() as s:
