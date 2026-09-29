@@ -96,8 +96,6 @@ def build_ports(settings: AdapterSettings) -> Ports:
 
         email = MailtrapEmail(settings.mailtrap_api_token, settings.mail_from_email)
 
-    from adapters.tts.gtts import GTTS
-
     # Publishing and email act as a person's Google account, so there is no process-wide real
     # adapter: the worker swaps these placeholders for `adapters._google.google_ports(credential)`
     # when a node names a connected account (D-09). Without one, the step fails with a readable

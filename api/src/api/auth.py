@@ -13,8 +13,8 @@ Two token shapes are accepted, both carrying `sub` = user id, `email`, `aud` = "
 from __future__ import annotations
 
 import uuid
-from typing import Literal
 from datetime import UTC, datetime, timedelta
+from typing import Literal
 from functools import lru_cache
 
 import jwt
