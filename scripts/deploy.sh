@@ -18,7 +18,7 @@
 # Options:   --no-pull     deploy the working tree as it is
 #            --check-only  run step 4 and stop
 # Env:       COMPOSE_PROJECT (default isnad-prod), ENV_FILE (default .env.production),
-#            READY_TIMEOUT seconds (default 300)
+#            READY_TIMEOUT seconds (default 300), COMPOSE_OVERRIDE (an extra compose file, for local testing)
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
@@ -31,7 +31,7 @@ for arg in "$@"; do
   case "$arg" in
     --no-pull) PULL=0 ;;
     --check-only) CHECK_ONLY=1 ;;
-    -h | --help) sed -n '2,22p' "$0"; exit 0 ;;
+    -h | --help) sed -n '2,21p' "$0"; exit 0 ;;
     *) echo "unknown option: $arg" >&2; exit 2 ;;
   esac
 done
@@ -62,7 +62,9 @@ if ! docker info >/dev/null 2>&1; then
 fi
 "${DOCKER[@]}" compose version >/dev/null 2>&1 || die "the Docker Compose plugin is missing (apt install docker-compose-plugin)."
 ok "$("${DOCKER[@]}" --version)"
-compose() { "${DOCKER[@]}" compose -p "$PROJECT" -f docker-compose.prod.yml --env-file "$ENV_FILE" "$@"; }
+COMPOSE_FILES=(-f docker-compose.prod.yml)
+if [ -n "${COMPOSE_OVERRIDE:-}" ]; then COMPOSE_FILES+=(-f "$COMPOSE_OVERRIDE"); fi
+compose() { "${DOCKER[@]}" compose -p "$PROJECT" "${COMPOSE_FILES[@]}" --env-file "$ENV_FILE" "$@"; }
 
 # ---------------------------------------------------------------- 2. Firewall
 bold "2/6 Firewall (80, 443)"
@@ -163,7 +165,7 @@ case $g in
   3) ok "Google connections configured — redirect URI: $(get GOOGLE_REDIRECT_URI | grep . || echo "$PUBLIC_URL/api/connections/google/callback")" ;;
   *) warn "Google needs all three of GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, CREDENTIALS_ENCRYPTION_KEY" ;;
 esac
-for v in FAKE_ADAPTERS SEED_DEMO_DATA OAUTH_BIND_BROWSER DOWNLOAD_URL_EXPIRES_IN; do
+for v in SEED_DEMO_DATA OAUTH_BIND_BROWSER DOWNLOAD_URL_EXPIRES_IN JWT_EXPIRY_MINUTES; do
   if grep -qE "^[[:space:]]*$v=[[:space:]]*$" "$ENV_FILE"; then
     warn "$v= is empty — comment it out or give it a value (an empty boolean/number stops the API)"; errors=$((errors + 1))
   fi
@@ -208,7 +210,7 @@ case "$DOMAIN" in
 esac
 deadline=$((SECONDS + READY_TIMEOUT))
 body=""
-until body=$("${probe[@]}" 2>/dev/null) && printf '%s' "$body" | grep -q '"agents'; do
+until body=$("${probe[@]}" 2>/dev/null) && printf '%s' "$body" | grep -q ' agents"'; do
   if [ $SECONDS -ge $deadline ]; then
     echo "  last answer: ${body:-none}"
     compose logs --tail 30 caddy api worker || true
