@@ -31,7 +31,9 @@ class MailtrapEmail:
         if response.status_code in (401, 403):
             raise NonRetryableAgentError("The email service isn't set up correctly.", code="email_auth")
         if response.status_code in (400, 404, 422):
-            raise NonRetryableAgentError("The email request was rejected. Check the verified sender address.", code="email_request")
+            raise NonRetryableAgentError(
+                "The email request was rejected. Check the verified sender address.", code="email_request"
+            )
         if response.status_code >= 500:
             raise AgentError("The email service is temporarily unavailable.", code="email_unavailable")
         if response.status_code >= 300:

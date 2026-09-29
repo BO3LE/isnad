@@ -27,7 +27,9 @@ def test_cloudflare_image_uses_workers_ai_and_decodes_the_image(monkeypatch):
     }
 
 
-@pytest.mark.parametrize("status_code, error_type", [(401, "NonRetryableAgentError"), (400, "NonRetryableAgentError"), (429, "AgentError")])
+@pytest.mark.parametrize(
+    "status_code, error_type", [(401, "NonRetryableAgentError"), (400, "NonRetryableAgentError"), (429, "AgentError")]
+)
 def test_cloudflare_image_classifies_service_errors(monkeypatch, status_code, error_type):
     async def post(self, url, *, json, headers):
         return httpx.Response(status_code)

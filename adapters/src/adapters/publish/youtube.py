@@ -34,7 +34,9 @@ class YouTubePublisher:
             raise NonRetryableAgentError("The video file path is invalid.", code="publish_file_path")
         path = (self._storage_root / Path(*relative.parts)).resolve()
         if not path.is_relative_to(self._storage_root) or not path.is_file():
-            raise NonRetryableAgentError("The video file is no longer available to publish.", code="publish_file_missing")
+            raise NonRetryableAgentError(
+                "The video file is no longer available to publish.", code="publish_file_missing"
+            )
         return path
 
     def _publish(self, storage_path: str, meta: PublishMetadata) -> PublishResult:
@@ -60,7 +62,12 @@ class YouTubePublisher:
                 .insert(
                     part="snippet,status",
                     body={
-                        "snippet": {"title": meta.title, "description": meta.description, "tags": meta.tags, "categoryId": "22"},
+                        "snippet": {
+                            "title": meta.title,
+                            "description": meta.description,
+                            "tags": meta.tags,
+                            "categoryId": "22",
+                        },
                         "status": {"privacyStatus": meta.privacy},
                     },
                     media_body=MediaFileUpload(str(path), mimetype="video/mp4", resumable=True),
@@ -74,10 +81,14 @@ class YouTubePublisher:
         except NonRetryableAgentError:
             raise
         except RefreshError as exc:
-            raise NonRetryableAgentError("Your YouTube connection expired. Connect Google again and retry.", code="publish_auth") from exc
+            raise NonRetryableAgentError(
+                "Your YouTube connection expired. Connect Google again and retry.", code="publish_auth"
+            ) from exc
         except HttpError as exc:
             if exc.resp.status in (400, 401, 403):
-                raise NonRetryableAgentError("YouTube rejected this upload or connection.", code="publish_rejected") from exc
+                raise NonRetryableAgentError(
+                    "YouTube rejected this upload or connection.", code="publish_rejected"
+                ) from exc
             raise AgentError("YouTube is temporarily unavailable.", code="publish_unavailable") from exc
         except OSError as exc:
             raise AgentError("Couldn't read the video for upload.", code="publish_file_error") from exc
