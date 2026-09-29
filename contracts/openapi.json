@@ -823,6 +823,18 @@
             ],
             "title": "Bytes"
           },
+          "content_json": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Content Json"
+          },
           "created_at": {
             "format": "date-time",
             "title": "Created At",

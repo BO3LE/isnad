@@ -842,6 +842,10 @@ export interface components {
             agent_type: string;
             /** Bytes */
             bytes?: number | null;
+            /** Content Json */
+            content_json?: {
+                [key: string]: unknown;
+            } | null;
             /**
              * Created At
              * Format: date-time

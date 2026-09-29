@@ -88,7 +88,8 @@ def build_ports(settings: AdapterSettings) -> Ports:
 
     from adapters.tts.gtts import GTTS
 
-    email = FakeEmail()
+    # Email requires an explicit configured service; otherwise fail clearly instead of simulating delivery.
+    email = NoGoogleEmail()
     if settings.mailtrap_api_token and settings.mail_from_email:
         from adapters.email.mailtrap import MailtrapEmail
 

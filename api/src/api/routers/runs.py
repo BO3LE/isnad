@@ -119,6 +119,7 @@ def run_outputs(
             node_id=node_id,
             agent_type=agent_type,
             kind=output.output_type,
+            content_json=output.content_json,
             # There is no filename column: a stored file is named by the last segment of its path.
             filename=PurePosixPath(output.storage_path).name if output.storage_path else None,
             mime_type=output.mime_type,

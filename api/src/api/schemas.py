@@ -130,6 +130,7 @@ class RunOutput(BaseModel):
     node_id: UUID
     agent_type: str
     kind: Literal["text", "file", "url"]
+    content_json: dict[str, Any] | None = None
     filename: str | None = None
     mime_type: str | None = None
     bytes: int | None = None
