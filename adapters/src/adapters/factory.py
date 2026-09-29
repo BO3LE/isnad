@@ -10,8 +10,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Literal
 
-from adapters.email.fake import FakeEmail
 from adapters._google import NoGoogleEmail, NoGooglePublisher
+from adapters.email.fake import FakeEmail
 from adapters.image.fake import FakeImage
 from adapters.llm.fake import FakeLLM
 from adapters.publish.fake import FakePublisher
