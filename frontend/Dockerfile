@@ -13,8 +13,13 @@ CMD ["npm", "run", "dev"]
 
 # ---- build
 FROM deps AS build
+# Vite inlines these at build time. Only public values belong here — the anon key ships in the
+# bundle by design; never pass a service key or any other secret as a build arg.
 ARG VITE_API_URL=/api
-ENV VITE_API_URL=$VITE_API_URL
+ARG VITE_AUTH_MODE=dev
+ARG VITE_SUPABASE_URL=
+ARG VITE_SUPABASE_ANON_KEY=
+ENV VITE_API_URL=$VITE_API_URL     VITE_AUTH_MODE=$VITE_AUTH_MODE     VITE_SUPABASE_URL=$VITE_SUPABASE_URL     VITE_SUPABASE_ANON_KEY=$VITE_SUPABASE_ANON_KEY
 COPY . .
 RUN npm run build
 

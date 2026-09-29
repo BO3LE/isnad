@@ -117,6 +117,26 @@ python3 scripts/smoke_test.py                 # full stack, needs docker compose
 
 Migrations are the only way the schema changes. Never edit a table by hand — the CD/DVD copy must be reproducible from `alembic upgrade head`.
 
+### Supabase production database
+
+Migrations also cover the Supabase-specific setup (RLS in `0002`, Realtime + the private `artifacts` Storage bucket in `0005`) — see docs/DECISIONS.md INF-12 and INF-13. To apply them to the live project:
+
+1. Get the project's connection string for the **session pooler** (Supabase dashboard → Project Settings → Database → Connection string → "Session pooler", port `5432` — not the transaction pooler on `6543`; Alembic needs a stable session for DDL, see `db/src/db/session.py`).
+2. Apply migrations:
+
+   ```bash
+   cd db
+   DATABASE_URL="postgresql://postgres.<project-ref>:<password>@<pooler-host>:5432/postgres" alembic upgrade head
+   ```
+
+3. Verify, read-only, from the repo root:
+
+   ```bash
+   DATABASE_URL="postgresql://postgres.<project-ref>:<password>@<pooler-host>:5432/postgres" python -X utf8 scripts/check_supabase.py
+   ```
+
+   Every line should print `✓`. A `✗` means something drifted from what the migrations expect; the line names which check failed. The script never prints the connection string.
+
 ## 6. Environment variables
 
 Every variable is listed, with a comment, in [`.env.example`](.env.example). The important ones:
@@ -242,7 +262,29 @@ Confirmed by the W11 fresh-machine test (`docs/fresh-machine-test.md`) on native
 
 ## 10. Deployment
 
-TODO(W1 decision, W11 execution — Mohammed): the host is not chosen yet (GP-plan §5.5). The production stack is [`docker-compose.prod.yml`](docker-compose.prod.yml): it drops the local database in favour of Supabase, builds production image targets, and serves the frontend through nginx with the API behind `/api`. Record the real deployment steps here as they are performed.
+Full guide, host comparison and troubleshooting: [`docs/deployment.md`](docs/deployment.md). Host:
+**recommended, awaiting team decision** — Oracle Cloud Always Free (Ampere A1, $0), fallback a
+2 vCPU / 4 GB VPS (~$24/month) for the demo weeks (DECISIONS D-10).
+
+The production stack is [`docker-compose.prod.yml`](docker-compose.prod.yml) on any Linux VM with
+Docker: Caddy (HTTPS via Let's Encrypt) → nginx (SPA, `/api` → API) → api / worker / redis, with
+Postgres, Auth and Storage on Supabase. There is no local database; migrations run in a one-shot
+`migrate` service on every deploy.
+
+1. Create an Ubuntu 24.04 VM (≥ 2 vCPU / 4 GB), optionally with [`deploy/cloud-init.yaml`](deploy/cloud-init.yaml) as user data; open TCP 80 and 443 in the provider's firewall.
+2. DNS: an `A` record to the VM's IP — or, with no domain, use `<ip-with-dashes>.sslip.io`.
+3. Supabase → Authentication → URL Configuration: Site URL = your `https://` URL, and add `https://<host>/**` to Redirect URLs.
+4. On the VM:
+   ```bash
+   git clone <repo-url> isnad && cd isnad
+   cp .env.production.example .env.production && chmod 600 .env.production   # fill it in
+   scripts/deploy.sh          # installs Docker if needed, checks the file, builds, migrates, waits for health
+   ```
+5. Google connections (optional): add `https://<host>/api/connections/google/callback` to the OAuth client's redirect URIs (see *Connect Google* above).
+6. Open the URL on a phone on mobile data.
+
+Redeploy after changes: `scripts/deploy.sh` (it `git pull`s first). Logs:
+`docker compose -p isnad-prod -f docker-compose.prod.yml logs -f api worker`.
 
 ---
 

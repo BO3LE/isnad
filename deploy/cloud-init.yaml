@@ -1,0 +1,29 @@
+#cloud-config
+# Optional first-boot setup for an Ubuntu 22.04/24.04 VM (x86 or ARM). Paste it into the provider's
+# "user data" / "cloud-init" field when creating the VM (Oracle: Show advanced options →
+# Management → Initialization script; DigitalOcean/Lightsail/Hetzner: "User data").
+# It prepares the machine only — no secrets, no clone (the repository may be private). Then:
+#   ssh in → git clone … isnad → cd isnad → cp .env.production.example .env.production → edit →
+#   scripts/deploy.sh
+# Everything here is also done (idempotently) by scripts/deploy.sh except swap and auto-updates.
+
+package_update: true
+package_upgrade: true
+packages:
+  - ca-certificates
+  - curl
+  - git
+  - unattended-upgrades
+
+runcmd:
+  # Docker Engine + Compose plugin
+  - [sh, -c, "command -v docker >/dev/null || curl -fsSL https://get.docker.com | sh"]
+  - [sh, -c, "id ubuntu >/dev/null 2>&1 && usermod -aG docker ubuntu || true"]
+  - [systemctl, enable, --now, docker]
+  # 4 GiB swap when RAM is under 8 GiB: the frontend build and two parallel renders can spike.
+  - [sh, -c, "if [ ! -f /swapfile ] && [ $(awk '/MemTotal/ {print $2}' /proc/meminfo) -lt 8000000 ]; then fallocate -l 4G /swapfile && chmod 600 /swapfile && mkswap /swapfile && swapon /swapfile && echo '/swapfile none swap sw 0 0' >> /etc/fstab; fi"]
+  # Host firewall: allow HTTP/HTTPS. Ubuntu images on Oracle Cloud reject everything but SSH in
+  # iptables; elsewhere ufw may be active. The provider's own firewall (Oracle security list,
+  # AWS/Lightsail security group, DO/Hetzner cloud firewall) still has to allow 80 and 443.
+  - [sh, -c, "if [ -f /etc/iptables/rules.v4 ]; then for p in 'tcp --dport 80' 'tcp --dport 443' 'udp --dport 443'; do iptables -C INPUT -p $p -j ACCEPT 2>/dev/null || iptables -I INPUT 1 -p $p -j ACCEPT; done; netfilter-persistent save || true; fi"]
+  - [sh, -c, "if command -v ufw >/dev/null && ufw status | grep -q 'Status: active'; then ufw allow 80/tcp; ufw allow 443/tcp; ufw allow 443/udp; fi"]

@@ -155,3 +155,49 @@ Uses **PyJWT** rather than python-jose (listed in the plan) because python-jose 
 **Why.** The API and worker connect as `postgres`, which owns the tables, so RLS never filters their queries (no `FORCE ROW LEVEL SECURITY`); they keep their own ownership checks (`api.deps.owned`). The policies protect everything that reaches Supabase with a user's JWT instead — PostgREST with the anon key that ships in the frontend, and Realtime subscriptions for run progress. `credentials` holds encrypted OAuth tokens that only the backend reads or writes, so deny-all is the smallest surface. The policy and revoke steps are guarded so the same migration runs on local Docker and CI, which have neither `auth` nor `authenticated`.
 
 **Consequence.** Downgrading `0002` drops the policies everywhere but disables RLS only where `auth.uid()` does not exist; on Supabase RLS stays on (it was enabled by hand before this migration, and turning it off would expose every table to the anon key). `db/tests/test_rls.py` checks both paths against a real PostgreSQL, faking `auth.uid()` for the Supabase one; it runs in CI's `db-migrations` job and skips when `RLS_TEST_DATABASE_URL` is unset.
+
+### INF-13 · The Supabase platform (Realtime, Storage bucket) is also a migration
+
+**Decision.** Migration `0005` adds `execution_runs` and `execution_logs` to the `supabase_realtime` publication (if it exists) and creates the private Storage bucket `artifacts` (if `storage.buckets` exists), both guarded the same way as `0002` so they no-op on local Docker and CI. `scripts/check_supabase.py` is a new read-only script the user runs against the live project after applying migrations, printing a ✓/✗ checklist (alembic head, RLS, policy counts, the two platform checks) and exiting non-zero on any real failure.
+
+**Why.** The GP-plan flags the `artifacts` bucket as hand-clicked in the Supabase dashboard and therefore not reproducible from the CD/DVD; encoding it in a migration fixes that. D-01 (live run status) needs `execution_runs`/`execution_logs` in the Realtime publication — adding them now is safe ahead of the frontend switch (Hasan's W3 task) because the RLS SELECT policies from `0002` already restrict what each subscriber can see.
+
+**Consequence.** Downgrading `0005` removes the two tables from the publication but deliberately does **not** drop the `artifacts` bucket — by the time anyone downgrades this for real it may hold uploaded files, and a migration should not silently delete user data. `db/tests/test_supabase_platform.py` extends the `test_rls.py` simulated-Supabase approach with a fake publication and a minimal `storage.buckets` table; it runs in CI's `db-migrations` job and skips when `RLS_TEST_DATABASE_URL` is unset.
+
+### D-10 · Production host — RECOMMENDED, awaiting team decision
+
+**Recommendation.** One Oracle Cloud Always Free Ampere A1 VM (2 OCPU / 12 GB, ARM, $0/month),
+home region Mumbai (`ap-mumbai-1`, next to the Supabase project) or Jeddah/Riyadh. Fallback: a
+2 vCPU / 4 GB x86 VPS (DigitalOcean or Lightsail, $24/month; Hetzner CX33 ~€9 if in stock) for the
+demo weeks only. Comparison, prices (checked 2026-09-29) and sources: `docs/deployment.md` §1.
+
+**Why.** Supabase already hosts Postgres, Auth and Storage, so the host only needs one always-on
+machine for Docker Compose, big enough for the 2 CPU / 4 GiB video worker. Free PaaS tiers don't run
+a long-running Celery worker (Render) or cap services far below 4 GB (Railway free, Azure's free
+B-series); Fly.io has no free allowance. A plain VM keeps `docker-compose.prod.yml` unchanged, so
+switching between the primary and the fallback is "run `scripts/deploy.sh` on the other VM".
+
+**Risks.** Oracle halved the A1 allowance on 2026-06-15, may reclaim idle instances, and often has
+no A1 capacity in busy regions — hence starting in October and keeping the fallback ready.
+
+### INF-14 · Caddy terminates HTTPS in front of the existing nginx
+
+**Decision.** `docker-compose.prod.yml` adds a `caddy` service as the only published container
+(80/443). It obtains and renews a Let's Encrypt certificate for `DOMAIN` automatically and proxies
+everything to `web` (nginx), which keeps serving the SPA and proxying `/api/*` to the API exactly as
+before. With no domain, `DOMAIN` can be `<ip-with-dashes>.sslip.io` (still HTTPS) or `http://<ip>`
+(plain HTTP, smoke tests only). `FRONTEND_URL`, `CORS_ORIGINS` and `GOOGLE_REDIRECT_URI` default
+from one `PUBLIC_URL`.
+
+**Why.** Caddy needs no certbot container, cron job or certificate volume juggling — a four-line
+Caddyfile and one env var — and it is host-agnostic (works the same on Oracle, a VPS, or a KFU VM).
+Keeping nginx behind it means the `/api` routing the frontend was built against (`VITE_API_URL=/api`)
+is unchanged. Rejected: certbot + nginx (more moving parts, renewal cron), a managed load balancer
+(provider-specific, often paid), Cloudflare Tunnel (needs a domain on Cloudflare and an account).
+
+**Also changed for production.** nginx resolves `api` per request through Docker's DNS, so a
+redeploy that recreates `api` doesn't leave it pointing at a stale IP (502s), and forwards the
+browser's scheme from Caddy. The frontend image takes `VITE_AUTH_MODE` / `VITE_SUPABASE_*` as build
+args (production builds use Supabase Auth, since dev sign-in is off when `ENVIRONMENT=production`).
+The `artifacts` volume is gone from the production stack: the API never serves `/files` in
+production, so `STORAGE_BACKEND=supabase` is the only working option there.
