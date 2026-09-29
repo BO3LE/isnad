@@ -117,6 +117,26 @@ python3 scripts/smoke_test.py                 # full stack, needs docker compose
 
 Migrations are the only way the schema changes. Never edit a table by hand — the CD/DVD copy must be reproducible from `alembic upgrade head`.
 
+### Supabase production database
+
+Migrations also cover the Supabase-specific setup (RLS in `0002`, Realtime + the private `artifacts` Storage bucket in `0005`) — see docs/DECISIONS.md INF-12 and INF-13. To apply them to the live project:
+
+1. Get the project's connection string for the **session pooler** (Supabase dashboard → Project Settings → Database → Connection string → "Session pooler", port `5432` — not the transaction pooler on `6543`; Alembic needs a stable session for DDL, see `db/src/db/session.py`).
+2. Apply migrations:
+
+   ```bash
+   cd db
+   DATABASE_URL="postgresql://postgres.<project-ref>:<password>@<pooler-host>:5432/postgres" alembic upgrade head
+   ```
+
+3. Verify, read-only, from the repo root:
+
+   ```bash
+   DATABASE_URL="postgresql://postgres.<project-ref>:<password>@<pooler-host>:5432/postgres" python -X utf8 scripts/check_supabase.py
+   ```
+
+   Every line should print `✓`. A `✗` means something drifted from what the migrations expect; the line names which check failed. The script never prints the connection string.
+
 ## 6. Environment variables
 
 Every variable is listed, with a comment, in [`.env.example`](.env.example). The important ones:
