@@ -102,10 +102,155 @@ demo; DuckDNS is another free option.
 
 ## 2. How to deploy
 
-<!-- filled in below -->
+### The production stack
+
+```
+phone ──https──▶ caddy :80/:443 ──▶ web (nginx) ──┬─ /           built SPA (VITE_API_URL=/api)
+                 Let's Encrypt                    └─ /api/* ──▶ api :8000   (prefix stripped)
+                                                                 │
+                                   redis ◀──────────────────────┤
+                                     ▲                           ▼
+                                   worker (2 CPU / 4 GiB) ──▶ Supabase: Postgres · Auth · Storage
+migrate (one-shot, every deploy): alembic upgrade head [+ seed]  ──▶ Supabase Postgres
+```
+
+Files: [`docker-compose.prod.yml`](../docker-compose.prod.yml),
+[`deploy/Caddyfile`](../deploy/Caddyfile), [`deploy/cloud-init.yaml`](../deploy/cloud-init.yaml),
+[`scripts/deploy.sh`](../scripts/deploy.sh), [`.env.production.example`](../.env.production.example).
+
+Because `/api` is on the same origin as the SPA, the browser never makes a cross-origin call;
+`CORS_ORIGINS`, `FRONTEND_URL` and `GOOGLE_REDIRECT_URI` are still derived from `PUBLIC_URL` so
+they are right by default. `ENVIRONMENT=production` is forced, which turns dev sign-in off — so the
+frontend is built with `VITE_AUTH_MODE=supabase` (real Supabase Auth accounts).
+
+### Step by step (first deploy)
+
+**1. Create the VM.** Ubuntu 24.04, ≥ 2 vCPU / 4 GB RAM (see §1), a public IPv4, your SSH key.
+Paste `deploy/cloud-init.yaml` into the "user data" / "initialization script" field (optional —
+`deploy.sh` also installs Docker and opens the OS firewall; cloud-init adds swap).
+
+- *Oracle (primary):* Compute → Instances → Create → Image **Canonical Ubuntu 24.04** (the
+  aarch64 build is picked automatically) → Shape **Ampere · VM.Standard.A1.Flex, 2 OCPU, 12 GB** →
+  the default VCN with "Assign a public IPv4 address" → upload your SSH public key → Show advanced
+  options → Management → paste the cloud-init. Then **Networking → Virtual cloud networks → your VCN
+  → Security Lists → Default → Add Ingress Rules**: source `0.0.0.0/0`, TCP, destination port `80`;
+  again for `443`; and UDP `443` (HTTP/3, optional). SSH user is `ubuntu`.
+- *DigitalOcean / Lightsail / Hetzner (fallback):* same image, 2 vCPU / 4 GB (or more), same
+  cloud-init; open 80 and 443 in the provider firewall (Lightsail: Networking → IPv4 firewall; DO
+  and Hetzner have no firewall unless you add one).
+
+**2. Pick the hostname** and set `DOMAIN` / `PUBLIC_URL` accordingly:
+
+| You have | DNS | `DOMAIN` | `PUBLIC_URL` |
+|---|---|---|---|
+| A domain | `A` record `isnad.example.com → <VM IP>` (TTL 300) | `isnad.example.com` | `https://isnad.example.com` |
+| No domain | nothing — sslip.io answers for you | `203-0-113-10.sslip.io` | `https://203-0-113-10.sslip.io` |
+| Only an IP, just to smoke-test | nothing | `http://203.0.113.10` | `http://203.0.113.10` |
+
+The third row has no HTTPS: Google connections won't work (Google requires an `https://` redirect
+URI) and some phone browsers warn. Use it only to check the stack before DNS is ready.
+
+**3. Supabase dashboard** (project `isnad`) — once, and again whenever the URL changes:
+
+- *Authentication → URL Configuration*: **Site URL** = `PUBLIC_URL` (confirmation emails link here);
+  **Redirect URLs** → add `PUBLIC_URL/**`. Keep `http://localhost:5173/**` for development.
+- *Connect → Session pooler*: copy the URI (port **5432**) into `DATABASE_URL`. The direct
+  `db.<ref>.supabase.co` host is IPv6-only on the free plan, and the transaction pooler (6543)
+  breaks Alembic and long worker sessions (`db/src/db/session.py`).
+- *Storage*: a **private** bucket named `artifacts` (or `STORAGE_BUCKET`) must exist.
+- *Project Settings → API keys*: `service_role` → `SUPABASE_SERVICE_KEY`; `anon` → `SUPABASE_ANON_KEY`.
+- Free Supabase projects are **paused after about a week of inactivity** *(check the current rule
+  on the dashboard)* — open the site at least weekly in the run-up to the demo, and check the
+  project is active the day before.
+
+**4. On the VM:**
+
+```bash
+git clone https://github.com/<org>/isnad.git && cd isnad    # private repo: use a deploy key or a PAT
+cp .env.production.example .env.production && chmod 600 .env.production
+nano .env.production        # fill in; comments say which are secrets
+scripts/deploy.sh --check-only   # validates the file without starting anything
+scripts/deploy.sh                # ~10–15 min the first time (builds 3 images on the VM)
+```
+
+`deploy.sh` ends with `Live at https://…` once `/api/health/ready` answers through Caddy with the
+database reachable and the worker's agent catalog published. Migrations ran in the `migrate` service
+before `api`/`worker` started (`docker compose -p isnad-prod -f docker-compose.prod.yml logs migrate`).
+
+**5. Google connections (optional).** In Google Cloud Console → Credentials → the OAuth client →
+add the redirect URI `PUBLIC_URL/api/connections/google/callback` exactly (SETUP.md "Connect
+Google"). If Google asks for the domain under *Branding → Authorised domains*, add it; if it
+refuses an `sslip.io` name, use a real domain. Put `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` and a
+**new** `CREDENTIALS_ENCRYPTION_KEY` in `.env.production`, then `scripts/deploy.sh` again.
+
+**6. The W11 check.** On a phone with Wi-Fi **off**: open `PUBLIC_URL`, register, confirm the email,
+sign in, run a template workflow, open its output. Screenshot it for the report.
+
+### Day-to-day
+
+| Task | Command (on the VM, in the repo) |
+|---|---|
+| Deploy the latest `main` | `scripts/deploy.sh` |
+| Deploy the working tree as is | `scripts/deploy.sh --no-pull` |
+| Logs | `docker compose -p isnad-prod -f docker-compose.prod.yml logs -f api worker` |
+| Status | `docker compose -p isnad-prod -f docker-compose.prod.yml ps` |
+| Restart one service | `docker compose -p isnad-prod -f docker-compose.prod.yml --env-file .env.production restart worker` |
+| Roll back | `git checkout <good-sha> && scripts/deploy.sh --no-pull` (migrations are not downgraded automatically) |
+| Stop everything | `docker compose -p isnad-prod -f docker-compose.prod.yml down` (keep `-v` off: it deletes the certificates) |
+| Free disk | `docker system prune -f` (deploy.sh already prunes dangling images) |
+
+Switching hosts: run steps 1, 2 and 4 on the new VM, point DNS at it, update Supabase URL
+configuration and the Google redirect URI if the hostname changed.
+
+### Troubleshooting
+
+- **`deploy.sh` times out, caddy log shows ACME/`challenge` errors** — port 80 or 443 is closed
+  (provider firewall / Oracle security list) or DNS doesn't point at the VM yet. Test from
+  outside: `curl -I http://<DOMAIN>`. After too many failures Let's Encrypt rate-limits the name
+  for an hour; Caddy retries on its own.
+- **`migrate` failed** — `docker compose … logs migrate`. `connection refused` / `Network is
+  unreachable` usually means the direct (IPv6) DB host; use the session pooler URI.
+- **502 from `/api`** — `api` is restarting; `logs api`. An empty `FAKE_ADAPTERS=` or other empty
+  boolean in `.env.production` stops it at startup.
+- **Sign-in fails on the deployed site** — the frontend was built with the wrong Supabase URL/key
+  (they're baked in at build time: fix `.env.production`, run `deploy.sh` again), or the Site URL /
+  Redirect URLs in Supabase don't include `PUBLIC_URL`.
+- **Worker killed (OOM)** — `docker stats`; on a 4 GB VM make sure swap exists (`swapon --show`).
 
 ---
 
 ## 3. What has been verified
 
-<!-- filled in below -->
+Locally on 2026-09-29 — Windows 11, Docker Desktop 29.7.2 / Compose v5.5.0 (x86_64) — with the real
+`docker-compose.prod.yml`, `deploy/Caddyfile` and `scripts/deploy.sh`, plus a throwaway override
+file adding a local `postgres:15` in place of Supabase (project `isnad-prodtest`, ports 18080/18443):
+
+| Check | Result |
+|---|---|
+| `docker compose -f docker-compose.prod.yml config` with the example env filled in | valid; `CORS_ORIGINS`, `FRONTEND_URL`, `GOOGLE_REDIRECT_URI` derived from `PUBLIC_URL` as intended |
+| `scripts/deploy.sh --no-pull` end to end (`DOMAIN=http://localhost`, `FAKE_ADAPTERS=true`, `STORAGE_BACKEND=local`, `SEED_DEMO_DATA=true`) | builds the 3 production images, `migrate` applies migrations to head (`0004`) and seeds, all services healthy (incl. the worker's `celery inspect ping` check), exits with "Live at …" |
+| `GET /` through Caddy | 200, the built SPA; client-side routes (e.g. `/workflows`) fall back to `index.html`; `/assets/*.js` served |
+| `GET /api/health/ready` through Caddy → nginx → api | `{"database":"ok","worker_catalog":"6 agents"}` |
+| Mock workflow runs through Caddy | all 3 seeded templates **succeeded** (2 approval gates approved): Blog post; Blog → Video → YouTube (in the prod worker image, fake adapters); Research → PDF → Email |
+| `POST /api/auth/dev-login` | 404 — dev sign-in is off in production |
+| Frontend bundle | built with `VITE_AUTH_MODE=supabase` and the Supabase URL from the env file |
+| `api` recreated on a **different IP** without restarting `web` | `/api` kept working (nginx re-resolves through Docker DNS) |
+| HTTPS path: `DOMAIN=localhost` (Caddy's internal CA instead of Let's Encrypt) | `https://…/` 200, `/api/health/ready` ok, `http://` → **308** redirect to `https://`, `Alt-Svc: h3` advertised |
+| `deploy.sh --check-only` with a deliberately broken env file | catches empty `FAKE_ADAPTERS`, short `JWT_SECRET`, trailing slash / mismatched `PUBLIC_URL`, transaction pooler port 6543, missing service key, half-configured Google |
+| ARM64 (Oracle A1) readiness | all 87 pinned Python dependencies in `constraints.txt` have `linux/aarch64` wheels (checked with `pip download --platform manylinux…_aarch64`); `package-lock.json` has the arm64 rollup/esbuild binaries; every base image (`python:3.11-slim`, `node:20-alpine`, `nginx:1.27-alpine`, `redis:7-alpine`, `caddy:2-alpine`) is multi-arch |
+| `scripts/deploy.sh` | `shellcheck` clean, `bash -n` ok |
+| Memory at idle | api ~180 MiB, worker ~160 MiB, web/caddy ~15 MiB each, redis ~5 MiB |
+
+**Not verified** (needs the real server / accounts):
+
+- A real Let's Encrypt certificate (needs a public IP with 80/443 reachable and DNS) — only Caddy's
+  internal-CA HTTPS was exercised.
+- Supabase: the session-pooler connection, migrations against the Supabase database, Supabase Auth
+  sign-in from the built frontend, Storage uploads and signed downloads (`STORAGE_BACKEND=supabase`).
+  Locally, files were written to the worker container's disk.
+- The ARM64 images actually being built and run (only dependency availability was checked), and
+  the first-build time on a 2-OCPU VM.
+- `deploy.sh` steps 1–2 on a fresh Ubuntu VM (Docker install via get.docker.com, ufw / Oracle
+  iptables rules) and `deploy/cloud-init.yaml` — they only ran on Windows, where they are skipped.
+- Google OAuth against the production redirect URI; real adapters (`FAKE_ADAPTERS=false`).
+- The W11 "done when": opening the URL from a phone on mobile data.

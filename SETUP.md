@@ -242,7 +242,29 @@ Confirmed by the W11 fresh-machine test (`docs/fresh-machine-test.md`) on native
 
 ## 10. Deployment
 
-TODO(W1 decision, W11 execution — Mohammed): the host is not chosen yet (GP-plan §5.5). The production stack is [`docker-compose.prod.yml`](docker-compose.prod.yml): it drops the local database in favour of Supabase, builds production image targets, and serves the frontend through nginx with the API behind `/api`. Record the real deployment steps here as they are performed.
+Full guide, host comparison and troubleshooting: [`docs/deployment.md`](docs/deployment.md). Host:
+**recommended, awaiting team decision** — Oracle Cloud Always Free (Ampere A1, $0), fallback a
+2 vCPU / 4 GB VPS (~$24/month) for the demo weeks (DECISIONS D-10).
+
+The production stack is [`docker-compose.prod.yml`](docker-compose.prod.yml) on any Linux VM with
+Docker: Caddy (HTTPS via Let's Encrypt) → nginx (SPA, `/api` → API) → api / worker / redis, with
+Postgres, Auth and Storage on Supabase. There is no local database; migrations run in a one-shot
+`migrate` service on every deploy.
+
+1. Create an Ubuntu 24.04 VM (≥ 2 vCPU / 4 GB), optionally with [`deploy/cloud-init.yaml`](deploy/cloud-init.yaml) as user data; open TCP 80 and 443 in the provider's firewall.
+2. DNS: an `A` record to the VM's IP — or, with no domain, use `<ip-with-dashes>.sslip.io`.
+3. Supabase → Authentication → URL Configuration: Site URL = your `https://` URL, and add `https://<host>/**` to Redirect URLs.
+4. On the VM:
+   ```bash
+   git clone <repo-url> isnad && cd isnad
+   cp .env.production.example .env.production && chmod 600 .env.production   # fill it in
+   scripts/deploy.sh          # installs Docker if needed, checks the file, builds, migrates, waits for health
+   ```
+5. Google connections (optional): add `https://<host>/api/connections/google/callback` to the OAuth client's redirect URIs (see *Connect Google* above).
+6. Open the URL on a phone on mobile data.
+
+Redeploy after changes: `scripts/deploy.sh` (it `git pull`s first). Logs:
+`docker compose -p isnad-prod -f docker-compose.prod.yml logs -f api worker`.
 
 ---
 
