@@ -8,9 +8,9 @@ from sqlalchemy.orm import Session
 
 from api.deps import get_current_user, get_enqueuer, get_session, owned
 from api.queue import Enqueuer
-from api.schemas import ApprovalRequest, RunCreated
+from api.schemas import ApprovalRequest, RunCreated, RunOutput
 from contracts.run import TERMINAL_RUN_STATUSES, LogEntry, NodeState, NodeStatus, RunState, RunStatus
-from db.models import Approval, ExecutionLog, ExecutionRun, User, Workflow
+from db.models import AgentOutput, Approval, ExecutionLog, ExecutionRun, User, Workflow
 
 router = APIRouter(prefix="/runs", tags=["runs"])
 
@@ -67,6 +67,33 @@ def get_run(run_id: UUID, user: User = Depends(get_current_user), session: Sessi
 def get_logs(run_id: UUID, user: User = Depends(get_current_user), session: Session = Depends(get_session)):
     run = _load(session, user, run_id)
     return [LogEntry(id=row.id, run_id=run.id, **_node_state(row).model_dump()) for row in _logs(session, run.id)]
+
+
+@router.get("/{run_id}/outputs", response_model=list[RunOutput])
+def get_outputs(run_id: UUID, user: User = Depends(get_current_user), session: Session = Depends(get_session)):
+    """List every saved result from a run, including text the user can read in the app."""
+    run = _load(session, user, run_id)
+    rows = session.execute(
+        select(AgentOutput, ExecutionLog.node_id, ExecutionLog.agent_type)
+        .join(ExecutionLog, ExecutionLog.id == AgentOutput.log_id)
+        .where(ExecutionLog.run_id == run.id)
+        .order_by(ExecutionLog.position_order, AgentOutput.created_at)
+    ).all()
+    return [
+        RunOutput(
+            id=output.id,
+            node_id=node_id,
+            agent_type=agent_type,
+            output_type=output.output_type,
+            content=output.content,
+            content_json=output.content_json,
+            storage_path=output.storage_path,
+            mime_type=output.mime_type,
+            bytes=output.bytes,
+            created_at=output.created_at,
+        )
+        for output, node_id, agent_type in rows
+    ]
 
 
 @router.post("/{run_id}/nodes/{node_id}/approve", response_model=RunCreated, status_code=status.HTTP_202_ACCEPTED)

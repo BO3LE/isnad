@@ -213,6 +213,54 @@
         "title": "DevLoginRequest",
         "type": "object"
       },
+      "GoogleConnect": {
+        "properties": {
+          "authorization_url": {
+            "title": "Authorization Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "authorization_url"
+        ],
+        "title": "GoogleConnect",
+        "type": "object"
+      },
+      "GoogleConnectRequest": {
+        "properties": {
+          "provider": {
+            "enum": [
+              "youtube",
+              "drive"
+            ],
+            "title": "Provider",
+            "type": "string"
+          }
+        },
+        "required": [
+          "provider"
+        ],
+        "title": "GoogleConnectRequest",
+        "type": "object"
+      },
+      "GoogleConnectionStatus": {
+        "properties": {
+          "drive_connected": {
+            "title": "Drive Connected",
+            "type": "boolean"
+          },
+          "youtube_connected": {
+            "title": "Youtube Connected",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "youtube_connected",
+          "drive_connected"
+        ],
+        "title": "GoogleConnectionStatus",
+        "type": "object"
+      },
       "GraphEdge": {
         "additionalProperties": false,
         "properties": {
@@ -511,6 +559,15 @@
         "title": "OutputLink",
         "type": "object"
       },
+      "OutputType": {
+        "enum": [
+          "text",
+          "file",
+          "url"
+        ],
+        "title": "OutputType",
+        "type": "string"
+      },
       "Position": {
         "properties": {
           "x": {
@@ -543,6 +600,98 @@
           "status"
         ],
         "title": "RunCreated",
+        "type": "object"
+      },
+      "RunOutput": {
+        "description": "One saved result from a workflow step, safe to show to its owner.",
+        "properties": {
+          "agent_type": {
+            "title": "Agent Type",
+            "type": "string"
+          },
+          "bytes": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bytes"
+          },
+          "content": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Content"
+          },
+          "content_json": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Content Json"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "mime_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mime Type"
+          },
+          "node_id": {
+            "format": "uuid",
+            "title": "Node Id",
+            "type": "string"
+          },
+          "output_type": {
+            "$ref": "#/components/schemas/OutputType"
+          },
+          "storage_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Storage Path"
+          }
+        },
+        "required": [
+          "id",
+          "node_id",
+          "agent_type",
+          "output_type",
+          "created_at"
+        ],
+        "title": "RunOutput",
         "type": "object"
       },
       "RunState": {
@@ -1043,6 +1192,159 @@
         ]
       }
     },
+    "/auth/google/callback": {
+      "get": {
+        "operationId": "google_callback_auth_google_callback_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "code",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Code"
+            }
+          },
+          {
+            "in": "query",
+            "name": "state",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "State"
+            }
+          },
+          {
+            "in": "query",
+            "name": "error",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Error"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Google Callback",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/auth/google/connect": {
+      "post": {
+        "description": "Return Google's consent URL; the browser navigates there only after the user chooses to connect.",
+        "operationId": "google_connect_auth_google_connect_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GoogleConnectRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GoogleConnect"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Google Connect",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/auth/google/status": {
+      "get": {
+        "description": "Report connection state without exposing any OAuth token or account data.",
+        "operationId": "google_status_auth_google_status_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GoogleConnectionStatus"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Google Status",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
     "/auth/me": {
       "get": {
         "operationId": "me_auth_me_get",
@@ -1380,6 +1682,59 @@
           }
         ],
         "summary": "Decide",
+        "tags": [
+          "runs"
+        ]
+      }
+    },
+    "/runs/{run_id}/outputs": {
+      "get": {
+        "description": "List every saved result from a run, including text the user can read in the app.",
+        "operationId": "get_outputs_runs__run_id__outputs_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Run Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/RunOutput"
+                  },
+                  "title": "Response Get Outputs Runs  Run Id  Outputs Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Get Outputs",
         "tags": [
           "runs"
         ]

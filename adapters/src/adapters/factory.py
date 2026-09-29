@@ -25,7 +25,16 @@ class AdapterSettings:
     public_base_url: str = "http://localhost:8000/files"
     openai_api_key: str | None = None
     openai_model: str = "gpt-4o"
+    openai_base_url: str | None = None
     search_api_key: str | None = None
+    cloudflare_account_id: str | None = None
+    cloudflare_api_token: str | None = None
+    google_client_id: str | None = None
+    google_client_secret: str | None = None
+    youtube_credentials: dict | None = None
+    drive_credentials: dict | None = None
+    mailtrap_api_token: str | None = None
+    mail_from_email: str | None = None
 
 
 def build_ports(settings: AdapterSettings) -> Ports:
@@ -45,7 +54,7 @@ def build_ports(settings: AdapterSettings) -> Ports:
     if settings.openai_api_key:
         from adapters.llm.openai import OpenAILLM
 
-        llm = OpenAILLM(settings.openai_api_key, settings.openai_model)
+        llm = OpenAILLM(settings.openai_api_key, settings.openai_model, settings.openai_base_url)
 
     search = FakeSearch()
     if settings.search_api_key:
@@ -53,15 +62,42 @@ def build_ports(settings: AdapterSettings) -> Ports:
 
         search = TavilySearch(settings.search_api_key)
 
+    image = FakeImage()
+    if settings.cloudflare_account_id and settings.cloudflare_api_token:
+        from adapters.image.cloudflare import CloudflareImage
+
+        image = CloudflareImage(settings.cloudflare_account_id, settings.cloudflare_api_token)
+
     from adapters.tts.gtts import GTTS
 
-    # TODO(W6/W7): swap FakePublisher / FakeEmail for the Google adapters using stored credentials.
+    email = FakeEmail()
+    if settings.mailtrap_api_token and settings.mail_from_email:
+        from adapters.email.mailtrap import MailtrapEmail
+
+        email = MailtrapEmail(settings.mailtrap_api_token, settings.mail_from_email)
+
+    publishers = {}
+    if settings.google_client_id and settings.google_client_secret:
+        from adapters.publish.drive import DrivePublisher
+        from adapters.publish.youtube import YouTubePublisher
+
+        if settings.youtube_credentials:
+            publishers["youtube"] = YouTubePublisher(
+                settings.youtube_credentials, client_id=settings.google_client_id,
+                client_secret=settings.google_client_secret, storage_root=settings.storage_root,
+            )
+        if settings.drive_credentials:
+            publishers["drive"] = DrivePublisher(
+                settings.drive_credentials, client_id=settings.google_client_id,
+                client_secret=settings.google_client_secret, storage_root=settings.storage_root,
+            )
+
     return Ports(
         llm=llm,
         search=search,
         tts=GTTS(),
-        image=FakeImage(),
+        image=image,
         storage=storage,
-        email=FakeEmail(),
-        publishers={"youtube": FakePublisher("youtube"), "drive": FakePublisher("drive")},
+        email=email,
+        publishers=publishers,
     )

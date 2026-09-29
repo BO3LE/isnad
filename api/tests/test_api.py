@@ -1,8 +1,8 @@
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 from conftest import auth_headers, graph
 
-from db.models import ExecutionLog, ExecutionRun
+from db.models import AgentOutput, ExecutionLog, ExecutionRun
 
 
 def test_health_needs_nothing(client):
@@ -123,6 +123,19 @@ def test_cancel_skips_steps_that_have_not_started(client, headers, sessions):
     assert state["status"] == "cancelled"
     assert {n["status"] for n in state["nodes"]} == {"skipped"}
     assert client.post(f"/runs/{run_id}/cancel", headers=headers).status_code == 409
+
+
+def test_run_outputs_belong_to_the_run_owner(client, headers, sessions):
+    run_id, _ = _parked_run(client, headers, sessions)
+    with sessions() as s:
+        log = s.query(ExecutionLog).filter(ExecutionLog.run_id == UUID(run_id)).first()
+        s.add(AgentOutput(log_id=log.id, output_type="text", content_json={"article_md": "# Hello"}))
+        s.commit()
+
+    response = client.get(f"/runs/{run_id}/outputs", headers=headers)
+    assert response.status_code == 200
+    assert response.json()[0]["agent_type"] == "researcher"
+    assert response.json()[0]["content_json"] == {"article_md": "# Hello"}
 
 
 def test_catalog_is_served_from_the_worker_published_source(client, headers):

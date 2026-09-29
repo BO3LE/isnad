@@ -14,6 +14,10 @@ export type RunState = Schemas["RunState"];
 export type RunCreated = Schemas["RunCreated"];
 export type NodeStatus = Schemas["NodeStatus"];
 export type RunStatus = Schemas["RunStatus"];
+export type RunOutput = Schemas["RunOutput"];
+export type GoogleConnect = Schemas["GoogleConnect"];
+export type GoogleConnectRequest = Schemas["GoogleConnectRequest"];
+export type GoogleConnectionStatus = Schemas["GoogleConnectionStatus"];
 
 export const API_URL = (import.meta.env.VITE_API_URL as string | undefined) ?? "http://localhost:8000";
 
@@ -50,6 +54,9 @@ export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
 
 export const endpoints = {
   devLogin: (email: string) => api<Schemas["TokenResponse"]>("/auth/dev-login", { method: "POST", body: JSON.stringify({ email }) }),
+  googleConnect: (provider: GoogleConnectRequest["provider"]) =>
+    api<GoogleConnect>("/auth/google/connect", { method: "POST", body: JSON.stringify({ provider }) }),
+  googleStatus: () => api<GoogleConnectionStatus>("/auth/google/status"),
   catalog: () => api<AgentManifest[]>("/agents/catalog"),
   workflows: () => api<WorkflowSummary[]>("/workflows"),
   workflow: (id: string) => api<WorkflowOut>(`/workflows/${id}`),
@@ -63,6 +70,7 @@ export const endpoints = {
   run: (id: string) => api<RunCreated>(`/workflows/${id}/run`, { method: "POST" }),
   workflowRuns: (id: string) => api<Schemas["RunSummary"][]>(`/workflows/${id}/runs`),
   runState: (id: string) => api<RunState>(`/runs/${id}`),
+  runOutputs: (id: string) => api<RunOutput[]>(`/runs/${id}/outputs`),
   approve: (runId: string, nodeId: string, decision: "approve" | "reject", note?: string) =>
     api<RunCreated>(`/runs/${runId}/nodes/${nodeId}/approve`, { method: "POST", body: JSON.stringify({ decision, note }) }),
   cancel: (runId: string) => api<RunState>(`/runs/${runId}/cancel`, { method: "POST" }),

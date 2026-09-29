@@ -21,6 +21,7 @@ COPY exporters/ exporters/
 COPY worker/ worker/
 COPY agents/ agents/
 COPY scripts/worker-entrypoint.sh /usr/local/bin/worker-entrypoint
+RUN sed -i 's/\r$//' /usr/local/bin/worker-entrypoint && chmod +x /usr/local/bin/worker-entrypoint
 
 # ---- development: editable installs; new agent folders are installed on start
 FROM base AS dev

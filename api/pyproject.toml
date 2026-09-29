@@ -16,6 +16,8 @@ dependencies = [
   "PyJWT>=2.9",
   "celery>=5.4,<6",
   "redis>=5",
+  "cryptography>=43",
+  "google-auth-oauthlib>=1.2",
 ]
 
 [project.optional-dependencies]

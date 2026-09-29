@@ -70,6 +70,9 @@ def _on_ready(**_: object) -> None:
 
 @app.task(name=RUN_WORKFLOW_TASK)
 def run_workflow(run_id: str) -> str:
+    run_store = store()
+    parsed_run_id = UUID(run_id)
+    run_store.mark_interrupted(parsed_run_id)
     ports = build_ports(
         AdapterSettings(
             fake=settings.fake_adapters,
@@ -77,11 +80,18 @@ def run_workflow(run_id: str) -> str:
             public_base_url=settings.public_files_url,
             openai_api_key=settings.openai_api_key,
             openai_model=settings.openai_model,
+            openai_base_url=settings.openai_base_url,
             search_api_key=settings.search_api_key,
+            cloudflare_account_id=settings.cloudflare_account_id,
+            cloudflare_api_token=settings.cloudflare_api_token,
+            google_client_id=settings.google_client_id,
+            google_client_secret=settings.google_client_secret,
+            youtube_credentials=run_store.google_credential(parsed_run_id, "youtube", settings.jwt_secret),
+            drive_credentials=run_store.google_credential(parsed_run_id, "drive", settings.jwt_secret),
+            mailtrap_api_token=settings.mailtrap_api_token,
+            mail_from_email=settings.mail_from_email,
         )
     )
-    run_store = store()
-    run_store.mark_interrupted(UUID(run_id))
-    status = asyncio.run(Orchestrator(run_store, registry(), ports).execute(UUID(run_id)))
+    status = asyncio.run(Orchestrator(run_store, registry(), ports).execute(parsed_run_id))
     log.info("run %s finished with status %s", run_id, status)
     return status.value

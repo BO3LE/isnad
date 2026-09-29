@@ -6,10 +6,10 @@ from contracts.errors import AgentError, NonRetryableAgentError
 class OpenAILLM:
     """LLMPort backed by the OpenAI Chat Completions API. Install with `gp-adapters[openai]`."""
 
-    def __init__(self, api_key: str, model: str = "gpt-4o"):
+    def __init__(self, api_key: str, model: str = "gpt-4o", base_url: str | None = None):
         from openai import AsyncOpenAI
 
-        self._client = AsyncOpenAI(api_key=api_key)
+        self._client = AsyncOpenAI(api_key=api_key, base_url=base_url)
         self._model = model
 
     async def complete(self, prompt: str, *, system: str | None = None, json_mode: bool = False) -> str:

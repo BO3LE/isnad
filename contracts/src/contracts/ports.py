@@ -50,10 +50,10 @@ class TTSPort(Protocol):
 
 @runtime_checkable
 class ImagePort(Protocol):
-    """Added in M3 for the Image agent — provider still to be chosen (risk R1)."""
+    """A text-to-image provider."""
 
     async def generate(self, prompt: str, *, aspect: Literal["landscape", "square"]) -> bytes:
-        """Return PNG bytes."""
+        """Return encoded image bytes."""
         ...
 
 

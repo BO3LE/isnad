@@ -48,6 +48,63 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/auth/google/callback": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Google Callback */
+        get: operations["google_callback_auth_google_callback_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/auth/google/connect": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Google Connect
+         * @description Return Google's consent URL; the browser navigates there only after the user chooses to connect.
+         */
+        post: operations["google_connect_auth_google_connect_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/auth/google/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Google Status
+         * @description Report connection state without exposing any OAuth token or account data.
+         */
+        get: operations["google_status_auth_google_status_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/auth/me": {
         parameters: {
             query?: never;
@@ -192,6 +249,26 @@ export interface paths {
          * @description UC-04: record the decision, then hand the run back to the worker, which resumes or halts it.
          */
         post: operations["decide_runs__run_id__nodes__node_id__approve_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/runs/{run_id}/outputs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Outputs
+         * @description List every saved result from a run, including text the user can read in the app.
+         */
+        get: operations["get_outputs_runs__run_id__outputs_get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -404,6 +481,26 @@ export interface components {
             /** Email */
             email: string;
         };
+        /** GoogleConnect */
+        GoogleConnect: {
+            /** Authorization Url */
+            authorization_url: string;
+        };
+        /** GoogleConnectRequest */
+        GoogleConnectRequest: {
+            /**
+             * Provider
+             * @enum {string}
+             */
+            provider: "youtube" | "drive";
+        };
+        /** GoogleConnectionStatus */
+        GoogleConnectionStatus: {
+            /** Drive Connected */
+            drive_connected: boolean;
+            /** Youtube Connected */
+            youtube_connected: boolean;
+        };
         /** GraphEdge */
         GraphEdge: {
             /** Id */
@@ -532,6 +629,11 @@ export interface components {
             /** Url */
             url: string;
         };
+        /**
+         * OutputType
+         * @enum {string}
+         */
+        OutputType: "text" | "file" | "url";
         /** Position */
         Position: {
             /**
@@ -553,6 +655,42 @@ export interface components {
              */
             run_id: string;
             status: components["schemas"]["RunStatus"];
+        };
+        /**
+         * RunOutput
+         * @description One saved result from a workflow step, safe to show to its owner.
+         */
+        RunOutput: {
+            /** Agent Type */
+            agent_type: string;
+            /** Bytes */
+            bytes?: number | null;
+            /** Content */
+            content?: string | null;
+            /** Content Json */
+            content_json?: {
+                [key: string]: unknown;
+            } | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Mime Type */
+            mime_type?: string | null;
+            /**
+             * Node Id
+             * Format: uuid
+             */
+            node_id: string;
+            output_type: components["schemas"]["OutputType"];
+            /** Storage Path */
+            storage_path?: string | null;
         };
         /** RunState */
         RunState: {
@@ -785,6 +923,92 @@ export interface operations {
             };
         };
     };
+    google_callback_auth_google_callback_get: {
+        parameters: {
+            query?: {
+                code?: string | null;
+                state?: string | null;
+                error?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    google_connect_auth_google_connect_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["GoogleConnectRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GoogleConnect"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    google_status_auth_google_status_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GoogleConnectionStatus"];
+                };
+            };
+        };
+    };
     me_auth_me_get: {
         parameters: {
             query?: never;
@@ -996,6 +1220,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["RunCreated"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_outputs_runs__run_id__outputs_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RunOutput"][];
                 };
             };
             /** @description Validation Error */

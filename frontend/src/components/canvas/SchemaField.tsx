@@ -9,6 +9,7 @@ import { Switch } from "@/design-system/components/Switch";
 import { TagInput } from "@/design-system/components/TagInput";
 import { withArticle, type Provider } from "@/lib/handover";
 import { checkItem, checkValue, isEmpty, type FormField } from "@/lib/schema";
+import { endpoints } from "@/lib/api";
 
 // One setting, rendered from its schema (DESIGN-SYSTEM §17.1) and told where its value comes from
 // (UX-SPEC rule 1). The same component draws every field of every agent — there is no per-agent
@@ -61,6 +62,7 @@ const DefaultHint = () => <span className="text-overline uppercase text-text-sub
 export function SchemaField({ field, value, onChange, onBeginEdit, fallback, couldComeFrom, userEmail }: SchemaFieldProps) {
   const [error, setError] = useState<string | null>(null);
   const [overriding, setOverriding] = useState(false);
+  const [googleConnections, setGoogleConnections] = useState({ youtube_connected: false, drive_connected: false });
   // What is in a number box while it is being typed, so clearing it doesn't snap back to the default.
   const [draft, setDraft] = useState<string | null>(null);
   const began = useRef(false);
@@ -72,6 +74,13 @@ export function SchemaField({ field, value, onChange, onBeginEdit, fallback, cou
   useEffect(() => {
     if (overriding) focusRef.current?.focus();
   }, [overriding]);
+
+  useEffect(() => {
+    if (field.widget !== "credential" || field.provider !== "google") return;
+    void endpoints.googleStatus()
+      .then(setGoogleConnections)
+      .catch(() => setGoogleConnections({ youtube_connected: false, drive_connected: false }));
+  }, [field.provider, field.widget]);
 
   function begin() {
     if (began.current) return;
@@ -90,6 +99,15 @@ export function SchemaField({ field, value, onChange, onBeginEdit, fallback, cou
   function blurCheck(next: unknown) {
     end();
     setError(checkValue(field, next));
+  }
+
+  async function connectGoogle(provider: "youtube" | "drive") {
+    try {
+      const { authorization_url } = await endpoints.googleConnect(provider);
+      window.location.assign(authorization_url);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "Couldn't start the Google connection.");
+    }
   }
 
   // --- Left empty, and an earlier step supplies it: show where it comes from, not a blank box.
@@ -269,12 +287,27 @@ export function SchemaField({ field, value, onChange, onBeginEdit, fallback, cou
             );
           }
           case "credential":
-            // Secrets are never text fields (UX-SPEC §4.5 rule 4). Connecting an account needs the
-            // credentials endpoints (D-09), which don't exist yet.
-            return empty ? (
+            // Secrets are never text fields (UX-SPEC §4.5 rule 4). Google opens its own consent screen.
+            return field.provider === "google" ? (
+              <div className="grid justify-items-start gap-2">
+                {googleConnections.youtube_connected && <InheritChip from="YouTube account connected" />}
+                {googleConnections.drive_connected && <InheritChip from="Google Drive account connected" />}
+                {!googleConnections.youtube_connected && !googleConnections.drive_connected && (
+                  <InheritChip tone="broken" from="No Google account connected" />
+                )}
+                <div className="flex flex-wrap gap-2">
+                  <Button size="sm" variant={googleConnections.youtube_connected ? "secondary" : "primary"} onClick={() => void connectGoogle("youtube")}>
+                    {googleConnections.youtube_connected ? "Reconnect YouTube" : "Connect YouTube"}
+                  </Button>
+                  <Button size="sm" variant={googleConnections.drive_connected ? "secondary" : "primary"} onClick={() => void connectGoogle("drive")}>
+                    {googleConnections.drive_connected ? "Reconnect Google Drive" : "Connect Google Drive"}
+                  </Button>
+                </div>
+              </div>
+            ) : empty ? (
               <div className="grid justify-items-start gap-2">
                 <InheritChip tone="broken" from={`No ${field.provider === "google" ? "Google " : ""}account connected`} />
-                <Button size="sm" disabled title="Connections aren't available yet">
+                <Button size="sm" onClick={() => void connectGoogle("youtube")}>
                   Connect {field.provider === "google" ? "Google" : "an account"}
                 </Button>
               </div>

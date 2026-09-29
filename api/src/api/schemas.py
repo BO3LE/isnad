@@ -3,12 +3,12 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Literal
+from typing import Any, Literal
 from uuid import UUID
 
 from pydantic import BaseModel, Field
 
-from contracts.run import ApprovalDecision, RunStatus, WorkflowGraph
+from contracts.run import ApprovalDecision, OutputType, RunStatus, WorkflowGraph
 
 
 class Message(BaseModel):
@@ -22,6 +22,19 @@ class DevLoginRequest(BaseModel):
 class TokenResponse(BaseModel):
     access_token: str
     token_type: Literal["bearer"] = "bearer"
+
+
+class GoogleConnect(BaseModel):
+    authorization_url: str
+
+
+class GoogleConnectRequest(BaseModel):
+    provider: Literal["youtube", "drive"]
+
+
+class GoogleConnectionStatus(BaseModel):
+    youtube_connected: bool
+    drive_connected: bool
 
 
 class Me(BaseModel):
@@ -91,3 +104,18 @@ class OutputLink(BaseModel):
     id: UUID
     url: str
     expires_in: int
+
+
+class RunOutput(BaseModel):
+    """One saved result from a workflow step, safe to show to its owner."""
+
+    id: UUID
+    node_id: UUID
+    agent_type: str
+    output_type: OutputType
+    content: str | None = None
+    content_json: dict[str, Any] | None = None
+    storage_path: str | None = None
+    mime_type: str | None = None
+    bytes: int | None = None
+    created_at: datetime

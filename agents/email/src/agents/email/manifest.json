@@ -7,5 +7,5 @@
   "icon": "mail",
   "input_type": "EmailInput",
   "output_type": "EmailOutput",
-  "requires_approval": true
+  "requires_approval": false
 }
