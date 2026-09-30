@@ -387,6 +387,54 @@
         "title": "DevLoginRequest",
         "type": "object"
       },
+      "GoogleConnect": {
+        "properties": {
+          "authorization_url": {
+            "title": "Authorization Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "authorization_url"
+        ],
+        "title": "GoogleConnect",
+        "type": "object"
+      },
+      "GoogleConnectRequest": {
+        "properties": {
+          "provider": {
+            "enum": [
+              "youtube",
+              "drive"
+            ],
+            "title": "Provider",
+            "type": "string"
+          }
+        },
+        "required": [
+          "provider"
+        ],
+        "title": "GoogleConnectRequest",
+        "type": "object"
+      },
+      "GoogleConnectionStatus": {
+        "properties": {
+          "drive_connected": {
+            "title": "Drive Connected",
+            "type": "boolean"
+          },
+          "youtube_connected": {
+            "title": "Youtube Connected",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "youtube_connected",
+          "drive_connected"
+        ],
+        "title": "GoogleConnectionStatus",
+        "type": "object"
+      },
       "GraphEdge": {
         "additionalProperties": false,
         "properties": {
@@ -774,6 +822,18 @@
               }
             ],
             "title": "Bytes"
+          },
+          "content_json": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Content Json"
           },
           "created_at": {
             "format": "date-time",
@@ -1337,6 +1397,159 @@
           }
         },
         "summary": "Dev Login",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/auth/google/callback": {
+      "get": {
+        "operationId": "google_callback_auth_google_callback_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "code",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Code"
+            }
+          },
+          {
+            "in": "query",
+            "name": "state",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "State"
+            }
+          },
+          {
+            "in": "query",
+            "name": "error",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Error"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Google Callback",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/auth/google/connect": {
+      "post": {
+        "description": "Return Google's consent URL; the browser navigates there only after the user chooses to connect.",
+        "operationId": "google_connect_auth_google_connect_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GoogleConnectRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GoogleConnect"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Google Connect",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/auth/google/status": {
+      "get": {
+        "description": "Report connection state without exposing any OAuth token or account data.",
+        "operationId": "google_status_auth_google_status_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GoogleConnectionStatus"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Google Status",
         "tags": [
           "auth"
         ]

@@ -21,5 +21,5 @@ async def test_sends_links(ports):
     assert to == ["demo@gp.local"] and "https://youtu.be/abc" in body and out.message_id
 
 
-def test_requires_approval():
-    assert EmailAgent.manifest.requires_approval is True
+def test_does_not_require_approval():
+    assert EmailAgent.manifest.requires_approval is False

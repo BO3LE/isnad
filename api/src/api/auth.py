@@ -15,6 +15,7 @@ from __future__ import annotations
 import uuid
 from datetime import UTC, datetime, timedelta
 from functools import lru_cache
+from typing import Literal
 
 import jwt
 from jwt import PyJWKClient
@@ -53,5 +54,31 @@ def verify_token(settings: ApiSettings, token: str) -> tuple[uuid.UUID, str]:
             signing_key = _jwks_client(jwks_url).get_signing_key_from_jwt(token)
             claims = jwt.decode(token, signing_key.key, algorithms=[alg], audience=settings.jwt_audience)
         return uuid.UUID(claims["sub"]), claims.get("email", "")
+    except (jwt.PyJWTError, KeyError, ValueError) as exc:
+        raise InvalidToken(str(exc)) from exc
+
+
+def issue_oauth_state(settings: ApiSettings, user_id: uuid.UUID, provider: Literal["youtube", "drive"]) -> str:
+    now = datetime.now(UTC)
+    return jwt.encode(
+        {
+            "sub": str(user_id),
+            "provider": provider,
+            "purpose": "google_oauth",
+            "iat": now,
+            "exp": now + timedelta(minutes=10),
+        },
+        settings.jwt_secret,
+        algorithm="HS256",
+    )
+
+
+def verify_oauth_state(settings: ApiSettings, state: str) -> tuple[uuid.UUID, Literal["youtube", "drive"]]:
+    try:
+        claims = jwt.decode(state, settings.jwt_secret, algorithms=["HS256"])
+        provider = claims.get("provider")
+        if claims.get("purpose") != "google_oauth" or provider not in {"youtube", "drive"}:
+            raise ValueError("unexpected OAuth state")
+        return uuid.UUID(claims["sub"]), provider
     except (jwt.PyJWTError, KeyError, ValueError) as exc:
         raise InvalidToken(str(exc)) from exc

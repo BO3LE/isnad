@@ -16,10 +16,14 @@ class TavilySearch:
     async def search(self, query: str, n: int) -> list[Source]:
         import httpx
 
-        payload = {"api_key": self._api_key, "query": query, "max_results": n}
+        payload = {"query": query, "max_results": n, "search_depth": "basic"}
         try:
             async with httpx.AsyncClient(timeout=self._timeout) as client:
-                response = await client.post(TAVILY_URL, json=payload)
+                response = await client.post(
+                    TAVILY_URL,
+                    json=payload,
+                    headers={"Authorization": f"Bearer {self._api_key}"},
+                )
         except httpx.HTTPError as exc:
             raise AgentError("Couldn't reach the research service.", code="search_unreachable") from exc
         if response.status_code in (401, 403):

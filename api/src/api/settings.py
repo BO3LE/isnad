@@ -26,6 +26,10 @@ class ApiSettings(BaseSettings):
     cors_origins: list[str] = ["http://localhost:5173"]
     storage_root: str = "/data/artifacts"
     public_files_url: str = "http://localhost:8000/files"
+    google_client_id: str | None = None
+    google_client_secret: str | None = None
+    google_oauth_redirect_uri: str = "http://localhost:8000/auth/google/callback"
+    google_oauth_success_url: str = "http://localhost:5173/workflows"
 
     # Where the worker writes generated files. "local": served from STORAGE_ROOT at /files (never in
     # production). "supabase": the private bucket STORAGE_BUCKET, downloaded through signed URLs that

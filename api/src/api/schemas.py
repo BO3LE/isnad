@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Literal
+from typing import Any, Literal
 from uuid import UUID
 
 from pydantic import BaseModel, Field
@@ -22,6 +22,19 @@ class DevLoginRequest(BaseModel):
 class TokenResponse(BaseModel):
     access_token: str
     token_type: Literal["bearer"] = "bearer"
+
+
+class GoogleConnect(BaseModel):
+    authorization_url: str
+
+
+class GoogleConnectRequest(BaseModel):
+    provider: Literal["youtube", "drive"]
+
+
+class GoogleConnectionStatus(BaseModel):
+    youtube_connected: bool
+    drive_connected: bool
 
 
 class Me(BaseModel):
@@ -117,6 +130,7 @@ class RunOutput(BaseModel):
     node_id: UUID
     agent_type: str
     kind: Literal["text", "file", "url"]
+    content_json: dict[str, Any] | None = None
     filename: str | None = None
     mime_type: str | None = None
     bytes: int | None = None

@@ -18,7 +18,12 @@ class WorkerSettings(BaseSettings):
     public_files_url: str = "http://localhost:8000/files"
     openai_api_key: str | None = None
     openai_model: str = "gpt-4o"
+    openai_base_url: str | None = None
     search_api_key: str | None = None
+    cloudflare_account_id: str | None = None
+    cloudflare_api_token: str | None = None
+    mailtrap_api_token: str | None = None
+    mail_from_email: str | None = None
     # "local" writes to STORAGE_ROOT (development); "supabase" uploads to the private bucket
     # STORAGE_BUCKET with the service key (production). A secret — never log it.
     storage_backend: Literal["local", "supabase"] = "local"
@@ -39,7 +44,12 @@ def adapter_settings(settings: WorkerSettings) -> AdapterSettings:
         public_base_url=settings.public_files_url,
         openai_api_key=settings.openai_api_key,
         openai_model=settings.openai_model,
+        openai_base_url=settings.openai_base_url,
         search_api_key=settings.search_api_key,
+        cloudflare_account_id=settings.cloudflare_account_id,
+        cloudflare_api_token=settings.cloudflare_api_token,
+        mailtrap_api_token=settings.mailtrap_api_token,
+        mail_from_email=settings.mail_from_email,
         storage_backend=settings.storage_backend,
         supabase_url=settings.supabase_url or None,
         supabase_service_key=settings.supabase_service_key,

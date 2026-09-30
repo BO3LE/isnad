@@ -11,7 +11,7 @@ dependencies = [
   "sqlalchemy>=2.0.36,<2.1",
   "alembic>=1.13",
   "psycopg[binary]>=3.2",
-  "cryptography>=42",
+  "cryptography>=43",
 ]
 
 [tool.setuptools.packages.find]

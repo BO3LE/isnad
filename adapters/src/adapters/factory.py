@@ -10,6 +10,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Literal
 
+from adapters._google import NoGoogleEmail, NoGooglePublisher
 from adapters.email.fake import FakeEmail
 from adapters.image.fake import FakeImage
 from adapters.llm.fake import FakeLLM
@@ -27,7 +28,12 @@ class AdapterSettings:
     public_base_url: str = "http://localhost:8000/files"
     openai_api_key: str | None = None
     openai_model: str = "gpt-4o"
+    openai_base_url: str | None = None
     search_api_key: str | None = None
+    cloudflare_account_id: str | None = None
+    cloudflare_api_token: str | None = None
+    mailtrap_api_token: str | None = None
+    mail_from_email: str | None = None
     # Where generated files go, independent of FAKE_ADAPTERS: "local" (STORAGE_ROOT, development)
     # or "supabase" (the private bucket STORAGE_BUCKET, production).
     storage_backend: Literal["local", "supabase"] = "local"
@@ -67,7 +73,7 @@ def build_ports(settings: AdapterSettings) -> Ports:
     if settings.openai_api_key:
         from adapters.llm.openai import OpenAILLM
 
-        llm = OpenAILLM(settings.openai_api_key, settings.openai_model)
+        llm = OpenAILLM(settings.openai_api_key, settings.openai_model, settings.openai_base_url)
 
     search = FakeSearch()
     if settings.search_api_key:
@@ -75,8 +81,20 @@ def build_ports(settings: AdapterSettings) -> Ports:
 
         search = TavilySearch(settings.search_api_key)
 
-    from adapters._google import NoGoogleEmail, NoGooglePublisher
+    image = FakeImage()
+    if settings.cloudflare_account_id and settings.cloudflare_api_token:
+        from adapters.image.cloudflare import CloudflareImage
+
+        image = CloudflareImage(settings.cloudflare_account_id, settings.cloudflare_api_token)
+
     from adapters.tts.gtts import GTTS
+
+    # Email requires an explicit configured service; otherwise fail clearly instead of simulating delivery.
+    email = NoGoogleEmail()
+    if settings.mailtrap_api_token and settings.mail_from_email:
+        from adapters.email.mailtrap import MailtrapEmail
+
+        email = MailtrapEmail(settings.mailtrap_api_token, settings.mail_from_email)
 
     # Publishing and email act as a person's Google account, so there is no process-wide real
     # adapter: the worker swaps these placeholders for `adapters._google.google_ports(credential)`
@@ -86,8 +104,8 @@ def build_ports(settings: AdapterSettings) -> Ports:
         llm=llm,
         search=search,
         tts=GTTS(),
-        image=FakeImage(),
+        image=image,
         storage=storage,
-        email=NoGoogleEmail(),
+        email=email,
         publishers={"youtube": NoGooglePublisher(), "drive": NoGooglePublisher()},
     )
