@@ -1,0 +1,21 @@
+Quarterly Update
+This report covers Q3 results and what comes next. See 
+run_id=8f21 for the source data.
+Highlights
+Revenue grew across all three regions
+The APAC team shipped two releases
+Support tickets dropped by 18%
+Next steps
+Finalize the Q4 roadmap
+Review staffing for the video pipeline
+Publish the board summary
+Sample query
+SELECT region, revenue
+FROM sales
+WHERE quarter = 'Q3';
+• 
+• 
+• 
+1. 
+2. 
+3. 
