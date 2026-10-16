@@ -7,7 +7,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=1
 
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends ffmpeg libpango-1.0-0 libpangoft2-1.0-0 \
+    && apt-get install -y --no-install-recommends ffmpeg libpango-1.0-0 libpangoft2-1.0-0 libharfbuzz-subset0 \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app

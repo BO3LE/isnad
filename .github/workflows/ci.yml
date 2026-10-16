@@ -62,7 +62,7 @@ jobs:
           - component: exporters
             install: "./exporters[all,test]"
             ffmpeg: true
-            pango: true # WeasyPrint (to_pdf) needs Pango at runtime, not just at pip-install time
+            pango: true # WeasyPrint (to_pdf) needs Pango at runtime, and HarfBuzz-Subset to subset fonts
           # The worker suite runs with NO agents installed — the C3 decoupling test.
           - component: worker
             install: ./contracts ./db "./adapters[storage]" ./worker
@@ -79,14 +79,17 @@ jobs:
       - name: Install FFmpeg
         if: matrix.ffmpeg
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg
-      - name: Install Pango (WeasyPrint's only native dependency since it dropped Cairo)
+      - name: Install Pango and HarfBuzz-Subset (WeasyPrint's native dependencies)
         if: matrix.pango
-        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libpango-1.0-0 libpangoft2-1.0-0
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libpango-1.0-0 libpangoft2-1.0-0 libharfbuzz-subset0
       - name: Install ${{ matrix.component }} and only what it depends on
         run: pip install -c constraints.txt ${{ matrix.install }} pytest pytest-asyncio
       - name: Run tests
         if: matrix.component != 'agents'
         working-directory: ${{ matrix.component }}
+        env:
+          # Where Pango is installed, a PDF test that can't run is a failure, never a skip.
+          REQUIRE_PDF: ${{ matrix.pango && '1' || '' }}
         run: python -m pytest -q
       - name: Run every agent's tests, each agent installed on its own
         if: matrix.component == 'agents'
