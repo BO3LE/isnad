@@ -6,6 +6,7 @@ annotated-doc==0.0.5
 annotated-types==0.8.0
 anyio==4.15.1
 billiard==4.2.4
+brotli==1.2.0
 celery==5.6.3
 certifi==2026.7.22
 cffi==2.1.1
@@ -44,6 +45,7 @@ Markdown==3.10.2
 markdown-it-py==4.2.0
 MarkupSafe==3.0.3
 mdurl==0.1.2
+nh3==0.3.7
 oauthlib==3.3.1
 openai==3.13.0
 opentelemetry-api==1.44.0
@@ -97,5 +99,7 @@ uvloop==0.22.1
 vine==5.1.0
 watchfiles==1.2.0
 wcwidth==0.8.3
+weasyprint==70.0
 webencodings==0.6.1
 websockets==17.1
+zopfli==0.4.3

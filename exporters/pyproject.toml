@@ -10,7 +10,8 @@ requires-python = ">=3.11"
 dependencies = []
 
 [project.optional-dependencies]
-pdf = ["weasyprint>=62", "markdown>=3.6"]
+# weasyprint is held to 70.x: to_pdf subclasses its URLFetcher, whose API is new in 70.
+pdf = ["weasyprint>=70,<71", "markdown>=3.6", "nh3>=0.3"]
 docx = ["python-docx>=1.1"]
 all = ["gp-exporters[pdf,docx]"]
 # Test-only: reads the golden PDF's text content back out. Not needed at runtime.

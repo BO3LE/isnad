@@ -17,6 +17,7 @@ import wave
 from pathlib import Path
 
 import pytest
+from conftest import requires_pdf
 from pypdf import PdfReader
 
 from exporters import MissingDependencyError, assemble_mp4, to_docx, to_pdf
@@ -41,6 +42,12 @@ def _pdf_text(pdf_bytes: bytes) -> str:
     return "\n".join(page.extract_text() for page in reader.pages)
 
 
+def _words(text: str) -> str:
+    # Where a line wraps depends on the fonts the machine has (DejaVu on a slim Linux image,
+    # others on CI's Ubuntu), so the golden pins the words in order, not the line breaks.
+    return " ".join(text.split())
+
+
 @pytest.mark.skipif(not shutil.which("ffmpeg"), reason="ffmpeg not installed")
 def test_assemble_mp4_produces_a_playable_file():
     video = assemble_mp4(_silent_wav(2))
@@ -49,12 +56,14 @@ def test_assemble_mp4_produces_a_playable_file():
 
 
 class TestToPdf:
+    @requires_pdf
     def test_matches_golden_extracted_text(self):
         pdf_bytes = to_pdf(SAMPLE_MARKDOWN, title=SAMPLE_TITLE)
         assert pdf_bytes.startswith(b"%PDF-")
         golden_text = (GOLDEN_DIR / "sample.pdf.txt").read_text()
-        assert _pdf_text(pdf_bytes) == golden_text
+        assert _words(_pdf_text(pdf_bytes)) == _words(golden_text)
 
+    @requires_pdf
     def test_same_input_same_content_every_time(self):
         # Raw bytes can legitimately differ between calls (see module docstring);
         # rendered content must not.
