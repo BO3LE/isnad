@@ -95,7 +95,9 @@ class Orchestrator:
             except UnknownAgentError as exc:
                 return self._halt(snap, order[index + 1 :], node, str(exc))
 
-            if node.requires_approval or agent.manifest.requires_approval:
+            # The manifest decides, not the graph: a distribute agent waits even if the saved
+            # workflow says it needn't (see AgentManifest.needs_approval).
+            if agent.manifest.needs_approval(node.requires_approval):
                 decision = self.store.approval(run_id, node.id)
                 if decision is None:
                     self.store.set_node_status(run_id, node.id, NodeStatus.AWAITING_APPROVAL)

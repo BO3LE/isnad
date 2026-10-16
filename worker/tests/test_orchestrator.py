@@ -1,6 +1,6 @@
 from uuid import uuid4
 
-from conftest import ReverseAgent, chain
+from conftest import ReverseAgent, SendAgent, chain
 
 from contracts.run import ApprovalDecision, NodeStatus, RunStatus
 from worker.orchestrator import Orchestrator
@@ -80,6 +80,30 @@ async def test_rejection_halts_the_run(store, registry, ports):
     assert await Orchestrator(store, registry, ports).execute(run_id) == RunStatus.FAILED
     assert store.status_of(run_id, graph.nodes[1].id) == NodeStatus.FAILED
     assert store.status_of(run_id, graph.nodes[2].id) == NodeStatus.SKIPPED
+
+
+async def test_a_distribute_agent_waits_even_when_manifest_and_graph_say_it_neednt(store, registry, ports):
+    """UC-04 can't rest on data the client writes: nothing goes out until a person approves."""
+    graph = chain("shout", "send", config={"text": "abc"})
+    assert graph.nodes[1].requires_approval is False
+    run_id = _run(store, graph)
+    orchestrator = Orchestrator(store, registry, ports)
+
+    assert await orchestrator.execute(run_id) == RunStatus.AWAITING_APPROVAL
+    assert store.status_of(run_id, graph.nodes[1].id) == NodeStatus.AWAITING_APPROVAL
+    assert SendAgent.calls == 0
+
+    store.approvals[(run_id, graph.nodes[1].id)] = ApprovalDecision.APPROVE
+    assert await orchestrator.execute(run_id) == RunStatus.SUCCEEDED
+    assert SendAgent.calls == 1
+
+
+async def test_a_rejected_distribute_agent_never_sends(store, registry, ports):
+    graph = chain("shout", "send", config={"text": "abc"})
+    run_id = _run(store, graph)
+    store.approvals[(run_id, graph.nodes[1].id)] = ApprovalDecision.REJECT
+    assert await Orchestrator(store, registry, ports).execute(run_id) == RunStatus.FAILED
+    assert SendAgent.calls == 0
 
 
 async def test_unknown_agent_fails_with_a_readable_message(store, registry, ports):
