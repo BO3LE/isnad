@@ -335,6 +335,22 @@ test("the row is named and drawn from the catalog, not from the raw agent type",
   await expect(row.getByRole("rowheader").locator("svg")).toHaveCount(1);
 });
 
+test("F puts the cursor in the filter, from anywhere on the page", async ({ page }) => {
+  // §13's keyboard table. The shortcuts dialog advertised this key before anything implemented it.
+  await openLogs(page);
+  const field = page.getByRole("searchbox", { name: /Search the log/ });
+  await expect(field).not.toBeFocused();
+
+  await page.keyboard.press("f");
+  await expect(field).toBeFocused();
+
+  // And it must not hijack the letter once the cursor is in a field — otherwise nobody can type
+  // an "f" into the very filter the shortcut just opened.
+  await field.fill("revoked");
+  await page.keyboard.press("f");
+  await expect(field).toHaveValue("revokedf");
+});
+
 test("a run with nothing logged says so", async ({ page }) => {
   await openLogs(page, []);
   await expect(page.getByRole("heading", { name: "Nothing logged yet" })).toBeVisible();

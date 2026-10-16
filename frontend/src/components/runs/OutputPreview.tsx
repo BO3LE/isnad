@@ -3,6 +3,7 @@ import { Sparkles } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { Skeleton } from "@/design-system/components/Skeleton";
 import { Tabs } from "@/design-system/components/Tabs";
+import { tabPanel } from "@/design-system/components/tab-panel";
 import { agentTitle } from "@/design-system/agents/agentMeta";
 import { formatBytes } from "@/lib/format";
 import { endpoints, type AgentManifest, type RunOutput } from "@/lib/api";
@@ -28,6 +29,9 @@ function label(output: RunOutput, agents?: AgentManifest[]): string {
   if (output.filename) return `${who} · ${output.filename}`;
   return `${who} · text`;
 }
+
+/** One name for the tablist and its panels: two literals would drift apart silently. */
+const MADE_TABS = "What this run made";
 
 export function OutputLoading() {
   return (
@@ -137,12 +141,12 @@ export function OutputPreview({ runId, agents }: OutputPreviewProps) {
   return (
     <section className="grid gap-3 rounded-md border border-border bg-surface p-4" aria-label="Preview">
       <Tabs
-        label="What this run made"
+        label={MADE_TABS}
         tabs={items.map((item) => ({ id: item.id, label: label(item, agents) }))}
         value={current.id}
         onChange={setShown}
       />
-      <div className="grid gap-1">
+      <div {...tabPanel(MADE_TABS, current.id)} className="grid gap-1">
         <OutputBody key={current.id} output={current} />
         {current.bytes != null && <p className="text-caption text-text-muted">{formatBytes(current.bytes)}</p>}
       </div>

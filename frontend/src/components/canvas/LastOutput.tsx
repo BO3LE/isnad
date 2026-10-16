@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { Tabs } from "@/design-system/components/Tabs";
+import { tabPanel } from "@/design-system/components/tab-panel";
 import { formatBytes, formatRelativeTime } from "@/lib/format";
 import { OutputBody, OutputLoading } from "@/components/runs/OutputPreview";
 import type { RunOutput } from "@/lib/api";
@@ -25,6 +26,9 @@ function label(output: RunOutput): string {
   if (output.kind === "file") return output.filename ?? "File";
   return "Text";
 }
+
+/** One name for the tablist and its panels: two literals would drift apart silently. */
+const MADE_TABS = "What this step made";
 
 export function LastOutput({ state }: { state: LastOutputState }) {
   const { outputs, ranAt, isPending, isError } = state;
@@ -57,14 +61,17 @@ export function LastOutput({ state }: { state: LastOutputState }) {
       {/* One output needs no tabs; a step that made several — a file and its text — does. */}
       {outputs.length > 1 && (
         <Tabs
-          label="What this step made"
+          label={MADE_TABS}
           tabs={outputs.map((output) => ({ id: output.id, label: label(output) }))}
           value={current.id}
           onChange={setShown}
         />
       )}
 
-      <div className="grid gap-1">
+      {/* Only a real tablist gets a panel. With one output there are no tabs, and the attributes
+          left behind a tabpanel with no name, no owning tablist and a stray tab stop — which is
+          the common case, not the edge one. */}
+      <div {...(outputs.length > 1 ? tabPanel(MADE_TABS, current.id) : {})} className="grid gap-1">
         <OutputBody key={current.id} output={current} />
         {current.bytes != null && <p className="text-caption text-text-muted">{formatBytes(current.bytes)}</p>}
       </div>

@@ -34,8 +34,10 @@ export function Dialog({ open, onClose, title, description, children, footer, si
         onClose();
       }}
       onClose={onClose}
-      aria-labelledby={titleId}
-      aria-describedby={description ? descriptionId : undefined}
+      // Only while open: the title and description live inside the `{open && …}` branch below, so
+      // a closed dialog was naming itself after two elements that are not in the document.
+      aria-labelledby={open ? titleId : undefined}
+      aria-describedby={open && description ? descriptionId : undefined}
       className={`m-auto w-[calc(100vw-32px)] rounded-lg border border-border bg-surface p-0 text-text shadow-4 backdrop:bg-[rgb(11_11_10/0.4)] ${
         size === "confirm" ? "max-w-[440px]" : "max-w-[640px]"
       }`}
