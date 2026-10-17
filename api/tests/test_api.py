@@ -413,3 +413,37 @@ def test_a_genuine_failure_carries_no_reason(client, headers, sessions):
     summary = next(w for w in client.get("/workflows", headers=headers).json() if w["id"] == workflow_id)["last_run"]
     assert summary["status"] == "failed"
     assert summary["reason"] is None
+
+
+# ---------------------------------------------------------------- step ids are unique across workflows
+
+
+def test_a_graph_copied_with_its_step_ids_is_refused_not_a_crash(client, headers):
+    """A step id is its agent_nodes row's primary key. Saving another workflow's steps used to be a 500."""
+    original = graph("researcher", "writer", configs=[{"topic": "solar"}, {}])
+    first = client.post("/workflows", json={"name": "first", "graph": original}, headers=headers)
+    assert first.status_code == 201
+
+    copy = client.post("/workflows", json={"name": "copy", "graph": original}, headers=headers)
+    assert copy.status_code == 409
+    assert copy.json()["detail"] == "A step's id is already used by another workflow. Give copied steps new ids."
+
+    other = client.post("/workflows", json={"name": "other"}, headers=headers).json()
+    put = client.put(f"/workflows/{other['id']}", json={"graph": original}, headers=headers)
+    assert put.status_code == 409
+    assert client.get(f"/workflows/{other['id']}", headers=headers).json()["graph"]["nodes"] == []  # nothing half-saved
+
+    # Saving a workflow again with its own steps is, of course, fine.
+    again = client.put(f"/workflows/{first.json()['id']}", json={"graph": original}, headers=headers)
+    assert again.status_code == 200
+
+
+def test_two_steps_sharing_an_id_are_refused_readably(client, headers):
+    body = graph("researcher", "writer", configs=[{"topic": "solar"}, {}])
+    body["nodes"][1]["id"] = body["nodes"][0]["id"]
+    body["edges"] = []
+
+    response = client.post("/workflows", json={"name": "twins", "graph": body}, headers=headers)
+
+    assert response.status_code == 422
+    assert response.json()["detail"] == "Two steps share the same id. Delete one and add it again."
