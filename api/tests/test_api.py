@@ -189,6 +189,54 @@ def test_cancel_skips_steps_that_have_not_started(client, headers, sessions):
     assert client.post(f"/runs/{run_id}/cancel", headers=headers).status_code == 409
 
 
+# ---------------------------------------------------------------- a decision is made once, and only while it counts
+
+
+def _decide(client, headers, run_id, node_id, decision="approve", note=None):
+    body = {"decision": decision} | ({"note": note} if note else {})
+    return client.post(f"/runs/{run_id}/nodes/{node_id}/approve", json=body, headers=headers)
+
+
+def test_a_second_decision_on_the_same_step_is_refused_not_a_crash(client, headers, sessions):
+    run_id, node_id = _parked_run(client, headers, sessions)
+    assert _decide(client, headers, run_id, node_id).status_code == 202
+
+    # The worker hasn't picked the run up yet, so the step still reads as waiting — a double
+    # click, or a second tab, lands here.
+    second = _decide(client, headers, run_id, node_id, "reject", "Changed my mind.")
+    assert second.status_code == 409
+    assert second.json()["detail"] == "This step has already been decided."
+    assert [d["decision"] for d in client.get(f"/runs/{run_id}/approvals", headers=headers).json()] == ["approve"]
+
+
+def test_a_cancelled_run_cannot_be_approved(client, headers, sessions, enqueuer):
+    run_id, node_id = _parked_run(client, headers, sessions)
+    client.post(f"/runs/{run_id}/cancel", headers=headers)
+    queued_before = len(enqueuer.runs)
+
+    response = _decide(client, headers, run_id, node_id)
+    assert response.status_code == 409
+    assert client.get(f"/runs/{run_id}/approvals", headers=headers).json() == []
+    assert len(enqueuer.runs) == queued_before
+    assert client.get(f"/runs/{run_id}", headers=headers).json()["status"] == "cancelled"
+
+
+def test_a_decision_the_worker_never_received_is_not_kept(client, headers, sessions, enqueuer):
+    run_id, node_id = _parked_run(client, headers, sessions)
+    enqueuer.down = True
+
+    response = _decide(client, headers, run_id, node_id)
+    assert response.status_code == 503
+    assert "Nothing was sent" in response.json()["detail"]
+    # Kept, it would leave a run marked queued that no worker will ever pick up, and a decision
+    # that can't be made again because one is already on record.
+    assert client.get(f"/runs/{run_id}/approvals", headers=headers).json() == []
+    assert client.get(f"/runs/{run_id}", headers=headers).json()["status"] == "awaiting_approval"
+
+    enqueuer.down = False
+    assert _decide(client, headers, run_id, node_id).status_code == 202
+
+
 def test_catalog_is_served_from_the_worker_published_source(client, headers):
     names = [a["name"] for a in client.get("/agents/catalog", headers=headers).json()]
     assert names == ["researcher", "writer"]
