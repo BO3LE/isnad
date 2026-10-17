@@ -148,6 +148,7 @@ Every variable is listed, with a comment, in [`.env.example`](.env.example). The
 | `ENABLE_DEV_LOGIN` | `true` | Password-less sign-in. Always disabled when `ENVIRONMENT=production`. |
 | `LLM_PROVIDER`, `LLM_MODEL` | `local`, empty | The Writer's model when `FAKE_ADAPTERS=false`: `local` (LM Studio or Ollama), `openai` or `openrouter`. See "Local LLM" below. |
 | `OPENAI_API_KEY`, `OPENROUTER_API_KEY`, `SEARCH_API_KEY` | empty | Used only when `FAKE_ADAPTERS=false`, by the provider that needs it. |
+| `SEARCH_PROVIDER` | empty | `FAKE_ADAPTERS=false` only: `tavily` (needs `SEARCH_API_KEY`) or `fake` (made-up sources). Empty means `tavily` when a key is set; with no key, each Researcher step fails saying so instead of quietly using made-up sources. |
 | `STORAGE_BACKEND` | `local` | Where generated files go. `local` = `STORAGE_ROOT` on disk, served at `PUBLIC_FILES_URL` (development only). `supabase` = the private bucket `STORAGE_BUCKET`, downloaded through signed URLs. Set the same value for api and worker. Files are stored at `artifacts/{user_id}/{run_id}/…` either way. |
 | `STORAGE_BUCKET` | `artifacts` | Supabase Storage bucket for `STORAGE_BACKEND=supabase`. Must be **private**. |
 | `DOWNLOAD_URL_EXPIRES_IN` | `300` | Lifetime of a signed download URL, in seconds. |
@@ -230,12 +231,15 @@ configuration only.
    curl -s http://localhost:1234/v1/models   # the id to put in LLM_MODEL
    ```
 
-2. In `.env`: `FAKE_ADAPTERS=false`, `LLM_PROVIDER=local`, `LLM_MODEL=<model-id>`.
+2. In `.env`: `FAKE_ADAPTERS=false`, `LLM_PROVIDER=local`, `LLM_MODEL=<model-id>`, and
+   `SEARCH_PROVIDER=fake` unless you have a Tavily key (real mode never falls back to made-up
+   sources by itself). `python scripts/check_env.py --profile live-local` checks all of it.
    The Docker worker reaches LM Studio at `http://host.docker.internal:1234/v1` by itself. If it
    can't (the worker logs `server not reachable` at startup), turn on **Serve on Local Network** in
    LM Studio's server settings.
-3. `docker compose up -d worker`, then `docker compose logs worker | grep "LLM:"` should say
-   `LLM: local model '<model-id>' at http://host.docker.internal:1234/v1 — ready`.
+3. `docker compose up -d worker`, then `docker compose logs worker | grep -E "LLM:|Search:|Image:"`
+   should say `LLM: local model '<model-id>' at http://host.docker.internal:1234/v1 — ready`, and
+   which search and image adapters the run will use.
 
 Check a model before relying on it — both talk to the real server and never run in CI:
 
