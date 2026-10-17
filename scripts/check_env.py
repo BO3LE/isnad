@@ -45,6 +45,7 @@ from pathlib import Path
 PLACEHOLDER_JWT_SECRET = "change-me-in-.env-at-least-32-characters-long"
 MIN_SECRET_LENGTH = 32
 PROFILES = ("dev", "live-local", "live-providers")
+GENERATED = ("JWT_SECRET", "CREDENTIALS_ENCRYPTION_KEY")  # what --write-local-secrets may write
 LLM_PROVIDERS = ("local", "openai", "openrouter", "fake")
 # Values safe to show: choices, booleans, numbers and model ids. Everything else is SET / EMPTY only.
 SHOWN = {
@@ -342,7 +343,8 @@ def write_local_secrets(path: Path, now: Callable[[], datetime] = datetime.now) 
     tmp.write_text("\n".join(lines) + "\n", encoding="utf-8")
     tmp.chmod(stat.S_IRUSR | stat.S_IWUSR)
     tmp.replace(path)
-    return list(updates)
+    # Names from the constant, not from `updates`: nothing that held a secret reaches the caller.
+    return [name for name in GENERATED if name in updates]
 
 
 def main(argv: list[str] | None = None, environ: Env | None = None) -> int:
