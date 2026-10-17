@@ -1,7 +1,8 @@
 """Against a real model server — opt-in, never in CI. Skipped unless LIVE_LLM=1.
 
     LIVE_LLM=1 LLM_MODEL=<id from `lms ls`> python -m pytest adapters/tests/test_live_llm.py -v
-    (LLM_BASE_URL defaults to LM Studio on this machine: http://localhost:1234/v1)
+    (LLM_BASE_URL defaults to LM Studio on this machine: http://localhost:1234/v1;
+     a thinking model also needs LLM_REASONING_EFFORT=none, as the worker would have)
 
 These check what a mock can't: that this server and this model accept the requests the adapter
 sends, and answer them usably — streaming, a JSON Schema answer, and a tool call.
@@ -38,6 +39,7 @@ def _llm(**overrides) -> OpenAICompatibleLLM:
         "base_url": os.environ.get("LLM_BASE_URL", "http://localhost:1234/v1"),
         "model": model,
         "timeout_s": float(os.environ.get("LLM_TIMEOUT_S", "300")),
+        "reasoning_effort": os.environ.get("LLM_REASONING_EFFORT") or None,
     }
     return OpenAICompatibleLLM(LLMConfig(**(config | overrides)))
 

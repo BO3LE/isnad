@@ -60,16 +60,19 @@ def test_llm_settings_reach_the_adapter():
             llm_max_output_tokens=2048,
             llm_temperature=0.2,
             llm_stream=False,
+            llm_reasoning_effort="none",
         )
     )
     c = llm.config
-    assert (c.structured, c.timeout_s, c.max_output_tokens, c.temperature, c.stream) == (
+    assert (c.structured, c.timeout_s, c.max_output_tokens, c.temperature, c.stream, c.reasoning_effort) == (
         "json_object",
         42,
         2048,
         0.2,
         False,
+        "none",
     )
+    assert build_llm(real(llm_model="m")).config.reasoning_effort is None
 
 
 @pytest.mark.parametrize(

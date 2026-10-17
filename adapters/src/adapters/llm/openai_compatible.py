@@ -15,6 +15,9 @@ What it adds over a bare SDK call:
   constrain decoding to it). A server that refuses that mode is asked again with `json_object`, then
   with no response_format at all — and the mode that worked is kept for later calls.
 - `<think>…</think>` blocks that reasoning models emit are removed from the answer.
+- LLM_REASONING_EFFORT is sent as `reasoning_effort` when set. `none` turns a thinking model's
+  reasoning off in LM Studio — the Writer doesn't need it, and a slow local model can spend its whole
+  LLM_MAX_OUTPUT_TOKENS thinking. Unset, nothing is sent and the server's default applies.
 - Streaming, so a long local generation is bounded by one overall deadline (LLM_TIMEOUT_S), not by
   a per-request read timeout that the first token alone can exceed.
 - No SDK retries (`max_retries=0`): the orchestrator owns retrying. Errors become AgentErrors with a
@@ -42,6 +45,7 @@ log = logging.getLogger(__name__)
 
 Provider = Literal["local", "openai", "openrouter"]
 Structured = Literal["json_schema", "json_object", "none"]
+ReasoningEffort = Literal["none", "minimal", "low", "medium", "high"]
 _FALLBACK: dict[str, Structured] = {"json_schema": "json_object", "json_object": "none"}
 
 _THINK = re.compile(r"<think>.*?</think>", re.S | re.I)
@@ -61,6 +65,7 @@ class LLMConfig:
     max_output_tokens: int = 4096
     temperature: float | None = None  # None: the server's (or the model preset's) default
     stream: bool = True
+    reasoning_effort: ReasoningEffort | None = None  # None: not sent — the server's default
 
     @property
     def is_local(self) -> bool:
@@ -78,6 +83,7 @@ class Usage:
     structured: Structured | None = None
     finish_reason: str | None = None
     chunks: int = 0
+    reasoning_chunks: int = 0  # streamed pieces of reasoning (counted, never kept)
 
 
 class OpenAICompatibleLLM:
@@ -117,6 +123,8 @@ class OpenAICompatibleLLM:
         message, finish = await self._with_structured_fallback(messages, wants_json, json_schema, tools=())
         text = strip_thinking(message.get("content") or "")
         if finish == "length":
+            if not text and self._thought(message):
+                raise self._thinking_only()
             raise NonRetryableAgentError(
                 f"The model's answer was cut off at {self.config.max_output_tokens} tokens "
                 "(LLM_MAX_OUTPUT_TOKENS). Raise it, or ask for a shorter text.",
@@ -140,6 +148,8 @@ class OpenAICompatibleLLM:
         calls = tuple(_tool_call(raw, i) for i, raw in enumerate(message.get("tool_calls") or []))
         content = strip_thinking(message.get("content") or "")
         if finish == "length" and not calls:
+            if not content and self._thought(message):
+                raise self._thinking_only()
             raise NonRetryableAgentError(
                 f"The model's answer was cut off at {self.config.max_output_tokens} tokens (LLM_MAX_OUTPUT_TOKENS).",
                 code="llm_truncated",
@@ -202,6 +212,8 @@ class OpenAICompatibleLLM:
         params[token_param] = self.config.max_output_tokens
         if self.config.temperature is not None:
             params["temperature"] = self.config.temperature
+        if self.config.reasoning_effort is not None:
+            params["reasoning_effort"] = self.config.reasoning_effort
         if response_format is not None:
             params["response_format"] = response_format
         if tools:
@@ -221,6 +233,8 @@ class OpenAICompatibleLLM:
                 response = await self._client.chat.completions.create(**params)
                 choice = response.choices[0]
                 result = (choice.message.model_dump(exclude_none=True), choice.finish_reason)
+                if _reasoning(choice.message):
+                    self.last_usage.reasoning_chunks = 1
                 if response.usage is not None:
                     self.last_usage.prompt_tokens = response.usage.prompt_tokens
                     self.last_usage.completion_tokens = response.usage.completion_tokens
@@ -242,6 +256,8 @@ class OpenAICompatibleLLM:
                 if not chunk.choices:
                     continue
                 choice = chunk.choices[0]
+                if choice.delta is not None and _reasoning(choice.delta):
+                    self.last_usage.reasoning_chunks += 1
                 if choice.delta is not None and choice.delta.content:
                     if self.last_usage.first_token_seconds is None:
                         self.last_usage.first_token_seconds = time.monotonic() - started
@@ -252,6 +268,18 @@ class OpenAICompatibleLLM:
         finally:
             await stream.close()
         return {"role": "assistant", "content": "".join(parts)}, finish
+
+    def _thought(self, message: dict[str, Any]) -> bool:
+        """Did the model reason — in a separate field, or in an unclosed `<think>` — before it was cut off?"""
+        return self.last_usage.reasoning_chunks > 0 or bool(re.match(r"\s*<think>", message.get("content") or "", re.I))
+
+    def _thinking_only(self) -> NonRetryableAgentError:
+        # Not llm_truncated: asking again would spend the same tokens thinking.
+        return NonRetryableAgentError(
+            f"The model spent all {self.config.max_output_tokens} tokens (LLM_MAX_OUTPUT_TOKENS) thinking and "
+            "never answered. Set LLM_REASONING_EFFORT=none to turn its thinking off, or raise the limit.",
+            code="llm_thinking",
+        )
 
     def _mapped(self, exc: BaseException) -> AgentError:
         """A provider failure, as a message the person can act on. Never quotes a key."""
@@ -300,6 +328,12 @@ class OpenAICompatibleLLM:
         if isinstance(exc, openai.APIError):
             return AgentError(f"{where.capitalize()} sent a broken answer.", code="llm_bad_response")
         return AgentError(f"The model call failed ({type(exc).__name__}).", code="llm_error")
+
+
+def _reasoning(part: Any) -> bool:
+    """Whether a message or stream delta carries reasoning: LM Studio and Ollama send `reasoning_content`
+    (or `reasoning`) beside `content`. The SDK keeps unknown fields as extras."""
+    return bool(getattr(part, "reasoning_content", None) or getattr(part, "reasoning", None))
 
 
 def strip_thinking(text: str) -> str:

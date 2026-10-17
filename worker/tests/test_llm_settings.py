@@ -17,7 +17,15 @@ MODEL = "qwen3-30b-a3b-instruct-2507"
 
 
 def _settings(monkeypatch, **env) -> WorkerSettings:
-    for name in ("LLM_PROVIDER", "LLM_MODEL", "LLM_BASE_URL", "OPENAI_API_KEY", "OPENROUTER_API_KEY", "LLM_API_KEY"):
+    for name in (
+        "LLM_PROVIDER",
+        "LLM_MODEL",
+        "LLM_BASE_URL",
+        "OPENAI_API_KEY",
+        "OPENROUTER_API_KEY",
+        "LLM_API_KEY",
+        "LLM_REASONING_EFFORT",
+    ):
         monkeypatch.delenv(name, raising=False)
     for name, value in env.items():
         monkeypatch.setenv(name, value)
@@ -33,6 +41,7 @@ def test_the_environment_selects_a_local_model(monkeypatch):
         LLM_LOCAL_BASE_URL="http://host.docker.internal:1234/v1",
         LLM_TIMEOUT_S="600",
         LLM_STRUCTURED="json_object",
+        LLM_REASONING_EFFORT="none",
     )
     llm = build_llm(adapter_settings(settings))
 
@@ -43,6 +52,7 @@ def test_the_environment_selects_a_local_model(monkeypatch):
     )
     assert llm.config.timeout_s == 600
     assert llm.config.structured == "json_object"
+    assert llm.config.reasoning_effort == "none"
 
 
 def test_empty_variables_count_as_unset(monkeypatch):
@@ -95,11 +105,20 @@ def _closed_url() -> str:
         ({"FAKE_ADAPTERS": "false", "LLM_MODEL": MODEL, "LLM_LOCAL_BASE_URL": "{closed}"}, "server not reachable"),
         ({"FAKE_ADAPTERS": "false", "LLM_MODEL": MODEL, "LLM_LOCAL_BASE_URL": "{up}"}, " — ready"),
         (
+            {
+                "FAKE_ADAPTERS": "false",
+                "LLM_MODEL": MODEL,
+                "LLM_LOCAL_BASE_URL": "{up}",
+                "LLM_REASONING_EFFORT": "none",
+            },
+            "/v1, reasoning_effort=none — ready",
+        ),
+        (
             {"FAKE_ADAPTERS": "false", "LLM_MODEL": "gpt-oss-20b", "LLM_LOCAL_BASE_URL": "{up}"},
             "doesn't list that model",
         ),
     ],
-    ids=["fake", "no-key", "lm-studio-stopped", "ready", "model-not-downloaded"],
+    ids=["fake", "no-key", "lm-studio-stopped", "ready", "ready-thinking-off", "model-not-downloaded"],
 )
 def test_the_startup_report(monkeypatch, models_server, env, expected):
     env = {k: v.format(closed=_closed_url(), up=models_server) for k, v in env.items()}

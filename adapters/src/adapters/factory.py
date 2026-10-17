@@ -55,6 +55,7 @@ class AdapterSettings:
     llm_max_output_tokens: int = 4096
     llm_temperature: float | None = None
     llm_stream: bool = True
+    llm_reasoning_effort: Literal["none", "minimal", "low", "medium", "high"] | None = None
     # Where generated files go, independent of FAKE_ADAPTERS: "local" (STORAGE_ROOT, development)
     # or "supabase" (the private bucket STORAGE_BUCKET, production).
     storage_backend: Literal["local", "supabase"] = "local"
@@ -266,5 +267,6 @@ def build_llm(settings: AdapterSettings) -> LLMPort:
             max_output_tokens=settings.llm_max_output_tokens,
             temperature=settings.llm_temperature,
             stream=settings.llm_stream,
+            reasoning_effort=settings.llm_reasoning_effort,
         )
     )

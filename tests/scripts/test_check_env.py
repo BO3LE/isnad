@@ -48,13 +48,14 @@ def test_no_value_of_a_key_secret_or_url_is_ever_printed(tmp_path, capsys):
 def test_choices_and_model_ids_are_shown(tmp_path, capsys):
     _, out = run(
         tmp_path,
-        "FAKE_ADAPTERS=false\nLLM_PROVIDER=local\nLLM_MODEL=qwen3-30b\nSEARCH_PROVIDER=fake\n",
+        "FAKE_ADAPTERS=false\nLLM_PROVIDER=local\nLLM_MODEL=qwen3-30b\nSEARCH_PROVIDER=fake\nLLM_REASONING_EFFORT=none\n",
         "--profile",
         "live-local",
         capsys=capsys,
     )
     assert "FAKE_ADAPTERS" in out and "= false" in out
     assert "= qwen3-30b" in out
+    assert "LLM_REASONING_EFFORT" in out and "= none" in out
     assert "SEARCH_PROVIDER" in out and "= fake" in out and "made-up sources" in out
 
 
@@ -88,6 +89,7 @@ def test_live_local_passes_with_real_mode_a_local_model_and_a_real_secret(tmp_pa
         ("FAKE_ADAPTERS=maybe\n", "not a boolean"),
         ("FAKE_ADAPTERS=false\nLLM_PROVIDER=ollama\n", "not one of"),
         ("FAKE_ADAPTERS=false\nLLM_MODEL=m\nLLM_BASE_URL=localhost:1234\n", "not an http(s) URL"),
+        ("FAKE_ADAPTERS=false\nLLM_MODEL=m\nLLM_REASONING_EFFORT=off\n", "not one of none, minimal"),
         ("FAKE_ADAPTERS=false\nLLM_MODEL=m\nCREDENTIALS_ENCRYPTION_KEY=not-a-key\n", "not a valid Fernet key"),
         # Real mode with search unset would fail every Researcher step (F8: no silent fake).
         ("FAKE_ADAPTERS=false\nLLM_MODEL=m\nSEARCH_PROVIDER=\n", "every Researcher step would fail"),

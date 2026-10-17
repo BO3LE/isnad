@@ -23,6 +23,7 @@ fastest passing model wins — and a person confirms the choice.
     python scripts/llm_bench.py --models qwen3-30b-a3b-instruct-2507
     python scripts/llm_bench.py --models a,b --modes json_schema,none --lengths long --runs 5 \\
         --out docs/metrics/data/llm-bench.json
+    python scripts/llm_bench.py --models qwen/qwen3.8-27b --reasoning-effort none   # a thinking model
 
 Prints no prompt or article text, only measurements. For a hosted provider pass --provider and set
 its key in the environment (OPENAI_API_KEY / OPENROUTER_API_KEY); the key is never printed.
@@ -271,6 +272,12 @@ async def main() -> int:
     parser.add_argument("--tool-runs", type=int, default=5, help="tool-calling attempts per model (0 to skip)")
     parser.add_argument("--timeout", type=float, default=600)
     parser.add_argument("--max-output-tokens", type=int, default=4096)
+    parser.add_argument(
+        "--reasoning-effort",
+        choices=["none", "minimal", "low", "medium", "high"],
+        default=os.environ.get("LLM_REASONING_EFFORT") or None,
+        help="sent as reasoning_effort; none turns a thinking model's reasoning off (default: LLM_REASONING_EFFORT)",
+    )
     parser.add_argument("--out", type=Path, help="write every measurement as JSON here")
     args = parser.parse_args()
 
@@ -292,6 +299,7 @@ async def main() -> int:
                 structured=mode,
                 timeout_s=args.timeout,
                 max_output_tokens=args.max_output_tokens,
+                reasoning_effort=args.reasoning_effort,
             )
         )
 
@@ -308,7 +316,8 @@ async def main() -> int:
         if not probe["model_listed"]:
             print(f"✗ {model!r} isn't offered at {base_url}. It lists: {probe.get('models')}", file=sys.stderr)
             return 2
-        print(f"== {model} at {base_url}", flush=True)
+        effort = f", reasoning_effort={args.reasoning_effort}" if args.reasoning_effort else ""
+        print(f"== {model} at {base_url}{effort}", flush=True)
         for mode in args.modes.split(","):
             llm = adapter(model, mode)  # one adapter per mode, so a fallback is visible in mode_used
             for length in args.lengths.split(","):
@@ -342,6 +351,7 @@ async def main() -> int:
                 {
                     "provider": args.provider,
                     "base_url": base_url,
+                    "reasoning_effort": args.reasoning_effort,
                     "summary": rows,
                     "runs": [asdict(r) for r in results],
                 },

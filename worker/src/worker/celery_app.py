@@ -163,6 +163,8 @@ def check_llm() -> str:
         return f"LLM: {llm_provider(adapter_cfg)}"
     result = asyncio.run(probe())
     where = f"{config.provider} model {config.model!r} at {config.base_url}"
+    if getattr(config, "reasoning_effort", None):
+        where += f", reasoning_effort={config.reasoning_effort}"
     if not result["reachable"]:
         return f"LLM: {where} — server not reachable ({result.get('error')})"
     if not result["model_listed"]:

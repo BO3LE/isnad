@@ -236,7 +236,10 @@ configuration only.
 
 2. In `.env`: `FAKE_ADAPTERS=false`, `LLM_PROVIDER=local`, `LLM_MODEL=<model-id>`, and
    `SEARCH_PROVIDER=fake` unless you have a Tavily key (real mode never falls back to made-up
-   sources by itself). `python scripts/check_env.py --profile live-local` checks all of it.
+   sources by itself). For a model that thinks before it answers (LM Studio shows its reasoning
+   separately), also `LLM_REASONING_EFFORT=none`: the Writer doesn't need the reasoning, and without
+   it a slow model can spend every output token thinking. `python scripts/check_env.py --profile
+   live-local` checks all of it.
    The Docker worker reaches LM Studio at `http://host.docker.internal:1234/v1` by itself. If it
    can't (the worker logs `server not reachable` at startup), turn on **Serve on Local Network** in
    LM Studio's server settings.
@@ -253,8 +256,8 @@ python scripts/llm_bench.py --models <model-id>      # the Writer itself: validi
 
 What a step reports when the model can't answer: LM Studio stopped → retried, then "Couldn't reach
 the local model server … Is LM Studio's server running?"; model not loaded or not downloaded →
-fails at once and says to load it; answer cut off → names `LLM_MAX_OUTPUT_TOKENS`; too slow → names
-`LLM_TIMEOUT_S`.
+fails at once and says to load it; answer cut off → names `LLM_MAX_OUTPUT_TOKENS`; cut off while
+still thinking → names `LLM_REASONING_EFFORT`; too slow → names `LLM_TIMEOUT_S`.
 
 ### Email without sending any (Mailpit)
 
