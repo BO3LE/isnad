@@ -105,7 +105,10 @@ async def test_the_blog_template_writes_its_article_with_a_local_model(db, store
 
     assert await Orchestrator(store, registry, ports).execute(run_id) == RunStatus.SUCCEEDED
 
-    (request,) = lm_studio.requests
+    # ARTICLE is far shorter than medium's 800 words, so the Writer asks once for a fuller version;
+    # the stand-in's second answer is no longer, so the first draft is what is kept.
+    request, fuller = lm_studio.requests
+    assert fuller["messages"][1]["content"].startswith("The article below is")
     assert request["model"] == MODEL
     assert request["stream"] is True
     assert request["response_format"]["type"] == "json_schema"

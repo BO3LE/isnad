@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 from collections.abc import Sequence
 from typing import Any
 
@@ -36,11 +37,7 @@ class FakeLLM:
                 {
                     "title": "The Future of Solar Energy in Saudi Arabia",
                     "summary": "A short, sourced overview of where solar stands today and what comes next.",
-                    "article_md": (
-                        "# The Future of Solar Energy in Saudi Arabia\n\n"
-                        "Saudi Arabia receives some of the strongest sunlight on Earth. "
-                        "This article is canned output from the fake LLM adapter.\n"
-                    ),
+                    "article_md": _canned_article(prompt),
                 }
             )
         return "Canned text from the fake LLM adapter."
@@ -56,3 +53,19 @@ class FakeLLM:
         if self._chat_replies:
             return self._chat_replies.pop(0)
         return ChatReply(content="Canned text from the fake LLM adapter.", finish_reason="stop")
+
+
+_ABOUT_WORDS = re.compile(r"\babout (\d+) words\b")
+
+
+def _canned_article(prompt: str) -> str:
+    """As long as the prompt asks for ("about N words"), so the Writer has no reason to ask for a
+    fuller version: in fake mode a run makes the same calls whatever length is chosen."""
+    asked = _ABOUT_WORDS.search(prompt)
+    paragraph = (
+        "Saudi Arabia receives some of the strongest sunlight on Earth. "
+        "This article is canned output from the fake LLM adapter."
+    )
+    words = int(asked.group(1)) if asked else len(paragraph.split())
+    repeats = max(1, -(-words // len(paragraph.split())))
+    return "# The Future of Solar Energy in Saudi Arabia\n\n" + "\n\n".join([paragraph] * repeats) + "\n"
