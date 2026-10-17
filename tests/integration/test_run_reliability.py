@@ -20,9 +20,10 @@ from sqlalchemy import event, select
 from sqlalchemy.orm import sessionmaker
 
 from contracts.errors import AgentError, NonRetryableAgentError
-from contracts.run import MAX_RETRIES, NodeStatus, RunStatus, WorkflowGraph
-from db.models import AgentOutput, ExecutionLog, ExecutionRun
+from contracts.run import MAX_RETRIES, ApprovalDecision, NodeStatus, RunStatus, WorkflowGraph
+from db.models import AgentOutput, Approval, ExecutionLog, ExecutionRun
 from worker.orchestrator import Orchestrator
+from worker.store import INTERRUPTED_SEND
 
 pytestmark = pytest.mark.integration
 
@@ -84,6 +85,26 @@ class LLM:
         self.calls += 1
         self.before(self.calls)
         return await self.inner.complete(prompt, **kwargs)
+
+
+class Email:
+    """The fake email port, counting sends, with a hook run before the send it wraps."""
+
+    def __init__(self, inner, before: Callable[[int], None] = lambda _: None):
+        self.inner, self.before, self.calls = inner, before, 0
+
+    async def send(self, to: list[str], subject: str, body: str) -> str:
+        self.calls += 1
+        self.before(self.calls)
+        return await self.inner.send(to, subject, body)
+
+
+def _approve(db, run_id: uuid.UUID, node_id: uuid.UUID) -> None:
+    """Mirror of `POST /runs/{id}/nodes/{node}/approve` (api/routers/runs.py) up to the enqueue."""
+    with db.sessions.begin() as s:
+        row = s.scalar(select(ExecutionLog).where(ExecutionLog.run_id == run_id, ExecutionLog.node_id == node_id))
+        s.add(Approval(log_id=row.id, decision=ApprovalDecision.APPROVE.value, decided_by=db.demo_user_id()))
+        s.get(ExecutionRun, run_id).status = RunStatus.QUEUED.value
 
 
 def _always(exc_factory: Callable[[], BaseException]) -> Callable[[int], object]:
@@ -391,7 +412,7 @@ async def test_a_run_cancelled_while_its_worker_was_lost_is_closed_on_redelivery
 
 async def _redeliver(store, registry, ports, sleeps, run_id, **port_overrides) -> RunStatus:
     """What `worker.celery_app.run_workflow` does when the broker hands the job to a new worker."""
-    store.mark_interrupted(run_id)
+    store.mark_interrupted(run_id, unrepeatable=registry.sends_out())
     return await _orchestrator(store, registry, ports, sleeps, **port_overrides).execute(run_id)
 
 
@@ -432,6 +453,75 @@ async def test_a_redelivered_run_resumes_at_the_interrupted_step(db, store, regi
     run = _run(db, run_id)
     assert run.status == RunStatus.SUCCEEDED and run.failed_nodes == 0
     assert store.run_transitions() == ["running", "running", "succeeded"]
+
+
+async def test_a_send_a_lost_worker_was_making_is_not_made_again(db, store, registry, ports, sleeps):
+    """The worker dies inside the approved Email step, so the message may have gone. The new worker
+    doesn't send it a second time: the step fails saying why, and the run ends there."""
+
+    def die_while_sending(call: int) -> None:
+        if call == 1:
+            raise WorkerKilled
+
+    email_port = Email(ports.email, before=die_while_sending)
+    run_id = db.start_run(db.template(EMAIL).id)
+    orchestrator = _orchestrator(store, registry, ports, sleeps, email=email_port)
+    assert await orchestrator.execute(run_id) == RunStatus.AWAITING_APPROVAL
+    _approve(db, run_id, _logs(db, run_id)[2].node_id)
+    with pytest.raises(WorkerKilled):
+        await orchestrator.execute(run_id)
+    assert _logs(db, run_id)[2].status == NodeStatus.RUNNING  # what the dead worker left behind
+
+    status = await _redeliver(store, registry, ports, sleeps, run_id, email=email_port)
+
+    assert status == RunStatus.FAILED
+    assert email_port.calls == 1  # not sent again
+    research, write, email = _logs(db, run_id)
+    assert (research.status, write.status) == (NodeStatus.SUCCESS, NodeStatus.SUCCESS)
+    assert email.status == NodeStatus.FAILED
+    assert email.error_message == f"[attempt 1] {INTERRUPTED_SEND}"
+    assert email.completed_at is not None
+    assert _outputs(db, email.id) == []
+    run = _run(db, run_id)
+    assert (run.status, run.failed_nodes) == (RunStatus.FAILED, 1)
+    assert run.completed_at is not None
+
+
+async def test_a_send_waiting_to_retry_when_the_worker_died_is_retried(db, store, registry, ports):
+    """A retryable error means the message certainly didn't go (adapters' rule), so a send that was
+    only waiting out its backoff resumes on the new worker and goes out once."""
+
+    def refuse_first(call: int) -> None:
+        if call == 1:
+            raise AgentError("Couldn't reach the mail server.")
+
+    email_port = Email(ports.email, before=refuse_first)
+    run_id = db.start_run(db.template(EMAIL).id)
+
+    async def die(seconds: float) -> None:
+        raise WorkerKilled
+
+    async def no_wait(seconds: float) -> None:
+        pass
+
+    def orchestrator(sleep) -> Orchestrator:
+        return Orchestrator(
+            store, registry, dataclasses.replace(ports, email=email_port), sleep=sleep, jitter=lambda: 0.0
+        )
+
+    assert await orchestrator(die).execute(run_id) == RunStatus.AWAITING_APPROVAL
+    _approve(db, run_id, _logs(db, run_id)[2].node_id)
+    with pytest.raises(WorkerKilled):
+        await orchestrator(die).execute(run_id)
+    assert _logs(db, run_id)[2].status == NodeStatus.RETRYING
+
+    store.mark_interrupted(run_id, unrepeatable=registry.sends_out())
+    assert await orchestrator(no_wait).execute(run_id) == RunStatus.SUCCEEDED
+
+    assert email_port.calls == 2
+    assert len(ports.email.sent) == 1
+    email = _logs(db, run_id)[2]
+    assert (email.status, email.retry_count) == (NodeStatus.SUCCESS, 1)
 
 
 async def test_a_redelivered_run_keeps_the_retry_budget_it_had_used(db, store, registry, ports):
