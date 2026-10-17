@@ -146,7 +146,8 @@ Every variable is listed, with a comment, in [`.env.example`](.env.example). The
 | `FAKE_ADAPTERS` | `true` | Canned responses for every external service. Set to `false` only for integration runs with real keys. |
 | `JWT_SECRET` | placeholder | Token signing secret. Generate a real one for any shared deployment. |
 | `ENABLE_DEV_LOGIN` | `true` | Password-less sign-in. Always disabled when `ENVIRONMENT=production`. |
-| `OPENAI_API_KEY`, `SEARCH_API_KEY` | empty | Used only when `FAKE_ADAPTERS=false`. |
+| `LLM_PROVIDER`, `LLM_MODEL` | `local`, empty | The Writer's model when `FAKE_ADAPTERS=false`: `local` (LM Studio or Ollama), `openai` or `openrouter`. See "Local LLM" below. |
+| `OPENAI_API_KEY`, `OPENROUTER_API_KEY`, `SEARCH_API_KEY` | empty | Used only when `FAKE_ADAPTERS=false`, by the provider that needs it. |
 | `STORAGE_BACKEND` | `local` | Where generated files go. `local` = `STORAGE_ROOT` on disk, served at `PUBLIC_FILES_URL` (development only). `supabase` = the private bucket `STORAGE_BUCKET`, downloaded through signed URLs. Set the same value for api and worker. Files are stored at `artifacts/{user_id}/{run_id}/…` either way. |
 | `STORAGE_BUCKET` | `artifacts` | Supabase Storage bucket for `STORAGE_BACKEND=supabase`. Must be **private**. |
 | `DOWNLOAD_URL_EXPIRES_IN` | `300` | Lifetime of a signed download URL, in seconds. |
@@ -202,6 +203,42 @@ first — on both, and later drop the old one once every row has been refreshed 
 You land back on `/settings/connections?connected=google`; `GET /connections` lists the account with
 "YouTube · Drive · Gmail". Errors come back as `?error=google_denied` (Cancel pressed),
 `google_state` (link expired, reused or opened in another browser) or `google_failed`.
+
+### Local LLM (LM Studio, no per-token cost)
+
+With `FAKE_ADAPTERS=false` the Writer uses `LLM_PROVIDER` — `local` by default: any
+OpenAI-compatible server on this machine. Tested with LM Studio; Ollama works the same way at
+`http://localhost:11434/v1`. One adapter serves every provider
+(`adapters/src/adapters/llm/openai_compatible.py`), so switching to OpenAI or OpenRouter later is
+configuration only.
+
+1. In LM Studio, download the model, then start the server and load the model with a 16K context:
+
+   ```bash
+   lms server start                       # OpenAI-compatible API on http://localhost:1234/v1
+   lms ls                                 # the model ids you have downloaded
+   lms load <model-id> --context-length 16384
+   curl -s http://localhost:1234/v1/models   # the id to put in LLM_MODEL
+   ```
+
+2. In `.env`: `FAKE_ADAPTERS=false`, `LLM_PROVIDER=local`, `LLM_MODEL=<model-id>`.
+   The Docker worker reaches LM Studio at `http://host.docker.internal:1234/v1` by itself. If it
+   can't (the worker logs `server not reachable` at startup), turn on **Serve on Local Network** in
+   LM Studio's server settings.
+3. `docker compose up -d worker`, then `docker compose logs worker | grep "LLM:"` should say
+   `LLM: local model '<model-id>' at http://host.docker.internal:1234/v1 — ready`.
+
+Check a model before relying on it — both talk to the real server and never run in CI:
+
+```bash
+LIVE_LLM=1 LLM_MODEL=<model-id> python -m pytest adapters/tests/test_live_llm.py -v
+python scripts/llm_bench.py --models <model-id>      # the Writer itself: validity, length, speed
+```
+
+What a step reports when the model can't answer: LM Studio stopped → retried, then "Couldn't reach
+the local model server … Is LM Studio's server running?"; model not loaded or not downloaded →
+fails at once and says to load it; answer cut off → names `LLM_MAX_OUTPUT_TOKENS`; too slow → names
+`LLM_TIMEOUT_S`.
 
 ## 7. Changing the API
 
