@@ -16,7 +16,8 @@ from collections.abc import Callable
 from types import SimpleNamespace
 
 import pytest
-from sqlalchemy import select
+from sqlalchemy import event, select
+from sqlalchemy.orm import sessionmaker
 
 from contracts.errors import AgentError, NonRetryableAgentError
 from contracts.run import MAX_RETRIES, NodeStatus, RunStatus, WorkflowGraph
@@ -278,6 +279,8 @@ async def test_cancel_while_awaiting_approval(db, store, registry, ports, sleeps
     # No longer awaiting approval, so the approve endpoint answers 409 for it.
     _assert_skipped(email)
     assert len(_texts(db, research.id)) == 1 and len(_texts(db, write.id)) == 1
+    # No step was running, so no worker will close the run: the cancel itself records when it ended.
+    assert run.completed_at is not None
 
     history = list(store.history)
     assert await orchestrator.execute(run_id) == RunStatus.CANCELLED
@@ -286,64 +289,101 @@ async def test_cancel_while_awaiting_approval(db, store, registry, ports, sleeps
     assert _outputs(db, email.id) == []
 
 
-@pytest.mark.xfail(
-    strict=True,
-    raises=AssertionError,
-    reason=(
-        "BUG: a cancel that lands while the LAST step runs is overwritten — the loop ends and "
-        "Orchestrator.execute sets SUCCEEDED (worker/src/worker/orchestrator.py:126) without re-reading the "
-        "run status, and SqlRunStore.set_run_status lets a terminal status be replaced."
-    ),
-)
 async def test_cancel_during_the_last_step_leaves_the_run_cancelled(db, store, registry, ports, sleeps):
+    """The loop ends right after the cancel lands; `succeeded` must not replace it."""
     run_id = db.start_run(db.template(BLOG).id)
     llm = LLM(ports.llm, before=lambda call: db.cancel_run(run_id) if call == 1 else None)
 
-    await _orchestrator(store, registry, ports, sleeps, llm=llm).execute(run_id)
+    assert await _orchestrator(store, registry, ports, sleeps, llm=llm).execute(run_id) == RunStatus.CANCELLED
 
-    assert _run(db, run_id).status == RunStatus.CANCELLED
+    run = _run(db, run_id)
+    assert run.status == RunStatus.CANCELLED
+    assert run.completed_at is not None  # the cancel left it open while the writer ran; the worker closed it
+    assert "succeeded" not in store.run_transitions()
+    research, write = _logs(db, run_id)
+    assert (research.status, write.status) == (NodeStatus.SUCCESS, NodeStatus.SUCCESS)
+    assert len(_texts(db, write.id)) == 1  # what the step made is kept
 
 
-@pytest.mark.xfail(
-    strict=True,
-    raises=AssertionError,
-    reason=(
-        "BUG: the retry loop never checks for a cancel — _run_with_retry (worker/src/worker/orchestrator.py:"
-        "129-157) keeps retrying through every backoff, then _finish_failed overwrites CANCELLED with FAILED."
-    ),
-)
 async def test_cancel_during_a_retry_backoff_stops_retrying(db, store, registry, ports):
     run_id = db.start_run(db.template(EMAIL).id)
     search = Search(ports.search, _always(lambda: AgentError("Couldn't reach the search service.")))
+    sleeps: list[float] = []
 
     async def sleep_then_cancel(seconds: float) -> None:
+        sleeps.append(seconds)
         if search.calls == 1:
             db.cancel_run(run_id)
 
-    await Orchestrator(
+    status = await Orchestrator(
         store, registry, dataclasses.replace(ports, search=search), sleep=sleep_then_cancel, jitter=lambda: 0.0
     ).execute(run_id)
 
-    assert _run(db, run_id).status == RunStatus.CANCELLED
-    assert search.calls == 1
+    assert status == RunStatus.CANCELLED
+    assert search.calls == 1 and sleeps == [2.0]
+    run = _run(db, run_id)
+    assert (run.status, run.failed_nodes) == (RunStatus.CANCELLED, 0)  # cancelled, not failed
+    assert run.completed_at is not None
+    research, write, email = _logs(db, run_id)
+    # The step stops retrying; it keeps the log of the attempt it made.
+    assert (research.status, research.retry_count) == (NodeStatus.SKIPPED, 1)
+    assert research.error_message == "[attempt 1] Couldn't reach the search service."
+    assert store.node_transitions(research.node_id) == ["running", "retrying", "skipped"]
+    _assert_skipped(write)
+    _assert_skipped(email)
+    assert ports.email.sent == []
 
 
-@pytest.mark.xfail(
-    strict=True,
-    raises=AssertionError,
-    reason=(
-        "BUG: a cancelled run never gets completed_at — the API's cancel (api/src/api/routers/runs.py:144) "
-        "only sets status, and the orchestrator's cancel branch (worker/src/worker/orchestrator.py:89-91) "
-        "returns without calling store.set_run_status(CANCELLED), the one place completed_at is written."
-    ),
-)
+async def test_a_cancel_during_an_attempt_that_fails_starts_no_wait(db, store, registry, ports, sleeps):
+    run_id = db.start_run(db.template(BLOG).id)
+
+    def cancel_then_fail(_: int) -> object:
+        db.cancel_run(run_id)
+        raise AgentError("Couldn't reach the search service.")
+
+    search = Search(ports.search, cancel_then_fail)
+
+    assert await _orchestrator(store, registry, ports, sleeps, search=search).execute(run_id) == RunStatus.CANCELLED
+
+    assert search.calls == 1 and sleeps == []
+    research, write = _logs(db, run_id)
+    assert research.status == NodeStatus.SKIPPED
+    _assert_skipped(write)
+
+
 async def test_a_cancelled_run_records_when_it_ended(db, store, registry, ports, sleeps):
     run_id = db.start_run(db.template(EMAIL).id)
     llm = LLM(ports.llm, before=lambda call: db.cancel_run(run_id) if call == 1 else None)
 
     assert await _orchestrator(store, registry, ports, sleeps, llm=llm).execute(run_id) == RunStatus.CANCELLED
 
-    assert _run(db, run_id).completed_at is not None
+    run = _run(db, run_id)
+    assert run.completed_at is not None
+    assert run.completed_at >= max(log.completed_at for log in _logs(db, run_id)[:2])  # after the writer ended
+    assert store.run_transitions() == ["running", "cancelled"]
+
+
+async def test_a_run_cancelled_while_its_worker_was_lost_is_closed_on_redelivery(db, store, registry, ports, sleeps):
+    def die_on_first_call(call: int) -> None:
+        if call == 1:
+            raise WorkerKilled
+
+    run_id = db.start_run(db.template(BLOG).id)
+    with pytest.raises(WorkerKilled):
+        await _orchestrator(store, registry, ports, sleeps, llm=LLM(ports.llm, before=die_on_first_call)).execute(
+            run_id
+        )
+    db.cancel_run(run_id)  # the writer reads as running, so the cancel leaves the run open for the worker
+    assert _run(db, run_id).completed_at is None
+    llm = LLM(ports.llm)
+
+    assert await _redeliver(store, registry, ports, sleeps, run_id, llm=llm) == RunStatus.CANCELLED
+
+    assert llm.calls == 0  # the writer isn't run again for a cancelled run
+    research, write = _logs(db, run_id)
+    assert (research.status, write.status) == (NodeStatus.SUCCESS, NodeStatus.SKIPPED)
+    run = _run(db, run_id)
+    assert run.status == RunStatus.CANCELLED and run.completed_at is not None
 
 
 # ------------------------------------------------------------------ worker crash and redelivery
@@ -434,43 +474,47 @@ async def test_a_redelivered_run_keeps_the_retry_budget_it_had_used(db, store, r
     assert _run(db, run_id).failed_nodes == 1
 
 
-class DiesBeforeMarkingSuccess:
-    """Mixin for the store: the worker dies after `save_output` committed but before the step is marked
-    `success` — two separate transactions in `_run_with_retry`."""
-
-    def __init__(self, *args, node_id: uuid.UUID, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.victim = node_id
-
-    def set_node_status(self, run_id, node_id, status, **kwargs):
-        if node_id == self.victim and status == NodeStatus.SUCCESS:
-            raise WorkerKilled
-        super().set_node_status(run_id, node_id, status, **kwargs)
-
-
-@pytest.mark.xfail(
-    strict=True,
-    raises=AssertionError,
-    reason=(
-        "BUG: save_output and the SUCCESS status are separate commits (worker/src/worker/orchestrator.py:158-159), "
-        "and SqlRunStore.save_output (worker/src/worker/store.py:138) only inserts. A worker lost between the two "
-        "leaves the step `running` with its output saved; the redelivery re-runs it and saves a second copy."
-    ),
+@pytest.mark.parametrize(
+    ("when", "left_behind"),
+    [
+        ("before_commit", (NodeStatus.RUNNING, 0)),  # neither is kept: the step runs again
+        ("after_commit", (NodeStatus.SUCCESS, 1)),  # both are kept: the step is done
+    ],
+    ids=["inside-the-commit", "right-after-the-commit"],
 )
-async def test_a_crash_between_saving_output_and_marking_success_leaves_one_output(
-    db, store, registry, ports, sleeps, session_factory, storage_root
+async def test_a_worker_lost_while_a_step_is_saved_never_leaves_an_output_without_its_success(
+    db, store, registry, ports, sleeps, session_factory, storage_root, when, left_behind
 ):
+    """The output and the step's `success` are one transaction, so a lost worker leaves both or neither.
+    With two commits, a worker lost right after the first left the step `running` with its output saved,
+    and the redelivery ran it again and saved a second copy."""
     run_id = db.start_run(db.template(BLOG).id)
     _, write = _logs(db, run_id)
-    crashing = type("CrashingStore", (DiesBeforeMarkingSuccess, type(store)), {})(
-        session_factory, str(storage_root), node_id=write.node_id
-    )
+    sessions = sessionmaker(**session_factory.kw)  # same database, its own hooks
+
+    @event.listens_for(sessions, "after_flush")
+    def note_the_output(session, _context) -> None:
+        if any(isinstance(o, AgentOutput) and o.log_id == write.id for o in session.new):
+            session.info["writes_the_output"] = True
+
+    @event.listens_for(sessions, "before_commit")
+    def die_inside_the_commit(session) -> None:
+        session.flush()
+        if when == "before_commit" and session.info.get("writes_the_output"):
+            raise WorkerKilled
+
+    @event.listens_for(sessions, "after_commit")
+    def die_once_committed(session) -> None:
+        if when == "after_commit" and session.info.pop("writes_the_output", False):
+            raise WorkerKilled
 
     with pytest.raises(WorkerKilled):
-        await _orchestrator(crashing, registry, ports, sleeps).execute(run_id)
+        await _orchestrator(type(store)(sessions, str(storage_root)), registry, ports, sleeps).execute(run_id)
     _, write = _logs(db, run_id)
-    assert write.status == NodeStatus.RUNNING and len(_texts(db, write.id)) == 1
+    assert (write.status, len(_texts(db, write.id))) == left_behind
 
     assert await _redeliver(store, registry, ports, sleeps, run_id) == RunStatus.SUCCEEDED
 
+    _, write = _logs(db, run_id)
+    assert write.status == NodeStatus.SUCCESS
     assert len(_texts(db, write.id)) == 1
