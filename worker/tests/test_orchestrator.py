@@ -131,6 +131,39 @@ async def test_cancelled_run_skips_remaining_nodes(store, registry, ports):
     assert store.status_of(run_id, graph.nodes[1].id) == NodeStatus.SKIPPED
 
 
+async def test_a_cancel_between_attempts_stops_retrying(store, registry, ports):
+    ReverseAgent.failures_before_success = 99
+    graph = chain("shout", "reverse", "shout", config={"text": "abc"})
+    run_id = _run(store, graph)
+
+    async def cancel_during_the_wait(_: float) -> None:
+        store.runs[run_id] = RunStatus.CANCELLED
+
+    status = await Orchestrator(store, registry, ports, sleep=cancel_during_the_wait).execute(run_id)
+
+    assert status == RunStatus.CANCELLED and store.runs[run_id] == RunStatus.CANCELLED
+    assert ReverseAgent.calls == 1
+    assert store.status_of(run_id, graph.nodes[1].id) == NodeStatus.SKIPPED
+    assert store.status_of(run_id, graph.nodes[2].id) == NodeStatus.SKIPPED
+
+
+async def test_a_cancel_during_the_last_step_is_not_replaced_by_succeeded(store, registry, ports):
+    graph = chain("shout", "reverse", config={"text": "abc"})
+    run_id = _run(store, graph)
+    original = store.complete_node
+
+    def cancel_as_the_last_step_ends(rid, nid, output, **kw):
+        if nid == graph.nodes[1].id:
+            store.runs[rid] = RunStatus.CANCELLED
+        original(rid, nid, output, **kw)
+
+    store.complete_node = cancel_as_the_last_step_ends
+
+    assert await Orchestrator(store, registry, ports).execute(run_id) == RunStatus.CANCELLED
+    assert store.runs[run_id] == RunStatus.CANCELLED
+    assert store.outputs[(run_id, graph.nodes[1].id)] == {"text": "CBA"}  # what it made is kept
+
+
 async def test_an_attempt_past_the_step_deadline_is_stopped_and_not_retried(
     store, registry, ports, sleeps, monkeypatch
 ):
