@@ -186,7 +186,26 @@ def test_cancel_skips_steps_that_have_not_started(client, headers, sessions):
     state = client.post(f"/runs/{run_id}/cancel", headers=headers).json()
     assert state["status"] == "cancelled"
     assert {n["status"] for n in state["nodes"]} == {"skipped"}
+    # Nothing was running, so no worker will close the run: it ended with the cancel.
+    assert state["completed_at"] is not None
     assert client.post(f"/runs/{run_id}/cancel", headers=headers).status_code == 409
+
+
+def test_cancel_with_a_step_running_leaves_the_end_time_to_the_worker(client, headers, sessions):
+    wf = client.post(
+        "/workflows", json={"graph": graph("researcher", "writer", configs=[{"topic": "solar"}, {}])}, headers=headers
+    ).json()
+    run_id = client.post(f"/workflows/{wf['id']}/run", headers=headers).json()["run_id"]
+    with sessions() as s:
+        s.query(ExecutionLog).filter(ExecutionLog.position_order == 0).one().status = "running"
+        s.query(ExecutionRun).one().status = "running"
+        s.commit()
+
+    state = client.post(f"/runs/{run_id}/cancel", headers=headers).json()
+
+    assert state["status"] == "cancelled"
+    assert sorted(n["status"] for n in state["nodes"]) == ["running", "skipped"]
+    assert state["completed_at"] is None  # the run ends when the researcher does
 
 
 # ---------------------------------------------------------------- a decision is made once, and only while it counts
