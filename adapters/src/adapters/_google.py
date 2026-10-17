@@ -18,7 +18,7 @@ from typing import Any
 import httpx
 
 from contracts.errors import AgentError, NonRetryableAgentError
-from contracts.ports import EmailPort, PublishMetadata, PublishPort, PublishResult
+from contracts.ports import EmailPort, PublishMetadata, PublishPort, PublishResult, StoragePort
 
 TOKEN_URI = "https://oauth2.googleapis.com/token"
 
@@ -98,11 +98,12 @@ class NoGoogleEmail:
         raise MissingCredentialError()
 
 
-def google_ports(credential: Mapping[str, Any]) -> tuple[dict[str, PublishPort], EmailPort]:
-    """The publishers and email port for one resolved Google credential."""
+def google_ports(credential: Mapping[str, Any], storage: StoragePort) -> tuple[dict[str, PublishPort], EmailPort]:
+    """The publishers and email port for one resolved Google credential. The publishers read the file
+    they upload from `storage`."""
     from adapters.email.gmail import GmailEmail
     from adapters.publish.drive import DrivePublisher
     from adapters.publish.youtube import YouTubePublisher
 
     info = dict(credential)
-    return {"youtube": YouTubePublisher(info), "drive": DrivePublisher(info)}, GmailEmail(info)
+    return {"youtube": YouTubePublisher(info, storage), "drive": DrivePublisher(info, storage)}, GmailEmail(info)
