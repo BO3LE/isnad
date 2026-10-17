@@ -7,9 +7,10 @@ from uuid import UUID
 from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, sessionmaker
 
-from api.auth import InvalidToken, verify_token
+from api.auth import InvalidToken, supabase_email_confirmed, verify_token
 from api.catalog import CatalogSource, RedisCatalog
 from api.queue import CeleryEnqueuer, Enqueuer
 from api.settings import ApiSettings, get_settings
@@ -64,6 +65,31 @@ def get_file_signer(settings: ApiSettings = Depends(get_settings)) -> FileSigner
     return _signer(settings.supabase_url, settings.supabase_service_key, settings.storage_bucket)
 
 
+# (user id, email) pairs Supabase has confirmed, so the admin API is asked once per process, not
+# on every request of a linked account. Only "yes" is remembered: someone who confirms later gets in.
+_confirmed_links: set[tuple[UUID, str]] = set()
+EMAIL_TAKEN = "This email address is already used by another account on this server."
+
+
+def _may_link(settings: ApiSettings, user_id: UUID, email: str) -> bool:
+    """Whether a new sign-in may take over the existing account with the same address.
+
+    With dev login on, an address proves nothing — anyone can dev-login as anyone — so there is
+    nothing to protect. Otherwise only when Supabase says this user confirmed that address: a
+    seeded demo account (SEED_DEMO_EMAIL) is meant to be claimed this way, by its owner.
+    """
+    if settings.dev_login_allowed:
+        return True
+    if (user_id, email) in _confirmed_links:
+        return True
+    if supabase_email_confirmed(settings, user_id, email):
+        if len(_confirmed_links) > 4096:
+            _confirmed_links.clear()
+        _confirmed_links.add((user_id, email))
+        return True
+    return False
+
+
 def get_current_user(
     request: Request,
     credentials: HTTPAuthorizationCredentials | None = Depends(bearer),
@@ -75,22 +101,31 @@ def get_current_user(
             status.HTTP_401_UNAUTHORIZED, "Sign in to continue.", headers={"WWW-Authenticate": "Bearer"}
         )
     try:
-        user_id, email = verify_token(settings, credentials.credentials)
+        token = verify_token(settings, credentials.credentials)
     except InvalidToken:
         raise HTTPException(
             status.HTTP_401_UNAUTHORIZED,
             "Your session has expired. Sign in again.",
             headers={"WWW-Authenticate": "Bearer"},
         ) from None
-    user = session.get(User, user_id)
+    user = session.get(User, token.user_id)
     if user is None:
         # First request from a Supabase-authenticated user: mirror them into `users`.
+        email = token.email.lower()
         existing = session.scalar(select(User).where(User.email == email)) if email else None
         if existing is not None:
-            return existing
-        user = User(id=user_id, email=email or f"{user_id}@unknown.local")
+            if _may_link(settings, token.user_id, email):
+                return existing
+            raise HTTPException(status.HTTP_403_FORBIDDEN, EMAIL_TAKEN)
+        user = User(id=token.user_id, email=email or f"{token.user_id}@unknown.local")
         session.add(user)
-        session.commit()
+        try:
+            session.commit()
+        except IntegrityError:  # a second first request, a moment earlier
+            session.rollback()
+            user = session.get(User, token.user_id)
+            if user is None:
+                raise HTTPException(status.HTTP_403_FORBIDDEN, EMAIL_TAKEN) from None
     return user
 
 

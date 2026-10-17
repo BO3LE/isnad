@@ -13,6 +13,9 @@ from api.settings import ApiSettings, get_settings
 
 def create_app(settings: ApiSettings | None = None) -> FastAPI:
     settings = settings or get_settings()
+    problems = settings.production_problems()
+    if problems:
+        raise RuntimeError("Refusing to start with ENVIRONMENT=production: " + " ".join(problems))
     app = FastAPI(
         title="GP Platform API",
         version=__version__,
