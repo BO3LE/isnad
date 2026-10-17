@@ -5,6 +5,7 @@ import { Banner } from "@/design-system/components/Banner";
 import { IconButton } from "@/design-system/components/IconButton";
 import { Switch } from "@/design-system/components/Switch";
 import { Tabs } from "@/design-system/components/Tabs";
+import { tabPanel } from "@/design-system/components/tab-panel";
 import type { AgentManifest, ValidationResult } from "@/lib/api";
 import { fallbackFor, producerOf, withArticle, type StepHandover } from "@/lib/handover";
 import { resolveFields, setValue, type Configuration } from "@/lib/schema";
@@ -20,6 +21,9 @@ import { InheritChip, ProviderText, SchemaField } from "./SchemaField";
 // There is no Save button. Every change goes into the canvas graph and the page's 800 ms autosave.
 
 type Issue = ValidationResult["issues"][number];
+
+/** One name for the tablist and its panels: two literals would drift apart silently. */
+const STEP_PANELS = "Step panels";
 
 export interface StepDrawerProps {
   workflowId: string;
@@ -108,7 +112,7 @@ export function StepDrawer({
       </header>
 
       <Tabs
-        label="Step panels"
+        label={STEP_PANELS}
         className="px-4"
         value={tab}
         onChange={setTab}
@@ -116,7 +120,7 @@ export function StepDrawer({
       />
 
       {tab === "settings" ? (
-        <div className="grid min-h-0 flex-1 content-start gap-5 overflow-y-auto p-4">
+        <div {...tabPanel(STEP_PANELS, "settings")} className="grid min-h-0 flex-1 content-start gap-5 overflow-y-auto p-4">
           {manifest?.description && <p className="text-body-md text-text-muted">{manifest.description}</p>}
 
           {/* The server owns validation; its words are shown as they are (§15.5). */}
@@ -201,7 +205,7 @@ export function StepDrawer({
           )}
         </div>
       ) : (
-        <div className="grid min-h-0 flex-1 content-start gap-2 overflow-y-auto p-4">
+        <div {...tabPanel(STEP_PANELS, "output")} className="grid min-h-0 flex-1 content-start gap-2 overflow-y-auto p-4">
           <LastOutput state={lastOutput} />
         </div>
       )}

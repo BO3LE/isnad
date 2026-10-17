@@ -48,6 +48,22 @@
   }
 }
 
+/* §13 asks for 44 × 44 px targets on a coarse pointer. That is NOT met, and the attempt to meet
+ * it with a blanket invisible hit area is why this comment exists rather than a rule.
+ *
+ * Inflating every button to 44 px cannot know what sits next to it. It made the show-password
+ * toggle capture taps 6 px inside the password field — revealing a password to anyone aiming at
+ * the end of their own text — and left every React Flow control overlapping both neighbours by
+ * 9 px, so a tap near a boundary hit whichever painted last. Excluding overlay buttons fixed the
+ * first case and nothing about the second.
+ *
+ * Meeting §13 here means changing control sizes and spacing, which is a design decision (§14.1
+ * fixes button heights at 28 / 36 / 44) and not something a stylesheet can infer. `responsive.spec.ts`
+ * holds the line that no control's hit area may cover another, so a second attempt at this cannot
+ * land quietly.
+ */
+
+
 /* React Flow theming — DESIGN-SYSTEM.md §24.7 */
 .react-flow__edge-path {
   stroke: var(--color-border-strong);

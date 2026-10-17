@@ -86,12 +86,18 @@ export interface SearchInputProps extends Omit<InputProps, "type" | "value" | "o
   label: string;
 }
 
-export function SearchInput({ value, onValueChange, label, className = "", ...rest }: SearchInputProps) {
+// Forwards its ref like the other inputs: §13 gives the log's filter a shortcut key, and focusing
+// a field from a shortcut needs a handle on it.
+export const SearchInput = forwardRef<HTMLInputElement, SearchInputProps>(function SearchInput(
+  { value, onValueChange, label, className = "", ...rest },
+  ref,
+) {
   return (
     <div className={`relative ${className}`}>
       <Search size={16} aria-hidden className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-text-subtle" />
       <Input
         {...rest}
+        ref={ref}
         type="search"
         aria-label={label}
         value={value}
@@ -110,7 +116,7 @@ export function SearchInput({ value, onValueChange, label, className = "", ...re
       )}
     </div>
   );
-}
+});
 
 export interface PasswordInputProps extends Omit<InputProps, "type"> {
   /** "current-password" on sign in, "new-password" on register (§21 S-01). */

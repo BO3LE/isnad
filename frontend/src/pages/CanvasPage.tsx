@@ -82,7 +82,7 @@ function CanvasPageInner() {
   const { workflowId = "" } = useParams();
   const toast = useToast();
   const queryClient = useQueryClient();
-  const { screenToFlowPosition, getViewport, fitView, setCenter } = useReactFlow();
+  const { screenToFlowPosition, getViewport, fitView, setCenter, setViewport, zoomIn, zoomOut } = useReactFlow();
 
   const userEmail = useAuth((state) => state.email);
   const [nodes, setNodes, onNodesChange] = useNodesState<StepData>([]);
@@ -371,19 +371,6 @@ function CanvasPageInner() {
     [setNodes, setEdges],
   );
 
-  // §13 keyboard: ⌘Z / ⌘⇧Z anywhere on the canvas.
-  useEffect(() => {
-    function onKeyDown(event: KeyboardEvent) {
-      const target = event.target as HTMLElement | null;
-      if (runMode || target?.matches("input, textarea, select, [contenteditable='true']")) return;
-      if (!(event.metaKey || event.ctrlKey) || event.key.toLowerCase() !== "z") return;
-      event.preventDefault();
-      applySnapshot(event.shiftKey ? history.redo(snapshot()) : history.undo(snapshot()));
-    }
-    document.addEventListener("keydown", onKeyDown);
-    return () => document.removeEventListener("keydown", onKeyDown);
-  }, [history, snapshot, applySnapshot, runMode]);
-
   const closeDrawer = useCallback(() => setSelectedId(null), []);
 
   // §15.5 "Go to node" — select the step, centre it, and open its settings, so the issue the user
@@ -479,6 +466,55 @@ function CanvasPageInner() {
       });
     },
   });
+
+  // §13's keyboard table for the canvas. Deletion is React Flow's `deleteKeyCode`, and Enter on a
+  // focused step is the node being a real <button> — everything else is here.
+  //
+  // Zoom stays available during a run: watching is a legitimate thing to do with the keyboard, and
+  // it changes nothing. Undo, redo and Run are edits, so they stop while a run owns the canvas.
+  //
+  // The handler is held in a ref and the listener attached once. Written the obvious way, its
+  // dependencies change on nearly every render — `useMutation` alone returns a fresh object each
+  // time — and the listener was detaching and re-attaching about thirteen times per interaction,
+  // hardest while a run polls and this component re-renders most.
+  const onCanvasKey = useRef<(event: KeyboardEvent) => void>();
+  onCanvasKey.current = (event: KeyboardEvent) => {
+    const target = event.target as HTMLElement | null;
+    if (target?.matches("input, textarea, select, [contenteditable='true']")) return;
+    // A dialog makes the page behind it inert to pointers, but not to a document-level key
+    // listener: with the shortcuts dialog open, ⌘↵ started a real run and "+" zoomed the canvas
+    // underneath it. Nothing on the canvas answers a key while something is open over it.
+    if (document.querySelector("dialog[open]")) return;
+    const mod = event.metaKey || event.ctrlKey;
+
+    if (!mod && ["+", "=", "-", "_", "0", "1"].includes(event.key)) {
+      event.preventDefault();
+      if (event.key === "+" || event.key === "=") zoomIn({ duration: 0 });
+      else if (event.key === "-" || event.key === "_") zoomOut({ duration: 0 });
+      else if (event.key === "0") fitView(FIT_VIEW);
+      else setViewport({ ...getViewport(), zoom: 1 });
+      return;
+    }
+
+    if (runMode) return;
+
+    if (mod && event.key === "Enter") {
+      event.preventDefault();
+      if (!run.isPending) run.mutate();
+      return;
+    }
+
+    if (mod && event.key.toLowerCase() === "z") {
+      event.preventDefault();
+      applySnapshot(event.shiftKey ? history.redo(snapshot()) : history.undo(snapshot()));
+    }
+  };
+
+  useEffect(() => {
+    const listener = (event: KeyboardEvent) => onCanvasKey.current?.(event);
+    document.addEventListener("keydown", listener);
+    return () => document.removeEventListener("keydown", listener);
+  }, []);
 
   const cancelRun = useMutation({
     mutationFn: () => endpoints.cancel(canvasRun.runId!),

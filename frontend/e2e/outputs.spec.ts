@@ -21,6 +21,8 @@ const run = {
 const outputs = [
   { id: "ready", node_id: "v", agent_type: "video", kind: "file", filename: "video.mp4", mime_type: "video/mp4", bytes: 4036, created_at: "2026-09-20T10:00:00Z" },
   { id: "gone", node_id: "d", agent_type: "writer", kind: "file", filename: "article.pdf", mime_type: "application/pdf", bytes: 180000, created_at: "2026-09-20T10:00:01Z" },
+  // The Video step's own text: §13 calls this the video's text alternative.
+  { id: "narration", node_id: "v", agent_type: "video", kind: "text", filename: null, mime_type: null, bytes: null, created_at: "2026-09-20T10:00:02Z" },
 ];
 
 async function openFiles(page: Page) {
@@ -34,6 +36,9 @@ async function openFiles(page: Page) {
   );
   // This one has no file behind it, so the page must offer nothing rather than a dead control.
   await page.route("http://api.mock/outputs/gone", (r) => r.fulfill({ status: 404, json: { detail: "This output has no file." } }));
+  await page.route("http://api.mock/outputs/narration", (r) =>
+    r.fulfill({ json: { id: "narration", text: "Saudi Arabia receives some of the strongest sunlight on Earth.", expires_in: 0 } }),
+  );
 
   await page.goto("/login");
   await page.getByLabel("Email").fill("demo@gp.local");
@@ -60,4 +65,25 @@ test("a file with nothing behind it says so, and cannot be reached by keyboard",
   const downloads = page.locator("a").filter({ hasText: "Download" });
   await expect(downloads).toHaveCount(1);
   await expect(downloads.first()).toHaveAttribute("href", "http://files.test/video.mp4");
+});
+
+test("a generated video carries the words it speaks", async ({ page }) => {
+  // §13 Media — a generated video has no caption track, so the narration script is its text
+  // alternative. Without it the card is a black rectangle to anyone who cannot hear it.
+  await openFiles(page);
+
+  // Scoped to the file card: the same words also appear in the Text section, because until
+  // `agent_outputs` records which field a row came from, the page cannot tell a narration script
+  // from an article and lists every text output there.
+  const files = page.getByRole("region", { name: "Files" });
+  const summary = files.getByText("What the narration says");
+  await expect(summary).toBeVisible();
+  await summary.click();
+  await expect(files.getByText("Saudi Arabia receives some of the strongest sunlight on Earth.")).toBeVisible();
+
+  // And the video points at it, so a screen reader reaches the words from the video itself.
+  const video = page.locator("video");
+  const describedBy = await video.getAttribute("aria-describedby");
+  expect(describedBy).toBeTruthy();
+  await expect(page.locator(`#${describedBy}`)).toHaveText(/strongest sunlight/);
 });
