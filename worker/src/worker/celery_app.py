@@ -28,6 +28,9 @@ from worker.settings import adapter_settings, get_settings
 from worker.store import SqlRunStore
 
 log = logging.getLogger(__name__)
+# httpx logs every request URL at INFO; held to warnings, as in the API (api/logs.py).
+for _noisy in ("httpx", "httpcore"):
+    logging.getLogger(_noisy).setLevel(logging.WARNING)
 settings = get_settings()
 
 app = Celery("worker", broker=settings.redis_url, backend=settings.redis_url)

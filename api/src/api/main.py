@@ -7,6 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
 from api import __version__
+from api.logs import install_log_redaction
 from api.routers import agents, auth, connections, health, outputs, runs, workflows
 from api.settings import ApiSettings, get_settings
 
@@ -16,6 +17,7 @@ def create_app(settings: ApiSettings | None = None) -> FastAPI:
     problems = settings.production_problems()
     if problems:
         raise RuntimeError("Refusing to start with ENVIRONMENT=production: " + " ".join(problems))
+    install_log_redaction()
     app = FastAPI(
         title="GP Platform API",
         version=__version__,
