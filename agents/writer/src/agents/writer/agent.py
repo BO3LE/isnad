@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 
 from pydantic import ValidationError
@@ -33,13 +34,18 @@ class WriterAgent(BaseAgent[WriteInput, WriteOutput]):
             notes="\n".join(f"- {n}" for n in input_data.notes),
             sources="\n".join(f"[{i + 1}] {s.title} — {s.url}" for i, s in enumerate(input_data.sources)) or "(none)",
         )
-        answer = await ports.llm.complete(prompt, system=SYSTEM, json_mode=True)
+        # The schema lets a provider that supports it (LM Studio, Ollama, OpenAI) constrain the answer
+        # to this shape; the answer is still validated here either way.
+        answer = await ports.llm.complete(prompt, system=SYSTEM, json_mode=True, json_schema=OUTPUT_SCHEMA)
         try:
             return _parse(answer)
         except (ValueError, ValidationError) as first:
             # One reformat attempt inside the agent (risk R5) before the orchestrator's retry counter moves.
             retry = await ports.llm.complete(
-                REFORMAT.format(problem=_short(first), answer=answer), system=SYSTEM, json_mode=True
+                REFORMAT.format(problem=_short(first), answer=answer),
+                system=SYSTEM,
+                json_mode=True,
+                json_schema=OUTPUT_SCHEMA,
             )
             try:
                 return _parse(retry)
@@ -49,8 +55,24 @@ class WriterAgent(BaseAgent[WriteInput, WriteOutput]):
                 ) from second
 
 
+OUTPUT_SCHEMA = WriteOutput.model_json_schema()
+_FENCE = re.compile(r"^\s*```(?:json)?\s*\n(.*?)\n\s*```\s*$", re.S | re.I)
+
+
 def _parse(answer: str) -> WriteOutput:
-    return WriteOutput.model_validate(json.loads(answer))
+    return WriteOutput.model_validate(json.loads(_json_text(answer)))
+
+
+def _json_text(answer: str) -> str:
+    """The JSON object in `answer`. Without constrained decoding, models often wrap it in a ```json
+    fence or put a sentence before it; that is unwrapped here rather than costing a reformat call."""
+    fenced = _FENCE.match(answer)
+    if fenced:
+        return fenced.group(1)
+    start, end = answer.find("{"), answer.rfind("}")
+    if start > 0 and end > start and not answer[:start].strip().startswith(("[", '"')):
+        return answer[start : end + 1]
+    return answer
 
 
 def _short(exc: Exception) -> str:

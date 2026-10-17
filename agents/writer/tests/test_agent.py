@@ -32,3 +32,36 @@ async def test_one_reformat_attempt_then_a_readable_error(ports):
         await agent.execute(agent.input_model.model_validate(FIXTURE), replace(ports, llm=llm))
     assert len(llm.prompts) == 2
     assert err.value.code == "invalid_model_output"
+
+
+async def test_the_writer_asks_for_its_output_schema(ports):
+    """So LM Studio, Ollama or OpenAI can constrain decoding to exactly this shape."""
+    from dataclasses import replace
+
+    from contracts.agent_io import WriteOutput
+
+    llm = FakeLLM()
+    agent = WriterAgent()
+    await agent.execute(agent.input_model.model_validate(FIXTURE), replace(ports, llm=llm))
+    (call,) = llm.calls
+    assert call["json_schema"] == WriteOutput.model_json_schema()
+    assert call["json_mode"] is True
+
+
+@pytest.mark.parametrize(
+    "answer",
+    [
+        '```json\n{"title": "T", "summary": "S.", "article_md": "# T\\n\\nBody."}\n```',
+        'Here is the article:\n{"title": "T", "summary": "S.", "article_md": "# T\\n\\nBody."}',
+        '\n  {"title": "T", "summary": "S.", "article_md": "# T\\n\\nBody."}  \n',
+    ],
+    ids=["fenced", "preamble", "whitespace"],
+)
+async def test_json_wrapped_the_way_unconstrained_models_wrap_it_needs_no_reformat_call(ports, answer):
+    from dataclasses import replace
+
+    llm = FakeLLM(response=answer)
+    agent = WriterAgent()
+    out = await agent.execute(agent.input_model.model_validate(FIXTURE), replace(ports, llm=llm))
+    assert out.title == "T"
+    assert len(llm.prompts) == 1

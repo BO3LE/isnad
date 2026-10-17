@@ -9,6 +9,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import random
+import re
 from collections.abc import Awaitable, Callable
 from typing import Any
 from uuid import UUID
@@ -182,5 +183,23 @@ def _describe(exc: BaseException) -> str:
         return exc.message
     if isinstance(exc, ValidationError):
         return "; ".join(f"{'.'.join(map(str, e['loc'])) or 'value'} — {e['msg']}" for e in exc.errors()[:3])
+    # Anything else is a library's own message: it is shown to the person and logged, so whatever
+    # in it could be a credential — a URL's query or user:password, a bearer token, key=value — goes.
     text = str(exc).strip() or exc.__class__.__name__
-    return text.splitlines()[0][:500]
+    return scrub(text.splitlines()[0])[:500]
+
+
+_URL_USERINFO = re.compile(r"(?i)\b([a-z][a-z0-9+.-]*://)[^/\s@]+@")
+_URL_QUERY = re.compile(r"(?i)\b([a-z][a-z0-9+.-]*://[^\s?#'\"]*)\?[^\s#'\"]*")
+_BEARER = re.compile(r"(?i)\b(bearer|basic)\s+[a-z0-9._~+/=-]+")
+_KEY_VALUE = re.compile(
+    r"(?i)\b((?:access_|refresh_|id_)?token|api[_-]?key|apikey|secret|password|client_secret|authorization)"
+    r"(['\"]?\s*[=:]\s*)(['\"]?)[^\s'\",;&]+"
+)
+
+
+def scrub(text: str) -> str:
+    text = _URL_USERINFO.sub(r"\1[redacted]@", text)
+    text = _URL_QUERY.sub(r"\1?[redacted]", text)
+    text = _BEARER.sub(r"\1 [redacted]", text)
+    return _KEY_VALUE.sub(r"\1\2\3[redacted]", text)

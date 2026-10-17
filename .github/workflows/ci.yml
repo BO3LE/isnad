@@ -60,14 +60,14 @@ jobs:
           - component: db
             install: ./db
           - component: adapters
-            install: ./contracts "./adapters[storage]"
+            install: ./contracts "./adapters[storage,openai]"
           - component: exporters
             install: "./exporters[all,test]"
             ffmpeg: true
             pango: true # WeasyPrint (to_pdf) needs Pango at runtime, and HarfBuzz-Subset to subset fonts
           # The worker suite runs with NO agents installed — the C3 decoupling test.
           - component: worker
-            install: ./contracts ./db "./adapters[storage]" ./worker
+            install: ./contracts ./db "./adapters[storage,openai]" ./worker
           # The API suite runs with no worker, Redis or PostgreSQL — the C2 decoupling test.
           - component: api
             install: ./contracts ./db ./api[test]
@@ -165,7 +165,7 @@ jobs:
       - name: Install FFmpeg (the video template renders a real MP4)
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg
       - name: Install the worker, its dependencies and every agent (no api)
-        run: pip install -c constraints.txt ./contracts ./db ./adapters ./exporters ./worker ./agents/*/ pytest pytest-asyncio
+        run: pip install -c constraints.txt ./contracts ./db "./adapters[openai]" ./exporters ./worker ./agents/*/ pytest pytest-asyncio
       - name: Migrate, seed and run a full lifecycle per template
         run: python -m pytest tests/integration -q
 
