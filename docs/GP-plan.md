@@ -261,7 +261,7 @@ Every external service is reached through a narrow interface, never called direc
 
 | Adapter | Port | Swapping it costs |
 |---|---|---|
-| `adapters/llm/openai.py` | `LLMPort.complete(prompt) -> str` | One file |
+| `adapters/llm/openai_compatible.py` | `LLMPort.complete(prompt) -> str` | One file: LM Studio, Ollama, OpenAI or OpenRouter (`LLM_PROVIDER`) |
 | `adapters/search/tavily.py` | `SearchPort.search(query, n) -> Source[]` | One file |
 | `adapters/tts/gtts.py` | `TTSPort.speak(text) -> audio` | One file |
 | `adapters/publish/youtube.py` | `PublishPort.publish(file, meta) -> url` | One file |

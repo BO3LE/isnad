@@ -58,7 +58,7 @@ jobs:
           - component: db
             install: ./db
           - component: adapters
-            install: ./contracts "./adapters[storage]"
+            install: ./contracts "./adapters[storage,openai]"
           - component: exporters
             install: "./exporters[all,test]"
             ffmpeg: true
@@ -163,7 +163,7 @@ jobs:
       - name: Install FFmpeg (the video template renders a real MP4)
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg
       - name: Install the worker, its dependencies and every agent (no api)
-        run: pip install -c constraints.txt ./contracts ./db ./adapters ./exporters ./worker ./agents/*/ pytest pytest-asyncio
+        run: pip install -c constraints.txt ./contracts ./db "./adapters[openai]" ./exporters ./worker ./agents/*/ pytest pytest-asyncio
       - name: Migrate, seed and run a full lifecycle per template
         run: python -m pytest tests/integration -q
 
