@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Any
 from uuid import UUID
 
-from contracts.run import ApprovalDecision, NodeStatus, RunStatus, WorkflowGraph
+from contracts.run import TERMINAL_RUN_STATUSES, ApprovalDecision, NodeStatus, RunStatus, WorkflowGraph
 from worker.store import RunSnapshot
 
 
@@ -42,9 +42,11 @@ class InMemoryRunStore:
     def run_status(self, run_id: UUID) -> RunStatus:
         return self.runs[run_id]
 
-    def set_run_status(self, run_id: UUID, status: RunStatus) -> None:
-        self.runs[run_id] = status
-        self.history.append(("run", status))
+    def set_run_status(self, run_id: UUID, status: RunStatus) -> RunStatus:
+        if self.runs[run_id] not in TERMINAL_RUN_STATUSES:  # as SqlRunStore: a finished run stays finished
+            self.runs[run_id] = status
+            self.history.append(("run", status))
+        return self.runs[run_id]
 
     def set_node_status(self, run_id, node_id, status, *, retry_count=None, error=None) -> None:
         row = self.nodes[(run_id, node_id)]
@@ -55,8 +57,9 @@ class InMemoryRunStore:
             row["errors"].append(error)
         self.history.append((str(node_id), status))
 
-    def save_output(self, run_id: UUID, node_id: UUID, output: dict[str, Any]) -> None:
+    def complete_node(self, run_id: UUID, node_id: UUID, output: dict[str, Any], *, retry_count: int) -> None:
         self.outputs[(run_id, node_id)] = output
+        self.set_node_status(run_id, node_id, NodeStatus.SUCCESS, retry_count=retry_count)
 
     def approval(self, run_id: UUID, node_id: UUID) -> ApprovalDecision | None:
         return self.approvals.get((run_id, node_id))

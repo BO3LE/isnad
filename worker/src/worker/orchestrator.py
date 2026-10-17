@@ -2,6 +2,11 @@
 
 Re-entrant: running it again on the same run skips nodes already `success`, so the same
 code path resumes a run after an approval or after a worker restart.
+
+A cancel is final. The API records it at once; the step running then is left to end, and the
+orchestrator stops at the next point it checks — before each step and between retries — skips
+what is left and closes the run. A cancel that lands after the last check is still kept: the store
+never replaces a finished run's status, and the orchestrator returns the status the store reports.
 """
 
 from __future__ import annotations
@@ -41,6 +46,10 @@ Sleep = Callable[[float], Awaitable[None]]
 PortsFor = Callable[[UUID, GraphNode], Awaitable[Ports]]
 
 
+class _Cancelled(Exception):
+    """The run was cancelled between two attempts of a step: no further attempt starts."""
+
+
 def backoff_delay(attempt: int, jitter: float) -> float:
     """`2**attempt + random()` seconds — exactly as M2 §7.3.3 specifies."""
     return 2**attempt + jitter
@@ -68,6 +77,12 @@ class Orchestrator:
 
     async def execute(self, run_id: UUID) -> RunStatus:
         snap = self.store.load(run_id)
+        if snap.status == RunStatus.CANCELLED and any(
+            snap.node_status.get(n.id, NodeStatus.PENDING) not in TERMINAL_NODE_STATUSES for n in snap.graph.nodes
+        ):
+            # Cancelled while a worker that has since been lost was running a step: no one will
+            # finish that step now, so the run is closed here.
+            return self._cancelled(snap, list(snap.graph.nodes))
         if snap.status in TERMINAL_RUN_STATUSES:
             return snap.status
 
@@ -76,7 +91,8 @@ class Orchestrator:
         except CycleError:
             return self._halt(snap, [], None, "The workflow contains a loop.")
 
-        self.store.set_run_status(run_id, RunStatus.RUNNING)
+        if self.store.set_run_status(run_id, RunStatus.RUNNING) == RunStatus.CANCELLED:
+            return self._cancelled(snap, order)
         upstream_of = {n.id: ancestors(snap.graph, n.id) for n in order}
         outputs: dict[UUID, dict[str, Any]] = dict(snap.outputs)
 
@@ -88,8 +104,7 @@ class Orchestrator:
                 return self._finish_failed(snap, order[index:])
 
             if self.store.run_status(run_id) == RunStatus.CANCELLED:
-                self._skip(snap, order[index:])
-                return RunStatus.CANCELLED
+                return self._cancelled(snap, order[index:])
 
             try:
                 agent = self.registry.get(node.agent_type)
@@ -102,7 +117,8 @@ class Orchestrator:
                 decision = self.store.approval(run_id, node.id)
                 if decision is None:
                     self.store.set_node_status(run_id, node.id, NodeStatus.AWAITING_APPROVAL)
-                    self.store.set_run_status(run_id, RunStatus.AWAITING_APPROVAL)
+                    if self.store.set_run_status(run_id, RunStatus.AWAITING_APPROVAL) == RunStatus.CANCELLED:
+                        return self._cancelled(snap, order[index:])
                     return RunStatus.AWAITING_APPROVAL
                 if decision == ApprovalDecision.REJECT:
                     return self._halt(snap, order[index + 1 :], node, REJECTED_BY_REVIEWER)
@@ -121,13 +137,15 @@ class Orchestrator:
                     snap, order[index + 1 :], node, f"{agent.manifest.title} is missing input: {_describe(exc)}"
                 )
 
-            result = await self._run_with_retry(snap, node, agent, input_obj)
+            try:
+                result = await self._run_with_retry(snap, node, agent, input_obj)
+            except _Cancelled:
+                return self._cancelled(snap, order[index + 1 :])
             if result is None:
                 return self._finish_failed(snap, order[index + 1 :])
             outputs[node.id] = result
 
-        self.store.set_run_status(run_id, RunStatus.SUCCEEDED)
-        return RunStatus.SUCCEEDED
+        return self.store.set_run_status(run_id, RunStatus.SUCCEEDED)
 
     async def _run_with_retry(
         self, snap: RunSnapshot, node: GraphNode, agent, input_obj: BaseModel
@@ -155,12 +173,20 @@ class Orchestrator:
                     return None
                 retry_count += 1
                 self.store.set_node_status(run_id, node.id, NodeStatus.RETRYING, retry_count=retry_count, error=message)
+                self._stop_if_cancelled(run_id, node, retry_count)  # landed during the attempt: don't wait
                 await self._sleep(backoff_delay(retry_count, self._jitter()))
+                self._stop_if_cancelled(run_id, node, retry_count)  # landed during the wait
                 self.store.set_node_status(run_id, node.id, NodeStatus.RUNNING, retry_count=retry_count)
                 continue
-            self.store.save_output(run_id, node.id, output)
-            self.store.set_node_status(run_id, node.id, NodeStatus.SUCCESS, retry_count=retry_count)
+            self.store.complete_node(run_id, node.id, output, retry_count=retry_count)
             return output
+
+    def _stop_if_cancelled(self, run_id: UUID, node: GraphNode, retry_count: int) -> None:
+        """Between attempts. The step is skipped — the run is cancelled, not failed, so it doesn't count
+        as a failed step — and keeps the log of the attempts it made."""
+        if self.store.run_status(run_id) == RunStatus.CANCELLED:
+            self.store.set_node_status(run_id, node.id, NodeStatus.SKIPPED, retry_count=retry_count)
+            raise _Cancelled
 
     def _halt(self, snap: RunSnapshot, remaining: list[GraphNode], node: GraphNode | None, message: str) -> RunStatus:
         if node is not None:
@@ -169,8 +195,12 @@ class Orchestrator:
 
     def _finish_failed(self, snap: RunSnapshot, remaining: list[GraphNode]) -> RunStatus:
         self._skip(snap, remaining)
-        self.store.set_run_status(snap.run_id, RunStatus.FAILED)
-        return RunStatus.FAILED
+        return self.store.set_run_status(snap.run_id, RunStatus.FAILED)  # stays cancelled if it was
+
+    def _cancelled(self, snap: RunSnapshot, remaining: list[GraphNode]) -> RunStatus:
+        """Skips what won't run now and closes the run, which records when it ended."""
+        self._skip(snap, remaining)
+        return self.store.set_run_status(snap.run_id, RunStatus.CANCELLED)
 
     def _skip(self, snap: RunSnapshot, nodes: list[GraphNode]) -> None:
         for node in nodes:

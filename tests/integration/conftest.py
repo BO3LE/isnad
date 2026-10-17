@@ -19,11 +19,12 @@ import os
 import shutil
 import uuid
 from collections.abc import Iterator
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
 import pytest
-from sqlalchemy import delete, select, text, update
+from sqlalchemy import delete, func, select, text, update
 from sqlalchemy.orm import Session, sessionmaker
 
 from adapters.factory import AdapterSettings, build_ports
@@ -118,12 +119,18 @@ class RecordingStore(SqlRunStore):
         self.history: list[tuple[str, uuid.UUID | None, str]] = []
 
     def set_run_status(self, run_id, status):
-        self.history.append(("run", None, RunStatus(status).value))
-        super().set_run_status(run_id, status)
+        result = super().set_run_status(run_id, status)
+        if result == status:  # not the writes the store refused: a finished run keeps its status
+            self.history.append(("run", None, RunStatus(status).value))
+        return result
 
     def set_node_status(self, run_id, node_id, status, *, retry_count=None, error=None):
         self.history.append(("node", node_id, NodeStatus(status).value))
         super().set_node_status(run_id, node_id, status, retry_count=retry_count, error=error)
+
+    def complete_node(self, run_id, node_id, output, *, retry_count):
+        self.history.append(("node", node_id, NodeStatus.SUCCESS.value))
+        super().complete_node(run_id, node_id, output, retry_count=retry_count)
 
     def run_transitions(self) -> list[str]:
         return [status for kind, _, status in self.history if kind == "run"]
@@ -203,6 +210,13 @@ class Db:
                 .where(ExecutionLog.run_id == run_id, ExecutionLog.status.in_(["pending", "awaiting_approval"]))
                 .values(status=NodeStatus.SKIPPED.value)
             )
+            still_running = s.scalar(
+                select(func.count()).where(
+                    ExecutionLog.run_id == run_id, ExecutionLog.status.in_(["running", "retrying"])
+                )
+            )
+            if not still_running:
+                run.completed_at = datetime.now(UTC)
 
     def cleanup(self) -> None:
         with self.sessions.begin() as s:

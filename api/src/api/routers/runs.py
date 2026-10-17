@@ -1,11 +1,12 @@
 from __future__ import annotations
 
 import logging
+from datetime import UTC, datetime
 from pathlib import PurePosixPath
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import select, update
+from sqlalchemy import func, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -241,6 +242,16 @@ def cancel(run_id: UUID, user: User = Depends(get_current_user), session: Sessio
         .where(ExecutionLog.run_id == run.id, ExecutionLog.status.in_(["pending", "awaiting_approval"]))
         .values(status=NodeStatus.SKIPPED.value)
     )
+    # With a step still running, the worker records when the run ended, once that step has. With none,
+    # it ended now — a run waiting for approval or still queued has no worker that would record it.
+    counts = dict(
+        session.execute(
+            select(ExecutionLog.status, func.count()).where(ExecutionLog.run_id == run.id).group_by(ExecutionLog.status)
+        ).all()
+    )
+    if not counts.get(NodeStatus.RUNNING.value) and not counts.get(NodeStatus.RETRYING.value):
+        run.completed_at = datetime.now(UTC)
+        run.failed_nodes = counts.get(NodeStatus.FAILED.value, 0)
     session.commit()
     session.refresh(run)
     return _state(session, run)
