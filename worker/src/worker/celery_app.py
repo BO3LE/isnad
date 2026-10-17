@@ -21,12 +21,15 @@ from adapters.email.smtp import SmtpEmail
 from adapters.factory import (
     MisconfiguredEmail,
     MisconfiguredLLM,
+    MisconfiguredSearch,
     build_email,
     build_llm,
     build_ports,
+    build_search,
     connection_ports,
     llm_provider,
 )
+from adapters.search.fake import FakeSearch
 from contracts.manifest import AgentManifest
 from contracts.queue import CATALOG_REDIS_KEY, RUN_WORKFLOW_TASK
 from db.crypto import CredentialCipher, CredentialKeyError
@@ -167,11 +170,34 @@ def check_llm() -> str:
     return f"LLM: {where} — ready"
 
 
+def check_search() -> str:
+    """One line on where the Researcher's sources come from. No request is made: a search costs a credit."""
+    if settings.fake_adapters:
+        return "Search: fake (FAKE_ADAPTERS=true)"
+    search = build_search(adapter_settings(settings))
+    if isinstance(search, MisconfiguredSearch):
+        return f"Search: not usable — {search.message}"
+    if isinstance(search, FakeSearch):
+        return "Search: fake (SEARCH_PROVIDER=fake) — the Researcher's sources are made up"
+    return "Search: tavily"
+
+
+def check_image() -> str:
+    if settings.fake_adapters:
+        return "Image: fake (FAKE_ADAPTERS=true)"
+    return "Image: fake — there is no real image adapter yet; the Image step makes placeholders"
+
+
 @worker_ready.connect
 def _on_ready(**_: object) -> None:
     count = publish_catalog()
     log.info("published %d agents to %s", count, CATALOG_REDIS_KEY)
-    for name, check in (("LLM", check_llm), ("Email", check_email)):
+    for name, check in (
+        ("LLM", check_llm),
+        ("Search", check_search),
+        ("Image", check_image),
+        ("Email", check_email),
+    ):
         try:
             log.info(check())
         except Exception as exc:  # a startup report must never stop the worker

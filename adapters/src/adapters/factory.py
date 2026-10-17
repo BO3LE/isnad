@@ -18,9 +18,10 @@ from adapters.search.fake import FakeSearch
 from adapters.storage.local import LocalStorage
 from adapters.tts.fake import FakeTTS
 from contracts.errors import NonRetryableAgentError
-from contracts.ports import EmailPort, LLMPort, Ports, StoragePort
+from contracts.ports import EmailPort, LLMPort, Ports, SearchPort, Source, StoragePort
 
 LLMProvider = Literal["local", "openai", "openrouter", "fake"]
+SearchProvider = Literal["tavily", "fake"]
 EmailTransport = Literal["gmail", "smtp"]
 # Where each provider lives unless LLM_BASE_URL says otherwise. "local" is LLM_LOCAL_BASE_URL:
 # LM Studio's default port here, http://host.docker.internal:1234/v1 from inside Docker (compose
@@ -39,6 +40,9 @@ class AdapterSettings:
     openai_api_key: str | None = None
     openai_model: str = "gpt-4o"
     search_api_key: str | None = None
+    # Search (real mode only). None: "tavily" if SEARCH_API_KEY is set; with no key either, each
+    # Researcher step fails saying so — "fake" has to be chosen, it is never fallen back to.
+    search_provider: SearchProvider | None = None
     # LLM (real mode only). None: "openai" if OPENAI_API_KEY is set (as before), else "local".
     llm_provider: LLMProvider | None = None
     llm_base_url: str | None = None
@@ -97,20 +101,16 @@ def build_ports(settings: AdapterSettings) -> Ports:
         )
 
     llm = build_llm(settings)
-
-    search = FakeSearch()
-    if settings.search_api_key:
-        from adapters.search.tavily import TavilySearch
-
-        search = TavilySearch(settings.search_api_key)
+    search = build_search(settings)
 
     from adapters._google import NoGooglePublisher
     from adapters.tts.gtts import GTTS
 
-    # Publishing and email act as a person's Google account, so there is no process-wide real
-    # adapter: the worker swaps these placeholders for `adapters._google.google_ports(credential)`
-    # when a node names a connected account (D-09). Without one, the step fails with a readable
-    # "needs a Google connection" rather than pretending to publish.
+    # Publishing — and email with EMAIL_TRANSPORT=gmail — acts as a person's Google account, so there
+    # is no process-wide real adapter: the worker swaps these placeholders for
+    # `adapters._google.google_ports(credential)` when a node names a connected account (D-09).
+    # Without one, the step fails with a readable "needs a Google connection" rather than pretending.
+    # With EMAIL_TRANSPORT=smtp, email is this server's SMTP for every step (build_email).
     return Ports(
         llm=llm,
         search=search,
@@ -181,6 +181,44 @@ class MisconfiguredLLM:
 
     async def chat(self, messages: Any, **_: Any) -> Any:
         raise NonRetryableAgentError(self.message, code="llm_misconfigured")
+
+
+class MisconfiguredSearch:
+    """Stands in when real-mode search isn't set up: the Researcher's step says why, at once."""
+
+    def __init__(self, message: str):
+        self.message = message
+
+    async def search(self, query: str, n: int) -> list[Source]:
+        raise NonRetryableAgentError(self.message, code="search_misconfigured")
+
+
+def search_provider(settings: AdapterSettings) -> SearchProvider | None:
+    if settings.search_provider:
+        return settings.search_provider
+    return "tavily" if settings.search_api_key else None
+
+
+def build_search(settings: AdapterSettings) -> SearchPort:
+    """The search for real mode. Made-up sources only when SEARCH_PROVIDER=fake says so (F8)."""
+    provider = search_provider(settings)
+    if provider is None:
+        return MisconfiguredSearch(
+            "Search isn't set up: set SEARCH_API_KEY for Tavily, or SEARCH_PROVIDER=fake to use made-up sources."
+        )
+    if provider == "fake":
+        return FakeSearch()
+    if provider != "tavily":
+        return MisconfiguredSearch(f"SEARCH_PROVIDER={provider!r} isn't one of tavily, fake.")
+    if not settings.search_api_key:
+        return MisconfiguredSearch("SEARCH_PROVIDER=tavily needs SEARCH_API_KEY.")
+    try:
+        import httpx  # noqa: F401 — the adapter's one dependency
+    except ImportError:
+        return MisconfiguredSearch("The search adapter isn't installed on this worker: install gp-adapters[search].")
+    from adapters.search.tavily import TavilySearch
+
+    return TavilySearch(settings.search_api_key)
 
 
 def llm_provider(settings: AdapterSettings) -> LLMProvider:

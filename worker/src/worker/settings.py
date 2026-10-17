@@ -19,7 +19,10 @@ class WorkerSettings(BaseSettings):
     public_files_url: str = "http://localhost:8000/files"
     openai_api_key: str | None = None
     openai_model: str = "gpt-4o"
-    search_api_key: str | None = None
+    search_api_key: str | None = None  # a secret — never log it
+    # The Researcher's search. Only read when FAKE_ADAPTERS=false: tavily (needs SEARCH_API_KEY) or
+    # fake (made-up sources). Unset: tavily if SEARCH_API_KEY is set, else each Researcher step fails.
+    search_provider: Literal["tavily", "fake"] | None = None
     # The LLM (Writer). Only read when FAKE_ADAPTERS=false. LLM_PROVIDER: local (LM Studio or Ollama,
     # the default), openai, openrouter, or fake. See adapters/llm/openai_compatible.py.
     llm_provider: Literal["local", "openai", "openrouter", "fake"] | None = None
@@ -64,6 +67,7 @@ def adapter_settings(settings: WorkerSettings) -> AdapterSettings:
         openai_api_key=settings.openai_api_key,
         openai_model=settings.openai_model,
         search_api_key=settings.search_api_key,
+        search_provider=settings.search_provider,
         llm_provider=settings.llm_provider,
         llm_base_url=settings.llm_base_url,
         llm_local_base_url=settings.llm_local_base_url,

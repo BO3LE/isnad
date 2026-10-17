@@ -48,13 +48,14 @@ def test_no_value_of_a_key_secret_or_url_is_ever_printed(tmp_path, capsys):
 def test_choices_and_model_ids_are_shown(tmp_path, capsys):
     _, out = run(
         tmp_path,
-        "FAKE_ADAPTERS=false\nLLM_PROVIDER=local\nLLM_MODEL=qwen3-30b\n",
+        "FAKE_ADAPTERS=false\nLLM_PROVIDER=local\nLLM_MODEL=qwen3-30b\nSEARCH_PROVIDER=fake\n",
         "--profile",
         "live-local",
         capsys=capsys,
     )
     assert "FAKE_ADAPTERS" in out and "= false" in out
     assert "= qwen3-30b" in out
+    assert "SEARCH_PROVIDER" in out and "= fake" in out and "made-up sources" in out
 
 
 def test_the_example_file_is_fine_for_dev_but_not_for_live_local(tmp_path, capsys):
@@ -68,7 +69,10 @@ def test_the_example_file_is_fine_for_dev_but_not_for_live_local(tmp_path, capsy
 
 
 def test_live_local_passes_with_real_mode_a_local_model_and_a_real_secret(tmp_path, capsys):
-    text = f"FAKE_ADAPTERS=false\nLLM_PROVIDER=local\nLLM_MODEL=m\nEMAIL_TRANSPORT=smtp\nJWT_SECRET={'s' * 48}\n"
+    text = (
+        f"FAKE_ADAPTERS=false\nLLM_PROVIDER=local\nLLM_MODEL=m\nSEARCH_PROVIDER=fake\nEMAIL_TRANSPORT=smtp\n"
+        f"JWT_SECRET={'s' * 48}\n"
+    )
     code, out = run(tmp_path, text, "--profile", "live-local", capsys=capsys)
     assert code == 0, out
     assert "OK for live-local" in out
@@ -85,6 +89,10 @@ def test_live_local_passes_with_real_mode_a_local_model_and_a_real_secret(tmp_pa
         ("FAKE_ADAPTERS=false\nLLM_PROVIDER=ollama\n", "not one of"),
         ("FAKE_ADAPTERS=false\nLLM_MODEL=m\nLLM_BASE_URL=localhost:1234\n", "not an http(s) URL"),
         ("FAKE_ADAPTERS=false\nLLM_MODEL=m\nCREDENTIALS_ENCRYPTION_KEY=not-a-key\n", "not a valid Fernet key"),
+        # Real mode with search unset would fail every Researcher step (F8: no silent fake).
+        ("FAKE_ADAPTERS=false\nLLM_MODEL=m\nSEARCH_PROVIDER=\n", "every Researcher step would fail"),
+        ("FAKE_ADAPTERS=false\nLLM_MODEL=m\nSEARCH_PROVIDER=bing\n", "not one of tavily, fake"),
+        ("FAKE_ADAPTERS=false\nLLM_MODEL=m\nSEARCH_PROVIDER=tavily\n", "SEARCH_PROVIDER=tavily needs it"),
         # live-local sends nothing out: email has to be caught locally.
         ("FAKE_ADAPTERS=false\nLLM_MODEL=m\nEMAIL_TRANSPORT=gmail\n", "live-local sends nothing out"),
         ("FAKE_ADAPTERS=false\nLLM_MODEL=m\nEMAIL_TRANSPORT=pigeon\n", "not one of gmail, smtp"),
@@ -93,6 +101,8 @@ def test_live_local_passes_with_real_mode_a_local_model_and_a_real_secret(tmp_pa
     ],
 )
 def test_live_local_problems_are_named(tmp_path, capsys, text, says):
+    if "SEARCH_PROVIDER" not in text:
+        text += "SEARCH_PROVIDER=fake\n"
     if "EMAIL_TRANSPORT" not in text:
         text += "EMAIL_TRANSPORT=smtp\n"
     code, out = run(tmp_path, text + f"JWT_SECRET={'s' * 48}\n", "--profile", "live-local", capsys=capsys)
@@ -106,11 +116,18 @@ def test_live_providers_needs_search_google_and_the_hosted_key(tmp_path, capsys)
     assert code == 1
     for needed in (
         "OPENROUTER_API_KEY",
-        "the Researcher's real search",
+        "every Researcher step would fail",
         "Google connections",
         "store Google connections",
     ):
         assert needed in out
+
+
+def test_live_providers_searches_for_real(tmp_path, capsys):
+    text = f"FAKE_ADAPTERS=false\nLLM_MODEL=m\nSEARCH_PROVIDER=fake\nJWT_SECRET={'s' * 48}\n"
+    code, out = run(tmp_path, text, "--profile", "live-providers", capsys=capsys)
+    assert code == 1
+    assert "live-providers searches for real (SEARCH_PROVIDER=tavily)" in out
 
 
 def test_the_process_environment_wins_and_is_marked(tmp_path, capsys):
@@ -122,6 +139,7 @@ def test_the_process_environment_wins_and_is_marked(tmp_path, capsys):
         environ={
             "FAKE_ADAPTERS": "false",
             "LLM_MODEL": "m",
+            "SEARCH_PROVIDER": "fake",
             "EMAIL_TRANSPORT": "smtp",
             "JWT_SECRET": "e" * 40,
             "HOME": "/x",
