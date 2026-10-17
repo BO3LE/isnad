@@ -20,7 +20,7 @@ With FAKE_ADAPTERS=true none of this runs — the worker uses the fake publisher
 from __future__ import annotations
 
 import dataclasses
-from collections.abc import Callable
+from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -39,6 +39,7 @@ from adapters._google import (
     refresh_access_token,
 )
 from contracts.errors import NonRetryableAgentError
+from contracts.manifest import AgentManifest
 from contracts.ports import Ports
 from contracts.run import CREDENTIAL_CONFIG_KEY, GraphNode
 from db.crypto import CredentialCipher, CredentialDecryptError
@@ -160,16 +161,67 @@ def _parse(value: Any) -> datetime | None:
 
 
 class CredentialPorts:
-    """The orchestrator's `ports_for`: base ports, with Google ports swapped in for a node that names an account."""
+    """The orchestrator's `ports_for`: base ports, with Google ports swapped in for a node that names an account.
 
-    def __init__(self, base: Ports, resolver: CredentialResolver):
+    `ports` are the ones that go through a connection on this server (`adapters.factory.connection_ports`);
+    `port_of` maps an agent type to the port its credential field supplies (`credential_port_of`). A node
+    whose account this server doesn't use — Email over SMTP — keeps the base ports, and its account
+    isn't even resolved, so an expired one can't fail a step that never needed it.
+    """
+
+    def __init__(
+        self,
+        base: Ports,
+        resolver: CredentialResolver,
+        *,
+        ports: frozenset[str] = frozenset({"publishers", "email"}),
+        port_of: Mapping[str, str] | None = None,
+    ):
         self._base = base
         self._resolver = resolver
+        self._ports = ports
+        self._port_of = dict(port_of or {})
 
     async def __call__(self, run_id: UUID, node: GraphNode) -> Ports:
         ref = node.configuration.get(CREDENTIAL_CONFIG_KEY)
         if not ref:
             return self._base
+        port = self._port_of.get(node.agent_type)
+        if port is not None and port not in self._ports:
+            return self._base
         credential = await self._resolver.resolve(run_id, ref)
         publishers, email = google_ports(credential)
-        return dataclasses.replace(self._base, publishers=publishers, email=email)
+        return dataclasses.replace(
+            self._base,
+            publishers=publishers if "publishers" in self._ports else self._base.publishers,
+            email=email if "email" in self._ports else self._base.email,
+        )
+
+
+def credential_port_of(catalog: Iterable[AgentManifest]) -> dict[str, str]:
+    """agent type → the `Ports` field its credential field supplies (`x-port`), for the agents that have one."""
+    found: dict[str, str] = {}
+    for manifest in catalog:
+        for prop in ((manifest.config_schema or {}).get("properties") or {}).values():
+            if prop.get("x-widget") == "credential" and prop.get("x-port"):
+                found[manifest.name] = prop["x-port"]
+    return found
+
+
+def mark_unused_connections(manifest: AgentManifest, ports: frozenset[str]) -> AgentManifest:
+    """The manifest as this server publishes it: a credential field whose port doesn't go through a
+    connection here gets `x-connection: "unused"`, so the API doesn't ask for an account it won't use."""
+    schema = manifest.config_schema or {}
+    properties = schema.get("properties") or {}
+    unused = [
+        name
+        for name, prop in properties.items()
+        if prop.get("x-widget") == "credential" and prop.get("x-port") and prop["x-port"] not in ports
+    ]
+    if not unused:
+        return manifest
+    marked = {
+        name: (dict(prop, **{"x-connection": "unused"}) if name in unused else prop)
+        for name, prop in properties.items()
+    }
+    return manifest.model_copy(update={"config_schema": dict(schema, properties=marked)})

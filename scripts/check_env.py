@@ -9,7 +9,8 @@ Profiles:
     dev             FAKE_ADAPTERS=true. Nothing is required; shapes are still checked.
     live-local      FAKE_ADAPTERS=false, the LLM on this machine (LLM_PROVIDER=local, LLM_MODEL),
                     search chosen (SEARCH_PROVIDER=fake for made-up sources, or Tavily with its key),
-                    and a real JWT_SECRET. No paid service, no key.
+                    email caught locally (EMAIL_TRANSPORT=smtp, Mailpit) and a real JWT_SECRET.
+                    No paid service, no key, nothing sent out.
     live-providers  live-local's needs, plus real search (Tavily), Google connections and the
                     hosted LLM's key when LLM_PROVIDER is openai or openrouter.
 
@@ -50,6 +51,7 @@ PROFILES = ("dev", "live-local", "live-providers")
 GENERATED = ("JWT_SECRET", "CREDENTIALS_ENCRYPTION_KEY")  # what --write-local-secrets may write
 LLM_PROVIDERS = ("local", "openai", "openrouter", "fake")
 SEARCH_PROVIDERS = ("tavily", "fake")
+EMAIL_TRANSPORTS = ("gmail", "smtp")
 # Values safe to show: choices, booleans, numbers and model ids. Everything else is SET / EMPTY only.
 SHOWN = {
     "ENVIRONMENT",
@@ -63,6 +65,10 @@ SHOWN = {
     "LLM_MAX_OUTPUT_TOKENS",
     "OPENAI_MODEL",
     "SEARCH_PROVIDER",
+    "EMAIL_TRANSPORT",
+    "SMTP_PORT",
+    "SMTP_STARTTLS",
+    "SMTP_SSL",
     "VITE_AUTH_MODE",
 }
 
@@ -225,6 +231,39 @@ def _search_key(value: str, env: Env, profile: str) -> tuple[str, str]:
     return "error", "SEARCH_PROVIDER=tavily needs it (the Researcher's real search)"
 
 
+def _email_transport(value: str, env: Env, profile: str) -> tuple[str, str]:
+    transport = value or "gmail"
+    if transport not in EMAIL_TRANSPORTS:
+        return "error", f"not one of {', '.join(EMAIL_TRANSPORTS)}"
+    if profile == "live-local" and transport != "smtp":
+        return "error", "live-local sends nothing out: EMAIL_TRANSPORT=smtp (Mailpit catches it)"
+    if transport == "smtp":
+        host = env.get("SMTP_HOST", "")
+        local = not host or host in ("mailpit", "localhost", "127.0.0.1")
+        return "ok", "caught by Mailpit" if local else "a real mail server: messages go out"
+    return "ok", "each Email step's Google account" + ("" if value else " (unset)")
+
+
+def _smtp_flag(other: str) -> Rule:
+    def rule(value: str, env: Env, profile: str) -> tuple[str, str]:
+        if not value:
+            return "ok", ""
+        flag = truthy(value)
+        if flag is None:
+            return "error", "not a boolean"
+        if flag and truthy(env.get(other, "")):
+            return "error", f"set with {other}: choose one"
+        return "ok", ""
+
+    return rule
+
+
+def _smtp_port(value: str, env: Env, profile: str) -> tuple[str, str]:
+    if value and not (value.isdigit() and 0 < int(value) < 65536):
+        return "error", "not a port number"
+    return "ok", "" if value else "1025 (Mailpit's)"
+
+
 def _required_in(*profiles: str, why: str = "") -> Rule:
     def rule(value: str, env: Env, profile: str) -> tuple[str, str]:
         if value or profile not in profiles:
@@ -289,6 +328,14 @@ RULES: dict[str, Rule] = {
     "OPENROUTER_API_KEY": _key_for("openrouter", "OPENROUTER_API_KEY"),
     "SEARCH_PROVIDER": _search_provider,
     "SEARCH_API_KEY": _search_key,
+    "EMAIL_TRANSPORT": _email_transport,
+    "SMTP_HOST": lambda value, env, profile: ("ok", "" if value else "docker compose uses mailpit"),
+    "SMTP_PORT": _smtp_port,
+    "SMTP_USERNAME": lambda value, env, profile: ("ok", ""),
+    "SMTP_PASSWORD": lambda value, env, profile: ("ok", ""),
+    "SMTP_STARTTLS": _smtp_flag("SMTP_SSL"),
+    "SMTP_SSL": _smtp_flag("SMTP_STARTTLS"),
+    "EMAIL_FROM": lambda value, env, profile: ("ok", ""),
     "GOOGLE_CLIENT_ID": _google_pair("GOOGLE_CLIENT_SECRET"),
     "GOOGLE_CLIENT_SECRET": _google_pair("GOOGLE_CLIENT_ID"),
     "GOOGLE_REDIRECT_URI": _url(),

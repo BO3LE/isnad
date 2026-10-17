@@ -42,6 +42,16 @@ class WorkerSettings(BaseSettings):
     storage_bucket: str = "artifacts"
     supabase_url: str = ""
     supabase_service_key: str | None = None
+    # Email, FAKE_ADAPTERS=false only: gmail (each Email step's Google account) or smtp (this server's
+    # SMTP — Mailpit under docker compose, which catches every message at http://localhost:8025).
+    email_transport: Literal["gmail", "smtp"] = "gmail"
+    smtp_host: str | None = None
+    smtp_port: int = 1025
+    smtp_username: str | None = None
+    smtp_password: str | None = None  # a secret — never log it
+    smtp_starttls: bool = False
+    smtp_ssl: bool = False
+    email_from: str = "ISNAD <isnad@localhost>"
     # D-09: Google connections. Only read when FAKE_ADAPTERS=false and a node names an account.
     google_client_id: str | None = None
     google_client_secret: str | None = None
@@ -73,6 +83,14 @@ def adapter_settings(settings: WorkerSettings) -> AdapterSettings:
         supabase_url=settings.supabase_url or None,
         supabase_service_key=settings.supabase_service_key,
         storage_bucket=settings.storage_bucket,
+        email_transport=settings.email_transport,
+        smtp_host=settings.smtp_host,
+        smtp_port=settings.smtp_port,
+        smtp_username=settings.smtp_username,
+        smtp_password=settings.smtp_password,
+        smtp_starttls=settings.smtp_starttls,
+        smtp_ssl=settings.smtp_ssl,
+        email_from=settings.email_from,
     )
 
 

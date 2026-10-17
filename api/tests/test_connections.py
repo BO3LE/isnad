@@ -23,7 +23,7 @@ from api.deps import get_catalog, get_enqueuer, get_session
 from api.main import create_app
 from api.routers.connections import get_google_transport
 from api.settings import get_settings
-from contracts.agent_io import PublishConfig
+from contracts.agent_io import EmailConfig, PublishConfig
 from contracts.manifest import AgentManifest
 from db.crypto import CredentialCipher
 from db.models import Credential, User
@@ -453,3 +453,39 @@ def test_a_valid_connection_passes(client, headers, settings):
     connect(client, headers)
     [conn] = client.get("/connections", headers=headers).json()
     assert _validate(client, headers, {"platform": "youtube", "credential_id": conn["id"]}) == []
+
+
+# ---------------------------------------------------------------- an account this server doesn't use
+
+
+def _email_manifest(schema: dict) -> AgentManifest:
+    return AgentManifest(
+        name="email",
+        version="0.1.0",
+        title="Email",
+        description="d",
+        input_type="EmailInput",
+        output_type="EmailOutput",
+        config_schema=schema,
+    )
+
+
+def _email_issues(client, headers, schema: dict) -> list[dict]:
+    client.app.dependency_overrides[get_catalog] = lambda: StaticCatalog([*CATALOG, PUBLISHER, _email_manifest(schema)])
+    body = {"name": "w", "graph": graph("email", configs=[{"recipients": ["a@example.org"]}])}
+    wf = client.post("/workflows", json=body, headers=headers).json()
+    return client.post(f"/workflows/{wf['id']}/validate", headers=headers).json()["issues"]
+
+
+def test_with_real_adapters_and_gmail_an_email_step_needs_a_connection(client, headers, settings):
+    settings.fake_adapters = False
+    [issue] = _email_issues(client, headers, EmailConfig.model_json_schema())
+    assert (issue["code"], issue["severity"]) == ("missing_credential", "error")
+
+
+def test_an_account_the_worker_publishes_as_unused_is_not_asked_for(client, headers, settings):
+    """Email over SMTP (Mailpit): the worker marks the field, and the run isn't blocked for want of Google."""
+    settings.fake_adapters = False
+    schema = EmailConfig.model_json_schema()
+    schema["properties"]["credential_id"]["x-connection"] = "unused"
+    assert _email_issues(client, headers, schema) == []
