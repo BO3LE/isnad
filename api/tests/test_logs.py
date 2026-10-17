@@ -50,40 +50,48 @@ class _Capture(logging.Handler):
         self.lines.append(record.getMessage())
 
 
-def _free_port() -> int:
-    with socket.socket() as s:
-        s.bind(("127.0.0.1", 0))
-        return s.getsockname()[1]
+def _callback_lines(capture: _Capture) -> list[str]:
+    return [entry for entry in capture.lines if "/connections/google/callback" in entry]
 
 
 def test_uvicorns_access_log_never_shows_the_oauth_code_or_state():
-    port = _free_port()
-    server = uvicorn.Server(uvicorn.Config(create_app(SETTINGS), host="127.0.0.1", port=port, access_log=True))
+    # The socket is bound here and handed to uvicorn, so no other process can take the port between
+    # choosing it and serving on it. The waits are generous: a busy machine may be slow to start a
+    # server or to answer, which says nothing about what the access log contains.
+    sock = socket.socket()
+    sock.bind(("127.0.0.1", 0))
+    port = sock.getsockname()[1]
+    server = uvicorn.Server(uvicorn.Config(create_app(SETTINGS), access_log=True))
     capture = _Capture()
     access = logging.getLogger("uvicorn.access")
     access.addHandler(capture)
-    thread = threading.Thread(target=server.run, daemon=True)
+    thread = threading.Thread(target=server.run, kwargs={"sockets": [sock]}, daemon=True)
     thread.start()
     try:
-        deadline = time.monotonic() + 10
+        deadline = time.monotonic() + 30
         while not server.started:
-            assert time.monotonic() < deadline, "uvicorn did not start"
+            assert thread.is_alive(), "uvicorn stopped before it started"
+            assert time.monotonic() < deadline, "uvicorn did not start within 30 s"
             time.sleep(0.05)
         response = httpx.get(
             f"http://127.0.0.1:{port}/connections/google/callback",
             params={"state": "CANARY-STATE-eyJhbGciOi", "code": "4/0CANARY-CODE"},
             follow_redirects=False,
+            timeout=30,
         )
         assert response.status_code == 303  # refused (a forged state), but the request line was logged
-        deadline = time.monotonic() + 5
-        while not capture.lines and time.monotonic() < deadline:
+        deadline = time.monotonic() + 10
+        while not _callback_lines(capture) and time.monotonic() < deadline:
             time.sleep(0.05)
     finally:
         server.should_exit = True
         thread.join(timeout=10)
         access.removeHandler(capture)
+        sock.close()
 
-    (line,) = (entry for entry in capture.lines if "/connections/google/callback" in entry)
+    lines = _callback_lines(capture)
+    assert len(lines) == 1, f"expected one access-log line for the callback, got {len(lines)}"
+    (line,) = lines
     assert "CANARY" not in line
     assert "state=[redacted]" in line
     assert "code=[redacted]" in line
