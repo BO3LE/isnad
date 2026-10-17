@@ -267,7 +267,10 @@ where email goes: `docker compose logs worker | grep "Email:"`.
 
 A message is retried only when it certainly wasn't sent (the server couldn't be reached, or it said
 "try again later"). If the connection drops while it is being sent, the step fails without a retry
-and says to check the inbox first — an email can't be unsent.
+and says to check the inbox first — an email can't be unsent. The same goes when the worker itself
+stops mid-send (or mid-upload, for Publisher): when the run is picked up again, the steps before it
+are not repeated and that step fails saying "interrupted because the server restarted" instead of
+sending a second time.
 
 ## 7. Changing the API
 
