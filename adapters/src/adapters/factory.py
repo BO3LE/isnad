@@ -108,7 +108,7 @@ def build_ports(settings: AdapterSettings) -> Ports:
 
     # Publishing — and email with EMAIL_TRANSPORT=gmail — acts as a person's Google account, so there
     # is no process-wide real adapter: the worker swaps these placeholders for
-    # `adapters._google.google_ports(credential)` when a node names a connected account (D-09).
+    # `adapters._google.google_ports(credential, storage)` when a node names a connected account (D-09).
     # Without one, the step fails with a readable "needs a Google connection" rather than pretending.
     # With EMAIL_TRANSPORT=smtp, email is this server's SMTP for every step (build_email).
     return Ports(
