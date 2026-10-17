@@ -58,3 +58,14 @@ class AgentManifest(BaseModel):
     outputs: list[AgentOutput] = Field(
         default_factory=list, description="What the agent hands on. Filled from its output model at runtime."
     )
+
+    def needs_approval(self, requested: bool = False) -> bool:
+        """Whether a step running this agent must wait for a person before it acts.
+
+        An agent that sends content out of the platform always waits — whatever its own
+        manifest says and whatever the saved workflow asks for. "Nothing is published until
+        a human approves it" is the product's promise, and a workflow graph is data the
+        client writes, so the promise can't rest on it. Any other agent waits when its
+        manifest or the user (`requested`) asks it to.
+        """
+        return requested or self.requires_approval or self.family == AgentFamily.DISTRIBUTE
