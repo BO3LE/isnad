@@ -25,6 +25,7 @@ SECRETS = {
     "CREDENTIALS_ENCRYPTION_KEY": "Zm9vYmFyZm9vYmFyZm9vYmFyZm9vYmFyZm9vYmFyMDA=",
     "SUPABASE_URL": "https://CANARYPROJECT.supabase.co",
     "LLM_BASE_URL": "http://user:CANARYPASS@localhost:1234/v1",
+    "SMTP_PASSWORD": "CANARY-smtp-password",
 }
 
 
@@ -68,10 +69,14 @@ def test_the_example_file_is_fine_for_dev_but_not_for_live_local(tmp_path, capsy
 
 
 def test_live_local_passes_with_real_mode_a_local_model_and_a_real_secret(tmp_path, capsys):
-    text = f"FAKE_ADAPTERS=false\nLLM_PROVIDER=local\nLLM_MODEL=m\nSEARCH_PROVIDER=fake\nJWT_SECRET={'s' * 48}\n"
+    text = (
+        f"FAKE_ADAPTERS=false\nLLM_PROVIDER=local\nLLM_MODEL=m\nSEARCH_PROVIDER=fake\nEMAIL_TRANSPORT=smtp\n"
+        f"JWT_SECRET={'s' * 48}\n"
+    )
     code, out = run(tmp_path, text, "--profile", "live-local", capsys=capsys)
     assert code == 0, out
     assert "OK for live-local" in out
+    assert "caught by Mailpit" in out
 
 
 @pytest.mark.parametrize(
@@ -88,11 +93,18 @@ def test_live_local_passes_with_real_mode_a_local_model_and_a_real_secret(tmp_pa
         ("FAKE_ADAPTERS=false\nLLM_MODEL=m\nSEARCH_PROVIDER=\n", "every Researcher step would fail"),
         ("FAKE_ADAPTERS=false\nLLM_MODEL=m\nSEARCH_PROVIDER=bing\n", "not one of tavily, fake"),
         ("FAKE_ADAPTERS=false\nLLM_MODEL=m\nSEARCH_PROVIDER=tavily\n", "SEARCH_PROVIDER=tavily needs it"),
+        # live-local sends nothing out: email has to be caught locally.
+        ("FAKE_ADAPTERS=false\nLLM_MODEL=m\nEMAIL_TRANSPORT=gmail\n", "live-local sends nothing out"),
+        ("FAKE_ADAPTERS=false\nLLM_MODEL=m\nEMAIL_TRANSPORT=pigeon\n", "not one of gmail, smtp"),
+        ("FAKE_ADAPTERS=false\nLLM_MODEL=m\nEMAIL_TRANSPORT=smtp\nSMTP_STARTTLS=true\nSMTP_SSL=true\n", "choose one"),
+        ("FAKE_ADAPTERS=false\nLLM_MODEL=m\nEMAIL_TRANSPORT=smtp\nSMTP_PORT=smtp\n", "not a port number"),
     ],
 )
 def test_live_local_problems_are_named(tmp_path, capsys, text, says):
     if "SEARCH_PROVIDER" not in text:
         text += "SEARCH_PROVIDER=fake\n"
+    if "EMAIL_TRANSPORT" not in text:
+        text += "EMAIL_TRANSPORT=smtp\n"
     code, out = run(tmp_path, text + f"JWT_SECRET={'s' * 48}\n", "--profile", "live-local", capsys=capsys)
     assert code == 1
     assert says in out
@@ -128,6 +140,7 @@ def test_the_process_environment_wins_and_is_marked(tmp_path, capsys):
             "FAKE_ADAPTERS": "false",
             "LLM_MODEL": "m",
             "SEARCH_PROVIDER": "fake",
+            "EMAIL_TRANSPORT": "smtp",
             "JWT_SECRET": "e" * 40,
             "HOME": "/x",
         },

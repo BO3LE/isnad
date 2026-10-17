@@ -129,6 +129,8 @@ def _credential_issues(node, manifest: AgentManifest, properties: dict, credenti
     for field, prop in properties.items():
         if prop.get("x-widget") != "credential":
             continue
+        if prop.get("x-connection") == "unused":  # the worker sends this step another way (Email over SMTP)
+            continue
         ref = node.configuration.get(field)
         row = credentials.get(str(ref)) if ref else None
         if row is None:

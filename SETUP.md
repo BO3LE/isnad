@@ -38,6 +38,7 @@ First build takes a few minutes (the worker image installs FFmpeg). Later starts
 | db | `localhost:5433` (user `postgres`, password `postgres`, database `gp`) | Host port 5433 so a local PostgreSQL on 5432 doesn't clash |
 | redis | `localhost:6379` | |
 | migrate | — | Runs `alembic upgrade head` and the seed script, then exits |
+| mailpit | http://localhost:8025 (inbox) · SMTP `localhost:1025` | Catches every email sent with `EMAIL_TRANSPORT=smtp`; nothing leaves the machine. Bound to localhost only |
 
 Sign in at http://localhost:5173 with `demo@gp.local`.
 
@@ -149,6 +150,7 @@ Every variable is listed, with a comment, in [`.env.example`](.env.example). The
 | `LLM_PROVIDER`, `LLM_MODEL` | `local`, empty | The Writer's model when `FAKE_ADAPTERS=false`: `local` (LM Studio or Ollama), `openai` or `openrouter`. See "Local LLM" below. |
 | `STEP_TIMEOUT_S` | `1800` | The longest one attempt of a step may run before the worker stops it, without a retry. Each service call (LLM, search, narration, FFmpeg, email) has its own shorter timeout; this is the backstop. `0` turns it off. |
 | `OPENAI_API_KEY`, `OPENROUTER_API_KEY`, `SEARCH_API_KEY` | empty | Used only when `FAKE_ADAPTERS=false`, by the provider that needs it. |
+| `EMAIL_TRANSPORT`, `SMTP_*`, `EMAIL_FROM` | `gmail` | `FAKE_ADAPTERS=false` only: `gmail` (the Google account each Email step names) or `smtp` (Mailpit under docker compose — see "Email without sending any"). |
 | `SEARCH_PROVIDER` | empty | `FAKE_ADAPTERS=false` only: `tavily` (needs `SEARCH_API_KEY`) or `fake` (made-up sources). Empty means `tavily` when a key is set; with no key, each Researcher step fails saying so instead of quietly using made-up sources. |
 | `STORAGE_BACKEND` | `local` | Where generated files go. `local` = `STORAGE_ROOT` on disk, served at `PUBLIC_FILES_URL` (development only). `supabase` = the private bucket `STORAGE_BUCKET`, downloaded through signed URLs. Set the same value for api and worker. Files are stored at `artifacts/{user_id}/{run_id}/…` either way. |
 | `STORAGE_BUCKET` | `artifacts` | Supabase Storage bucket for `STORAGE_BACKEND=supabase`. Must be **private**. |
@@ -253,6 +255,19 @@ What a step reports when the model can't answer: LM Studio stopped → retried, 
 the local model server … Is LM Studio's server running?"; model not loaded or not downloaded →
 fails at once and says to load it; answer cut off → names `LLM_MAX_OUTPUT_TOKENS`; too slow → names
 `LLM_TIMEOUT_S`.
+
+### Email without sending any (Mailpit)
+
+With `FAKE_ADAPTERS=false`, the Email step sends as the Google account it names
+(`EMAIL_TRANSPORT=gmail`, the default). To try it without a Google connection and without anything
+leaving this machine, set `EMAIL_TRANSPORT=smtp` in `.env` and restart the worker
+(`docker compose up -d worker`): messages go to the `mailpit` service and appear at
+http://localhost:8025. The step still waits for your approval first. The worker's startup log says
+where email goes: `docker compose logs worker | grep "Email:"`.
+
+A message is retried only when it certainly wasn't sent (the server couldn't be reached, or it said
+"try again later"). If the connection drops while it is being sent, the step fails without a retry
+and says to check the inbox first — an email can't be unsent.
 
 ## 7. Changing the API
 
