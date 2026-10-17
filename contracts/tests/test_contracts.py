@@ -125,6 +125,30 @@ def test_manifest_rejects_unknown_fields():
         )
 
 
+@pytest.mark.parametrize(
+    ("family", "manifest_says", "user_asks", "waits"),
+    [
+        ("distribute", False, False, True),  # sends content out: always waits, whatever anyone says
+        ("distribute", True, False, True),
+        ("create", True, False, True),  # the agent asks for it
+        ("create", False, True, True),  # the user asks for it
+        ("create", False, False, False),
+    ],
+)
+def test_who_decides_that_a_step_waits_for_a_person(family, manifest_says, user_asks, waits):
+    manifest = AgentManifest(
+        name="x",
+        version="1.0.0",
+        title="X",
+        description="d",
+        family=family,
+        input_type="A",
+        output_type="B",
+        requires_approval=manifest_says,
+    )
+    assert manifest.needs_approval(user_asks) is waits
+
+
 def test_ancestors():
     from contracts.graph import ancestors
 

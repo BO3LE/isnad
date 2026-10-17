@@ -15,7 +15,7 @@ from pydantic import BaseModel, ConfigDict
 from adapters.factory import AdapterSettings, build_ports
 from contracts.agent import BaseAgent
 from contracts.errors import AgentError, NonRetryableAgentError
-from contracts.manifest import AgentManifest
+from contracts.manifest import AgentFamily, AgentManifest
 from contracts.run import GraphEdge, GraphNode, Position, WorkflowGraph
 from worker.registry import Registry
 from worker.testing import InMemoryRunStore
@@ -34,12 +34,13 @@ class ShoutConfig(BaseModel):
     text: str = "hello"
 
 
-def _manifest(name: str, approval: bool = False) -> AgentManifest:
+def _manifest(name: str, approval: bool = False, family: AgentFamily = AgentFamily.CREATE) -> AgentManifest:
     return AgentManifest(
         name=name,
         version="0.1.0",
         title=name.title(),
         description="test agent",
+        family=family,
         input_type="TextIn",
         output_type="TextOut",
         requires_approval=approval,
@@ -78,16 +79,29 @@ class GateAgent(BaseAgent[TextIn, TextOut]):
         return TextOut(text=f"published:{input_data.text}")
 
 
+class SendAgent(BaseAgent[TextIn, TextOut]):
+    """A distribute agent whose manifest forgot to ask for approval — the Email change in PR #40."""
+
+    manifest = _manifest("send", approval=False, family=AgentFamily.DISTRIBUTE)
+    input_model, output_model, config_model = TextIn, TextOut, ShoutConfig
+    calls: ClassVar[int] = 0
+
+    async def execute(self, input_data, ports):
+        type(self).calls += 1
+        return TextOut(text=f"sent:{input_data.text}")
+
+
 @pytest.fixture(autouse=True)
 def _reset_reverse():
     ReverseAgent.calls = 0
     ReverseAgent.failures_before_success = 0
     ReverseAgent.non_retryable = False
+    SendAgent.calls = 0
 
 
 @pytest.fixture()
 def registry() -> Registry:
-    return Registry([ShoutAgent, ReverseAgent, GateAgent])
+    return Registry([ShoutAgent, ReverseAgent, GateAgent, SendAgent])
 
 
 @pytest.fixture()
