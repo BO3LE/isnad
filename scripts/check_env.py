@@ -306,7 +306,7 @@ def report(findings: list[Finding], profile: str, path: Path) -> str:
 
 
 # ---------------------------------------------------------------- writing local secrets
-def write_local_secrets(path: Path, now: Callable[[], datetime] = datetime.now) -> list[str]:
+def generate_missing_values(path: Path, now: Callable[[], datetime] = datetime.now) -> list[str]:
     """Generate the missing local secrets into `path`. Returns the names written — never values."""
     if not path.exists():
         raise SystemExit(f"{path} doesn't exist — copy .env.example to it first")
@@ -356,9 +356,10 @@ def main(argv: list[str] | None = None, environ: Env | None = None) -> int:
     args = parser.parse_args(argv)
 
     if args.write_local_secrets:
-        written = write_local_secrets(args.env_file)
+        generated = generate_missing_values(args.env_file)
         print(
-            f"{args.env_file}: " + (", ".join(f"{n} generated" for n in written) if written else "nothing to generate")
+            f"{args.env_file}: "
+            + (", ".join(f"{n} generated" for n in generated) if generated else "nothing to generate")
         )
 
     if not args.env_file.exists():

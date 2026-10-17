@@ -136,7 +136,7 @@ def test_missing_secrets_are_generated_into_the_file_and_never_printed(tmp_path,
         f"# comment\nJWT_SECRET={check_env.PLACEHOLDER_JWT_SECRET}\nCREDENTIALS_ENCRYPTION_KEY=\nKEEP=me\n"
     )
 
-    written = check_env.write_local_secrets(env_file, now=lambda: FIXED)
+    written = check_env.generate_missing_values(env_file, now=lambda: FIXED)
 
     assert written == ["JWT_SECRET", "CREDENTIALS_ENCRYPTION_KEY"]
     values = check_env.parse_env(env_file.read_text())
@@ -159,7 +159,7 @@ def test_a_set_encryption_key_is_never_replaced(tmp_path):
     key = SECRETS["CREDENTIALS_ENCRYPTION_KEY"]
     env_file.write_text(f"JWT_SECRET=short\nCREDENTIALS_ENCRYPTION_KEY={key}\n")
 
-    assert check_env.write_local_secrets(env_file, now=lambda: FIXED) == ["JWT_SECRET"]
+    assert check_env.generate_missing_values(env_file, now=lambda: FIXED) == ["JWT_SECRET"]
     assert check_env.parse_env(env_file.read_text())["CREDENTIALS_ENCRYPTION_KEY"] == key
 
 
@@ -175,11 +175,11 @@ def test_it_refuses_rather_than_risk_production_or_stored_connections(tmp_path, 
     env_file.write_text(text)
 
     with pytest.raises(SystemExit, match=refusal):
-        check_env.write_local_secrets(env_file)
+        check_env.generate_missing_values(env_file)
     assert env_file.read_text() == text
     assert not list(tmp_path.glob(".env.bak-*"))
 
 
 def test_it_does_not_create_an_env_file(tmp_path):
     with pytest.raises(SystemExit, match=r"copy \.env\.example"):
-        check_env.write_local_secrets(tmp_path / ".env")
+        check_env.generate_missing_values(tmp_path / ".env")
