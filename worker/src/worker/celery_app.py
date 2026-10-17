@@ -17,7 +17,7 @@ import redis
 from celery import Celery
 from celery.signals import worker_ready
 
-from adapters.factory import build_ports
+from adapters.factory import MisconfiguredLLM, build_llm, build_ports, llm_provider
 from contracts.queue import CATALOG_REDIS_KEY, RUN_WORKFLOW_TASK
 from db.crypto import CredentialCipher, CredentialKeyError
 from db.session import make_engine, make_session_factory
@@ -90,10 +90,39 @@ def publish_catalog() -> int:
     return len(catalog)
 
 
+def check_llm() -> str:
+    """One line on the LLM the Writer will use: provider, model, and whether the server answers.
+
+    Logged at startup so a stopped LM Studio shows up before the first run, not during it.
+    Names the provider, model and base URL only — never a key.
+    """
+    if settings.fake_adapters:
+        return "LLM: fake (FAKE_ADAPTERS=true)"
+    adapter_cfg = adapter_settings(settings)
+    llm = build_llm(adapter_cfg)
+    if isinstance(llm, MisconfiguredLLM):
+        return f"LLM: not usable — {llm.message}"
+    probe = getattr(llm, "probe", None)
+    config = getattr(llm, "config", None)
+    if probe is None or config is None:
+        return f"LLM: {llm_provider(adapter_cfg)}"
+    result = asyncio.run(probe())
+    where = f"{config.provider} model {config.model!r} at {config.base_url}"
+    if not result["reachable"]:
+        return f"LLM: {where} — server not reachable ({result.get('error')})"
+    if not result["model_listed"]:
+        return f"LLM: {where} — server up, but it doesn't list that model (it lists: {result.get('models')})"
+    return f"LLM: {where} — ready"
+
+
 @worker_ready.connect
 def _on_ready(**_: object) -> None:
     count = publish_catalog()
     log.info("published %d agents to %s", count, CATALOG_REDIS_KEY)
+    try:
+        log.info(check_llm())
+    except Exception as exc:  # a startup report must never stop the worker
+        log.warning("LLM: couldn't check (%s)", type(exc).__name__)
 
 
 @app.task(name=RUN_WORKFLOW_TASK)
