@@ -36,6 +36,8 @@ class WorkerSettings(BaseSettings):
     llm_max_output_tokens: int = 4096
     llm_temperature: float | None = None
     llm_stream: bool = True
+    # Sent as reasoning_effort when set; "none" turns a thinking model's reasoning off (LM Studio).
+    llm_reasoning_effort: Literal["none", "minimal", "low", "medium", "high"] | None = None
     # "local" writes to STORAGE_ROOT (development); "supabase" uploads to the private bucket
     # STORAGE_BUCKET with the service key (production). A secret — never log it.
     storage_backend: Literal["local", "supabase"] = "local"
@@ -82,6 +84,7 @@ def adapter_settings(settings: WorkerSettings) -> AdapterSettings:
         llm_max_output_tokens=settings.llm_max_output_tokens,
         llm_temperature=settings.llm_temperature,
         llm_stream=settings.llm_stream,
+        llm_reasoning_effort=settings.llm_reasoning_effort,
         storage_backend=settings.storage_backend,
         supabase_url=settings.supabase_url or None,
         supabase_service_key=settings.supabase_service_key,

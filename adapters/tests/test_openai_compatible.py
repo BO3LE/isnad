@@ -45,8 +45,10 @@ def completion(content: str | None = None, *, finish: str = "stop", tool_calls: 
     }
 
 
-def chunk(content: str | None = None, finish: str | None = None) -> dict:
+def chunk(content: str | None = None, finish: str | None = None, *, reasoning: str | None = None) -> dict:
     delta = {"content": content} if content is not None else {}
+    if reasoning is not None:
+        delta["reasoning_content"] = reasoning  # how LM Studio streams a thinking model's reasoning
     return {
         "id": "chatcmpl-1",
         "object": "chat.completion.chunk",
@@ -146,6 +148,16 @@ async def test_openai_gets_max_completion_tokens_and_the_key_as_a_bearer_token()
     assert server.requests[0].headers["authorization"] == "Bearer sk-test-key"
 
 
+async def test_reasoning_effort_is_sent_only_when_configured():
+    server = Server(httpx.Response(200, json=completion("Hi.")), httpx.Response(200, json=completion("Hi.")))
+
+    await llm_for(server).complete("Hi.")
+    await llm_for(server, reasoning_effort="none").complete("Hi.")
+
+    assert "reasoning_effort" not in server.bodies[0]  # the server's default
+    assert server.bodies[1]["reasoning_effort"] == "none"
+
+
 async def test_a_stray_openai_base_url_in_the_environment_is_ignored(monkeypatch):
     monkeypatch.setenv("OPENAI_BASE_URL", "")
     monkeypatch.setenv("OPENAI_API_KEY", "sk-from-the-environment")
@@ -221,6 +233,47 @@ async def test_an_answer_cut_off_by_the_token_limit_is_not_passed_on():
     assert failed.value.code == "llm_truncated"
     assert not failed.value.retryable
     assert "64" in failed.value.message
+
+
+async def test_an_answer_cut_off_while_the_model_was_still_thinking_says_how_to_turn_thinking_off():
+    body = sse(chunk(reasoning="Let me weigh"), chunk(reasoning=" every option..."), chunk(finish="length"))
+    server = Server(httpx.Response(200, headers={"content-type": "text/event-stream"}, content=body))
+    llm = llm_for(server, stream=True, max_output_tokens=1500)
+
+    with pytest.raises(AgentError) as failed:
+        await llm.complete("Write.", json_schema=SCHEMA)
+    assert failed.value.code == "llm_thinking"  # not llm_truncated: a second try would think as long
+    assert not failed.value.retryable
+    assert "LLM_REASONING_EFFORT=none" in failed.value.message
+    assert "1500" in failed.value.message
+    assert llm.last_usage.reasoning_chunks == 2
+    assert llm.last_usage.chunks == 0
+
+
+async def test_an_unclosed_think_block_cut_off_by_the_limit_is_also_thinking_only():
+    server = Server(httpx.Response(200, json=completion("<think>still weighing it", finish="length")))
+
+    with pytest.raises(AgentError) as failed:
+        await llm_for(server).complete("Write.")
+    assert failed.value.code == "llm_thinking"
+
+
+async def test_a_thinking_model_that_answers_is_unaffected_and_its_reasoning_is_not_kept():
+    body = sse(chunk(reasoning="Plan: two lines."), chunk("Hello."), chunk(finish="stop"))
+    server = Server(httpx.Response(200, headers={"content-type": "text/event-stream"}, content=body))
+    llm = llm_for(server, stream=True)
+
+    assert await llm.complete("Say hello.") == "Hello."
+    assert llm.last_usage.reasoning_chunks == 1
+
+
+async def test_an_answer_cut_off_after_some_reasoning_and_some_text_is_still_truncated():
+    body = sse(chunk(reasoning="Plan."), chunk('{"title": "Sol'), chunk(finish="length"))
+    server = Server(httpx.Response(200, headers={"content-type": "text/event-stream"}, content=body))
+
+    with pytest.raises(AgentError) as failed:
+        await llm_for(server, stream=True).complete("Write.", json_schema=SCHEMA)
+    assert failed.value.code == "llm_truncated"
 
 
 async def test_an_empty_answer_is_retryable():
