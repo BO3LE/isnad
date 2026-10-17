@@ -119,12 +119,16 @@ def _finish(settings: ApiSettings, mode: str, *, error: str | None = None) -> Re
     else:
         message = json.dumps({"type": "isnad:google-connection", "ok": error is None, "error": error})
         origin = json.dumps(settings.frontend_url.rstrip("/"))
+        # Google's sign-in pages send Cross-Origin-Opener-Policy: same-origin, which cuts this window
+        # off from the app that opened it: `window.opener` is null by now in Chrome. The app's own
+        # page then tells the waiting tab (same origin, BroadcastChannel) and closes this window.
+        in_app = f"{target}&popup=1"
         page = f"""<!doctype html><meta charset="utf-8"><title>Isnad</title>
 <p>{"Google connected. You can close this window." if error is None else "Google wasn't connected. You can try again."}
-<a href="{html.escape(target)}">Back to Isnad</a></p>
+<a href="{html.escape(in_app)}">Back to Isnad</a></p>
 <script>
 if (window.opener) {{ window.opener.postMessage({message}, {origin}); window.close(); }}
-else {{ window.location.replace({json.dumps(target)}); }}
+else {{ window.location.replace({json.dumps(in_app)}); }}
 </script>"""
         response = HTMLResponse(page)
     response.delete_cookie(google_oauth.NONCE_COOKIE, path="/")
