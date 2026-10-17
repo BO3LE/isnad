@@ -5,6 +5,7 @@ Google is never called: its token and revoke endpoints are an httpx.MockTranspor
 
 from __future__ import annotations
 
+import logging
 from datetime import UTC, datetime, timedelta
 from urllib.parse import parse_qs, urlparse
 from uuid import uuid4
@@ -225,6 +226,43 @@ def test_a_failed_code_exchange_is_reported(client, headers, google, sessions):
 def test_an_id_token_for_another_client_is_refused(client, headers, google):
     google.token_response[1]["id_token"] = id_token(aud="someone-else")
     assert connect(client, headers).headers["location"].endswith("?error=google_failed")
+
+
+def test_a_consent_that_grants_none_of_the_services_is_refused(client, headers, google, sessions):
+    # Google's consent screen lets the person untick YouTube, Drive and Gmail; only who they are is left.
+    google.token_response[1]["scope"] = "openid https://www.googleapis.com/auth/userinfo.email"
+    response = connect(client, headers)
+    assert response.headers["location"].endswith("?error=google_scopes")
+    with sessions() as s:
+        assert s.query(Credential).count() == 0
+
+
+def test_a_consent_that_grants_only_some_services_is_kept_with_what_it_grants(client, headers, google, sessions):
+    google.token_response[1]["scope"] = "openid https://www.googleapis.com/auth/drive.file"
+    assert connect(client, headers).headers["location"].endswith("?connected=google")
+    listed = client.get("/connections", headers=headers).json()
+    assert [c["scopes"] for c in listed] == [["Drive"]]
+
+
+def test_connecting_writes_no_token_code_or_state_to_the_logs(client, headers, google, caplog):
+    caplog.set_level(logging.DEBUG)
+    state = start(client, headers)
+    code = "4/0CANARY-authorization-code"
+    response = client.get("/connections/google/callback", params={"state": state, "code": code}, follow_redirects=False)
+    assert response.headers["location"].endswith("?connected=google")
+    # Everything the server logged. The test client's own request log (httpx2) is the browser's side.
+    logged = "\n".join(r.getMessage() for r in caplog.records if not r.name.startswith("httpx2"))
+    assert "google account connected" in logged
+    for secret in (
+        state,
+        code,
+        ACCESS,
+        REFRESH,
+        google.token_response[1]["id_token"],
+        GOOGLE.google_client_secret,
+        KEY,
+    ):
+        assert secret not in logged
 
 
 def test_popup_mode_tells_the_opener_and_closes(client, headers):
