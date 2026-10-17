@@ -167,6 +167,9 @@ async def google_callback(
 
     now = datetime.now(UTC)
     granted = str(tokens.get("scope", "")).split()
+    if not google_oauth.grants_a_service(granted):
+        log.warning("google connect for user %s granted none of YouTube, Drive or Gmail", claims.user_id)
+        return _finish(settings, claims.mode, error="scopes")
     row = session.scalar(
         select(Credential).where(
             Credential.user_id == claims.user_id,

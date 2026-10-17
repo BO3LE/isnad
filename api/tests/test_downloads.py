@@ -6,10 +6,13 @@ Supabase Storage is replaced by an httpx MockTransport — no network.
 from __future__ import annotations
 
 import json
+from types import SimpleNamespace
 
 import httpx
+import jwt
 import pytest
 from conftest import SETTINGS, auth_headers
+from cryptography.hazmat.primitives.asymmetric import ec
 from test_api import _finished_run
 
 from api.deps import get_file_signer
@@ -140,11 +143,24 @@ def test_local_mode_serves_from_the_files_mount(client, headers, sessions):
     assert body["expires_in"] == 3600
 
 
-def test_local_mode_in_production_is_503_not_a_dead_link(client, headers, sessions):
-    use(client, storage_backend="local", environment="production")
-    output_id = _file_output_id(client, headers, sessions)
+def _as_production_sign_in(headers: dict[str, str], monkeypatch) -> dict[str, str]:
+    """The same user, signed in the way production allows: a Supabase token, checked against its JWKS."""
+    claims = jwt.decode(headers["Authorization"].removeprefix("Bearer "), options={"verify_signature": False})
+    key = ec.generate_private_key(ec.SECP256R1())
+    monkeypatch.setattr(
+        "api.auth._jwks_client",
+        lambda _url: SimpleNamespace(get_signing_key_from_jwt=lambda _t: SimpleNamespace(key=key.public_key())),
+    )
+    token = jwt.encode({**claims, "iss": f"{URL}/auth/v1"}, key, algorithm="ES256")
+    return {"Authorization": f"Bearer {token}"}
 
-    assert client.get(f"/outputs/{output_id}", headers=headers).status_code == 503
+
+def test_local_mode_in_production_is_503_not_a_dead_link(client, headers, sessions, monkeypatch):
+    output_id = _file_output_id(client, headers, sessions)
+    use(client, storage_backend="local", environment="production", supabase_url=URL)
+
+    response = client.get(f"/outputs/{output_id}", headers=_as_production_sign_in(headers, monkeypatch))
+    assert response.status_code == 503
 
 
 def test_local_mode_still_hides_another_users_file(client, headers, sessions):

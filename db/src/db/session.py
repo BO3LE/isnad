@@ -51,6 +51,9 @@ def normalise_url(url: str, *, async_driver: bool = False) -> str:
 
 def make_engine(url: str, **kwargs: object) -> Engine:
     kwargs.setdefault("pool_pre_ping", True)
+    # A failed statement's bound values (emails, encrypted credentials, run outputs) stay out of
+    # the exception text, and so out of logs and of a step's error message.
+    kwargs.setdefault("hide_parameters", True)
     # pool_size / max_overflow only make sense for QueuePool (the default). A caller that
     # passes poolclass=NullPool (Alembic's env.py does, for the one-shot migration
     # connection) must NOT get these — NullPool doesn't accept sizing kwargs at all and
@@ -88,6 +91,7 @@ def make_async_engine(url: str, **kwargs: object) -> AsyncEngine:
     connect_args = dict(kwargs.pop("connect_args", {}) or {})
     connect_args.setdefault("prepare_threshold", None)  # never use server-side prepares (pgbouncer txn mode)
     kwargs.setdefault("pool_pre_ping", True)
+    kwargs.setdefault("hide_parameters", True)  # as make_engine
     if "poolclass" not in kwargs:
         kwargs.setdefault("pool_size", 5)
         kwargs.setdefault("max_overflow", 10)
