@@ -90,6 +90,8 @@ def test_outputs_carry_human_names():
         ("title", "title"),
         ("summary", "summary"),
         ("article_md", "article"),
+        ("pdf_path", "PDF"),
+        ("docx_path", "Word document"),
     ]
 
 
