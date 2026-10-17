@@ -8,13 +8,15 @@
 Profiles:
     dev             FAKE_ADAPTERS=true. Nothing is required; shapes are still checked.
     live-local      FAKE_ADAPTERS=false, the LLM on this machine (LLM_PROVIDER=local, LLM_MODEL),
+                    search chosen (SEARCH_PROVIDER=fake for made-up sources, or Tavily with its key),
                     and a real JWT_SECRET. No paid service, no key.
-    live-providers  live-local's needs, plus search, Google connections and the hosted LLM's key
-                    when LLM_PROVIDER is openai or openrouter.
+    live-providers  live-local's needs, plus real search (Tavily), Google connections and the
+                    hosted LLM's key when LLM_PROVIDER is openai or openrouter.
 
 A variable set in the process environment wins over the file, as it does for the API and worker
 (pydantic-settings); such a line is marked "(env)". Only choices and booleans — FAKE_ADAPTERS,
-LLM_PROVIDER, LLM_MODEL and the like — are ever shown with their value; a key, secret or URL never is.
+LLM_PROVIDER, LLM_MODEL, SEARCH_PROVIDER and the like — are ever shown with their value; a key, secret
+or URL never is.
 
     python scripts/check_env.py --write-local-secrets
 
@@ -47,6 +49,7 @@ MIN_SECRET_LENGTH = 32
 PROFILES = ("dev", "live-local", "live-providers")
 GENERATED = ("JWT_SECRET", "CREDENTIALS_ENCRYPTION_KEY")  # what --write-local-secrets may write
 LLM_PROVIDERS = ("local", "openai", "openrouter", "fake")
+SEARCH_PROVIDERS = ("tavily", "fake")
 # Values safe to show: choices, booleans, numbers and model ids. Everything else is SET / EMPTY only.
 SHOWN = {
     "ENVIRONMENT",
@@ -59,6 +62,7 @@ SHOWN = {
     "LLM_TIMEOUT_S",
     "LLM_MAX_OUTPUT_TOKENS",
     "OPENAI_MODEL",
+    "SEARCH_PROVIDER",
     "VITE_AUTH_MODE",
 }
 
@@ -148,6 +152,11 @@ def llm_provider(env: Env) -> str:
     return env.get("LLM_PROVIDER") or ("openai" if env.get("OPENAI_API_KEY") else "local")
 
 
+def search_provider(env: Env) -> str | None:
+    """As adapters.factory.search_provider: explicit, else tavily if SEARCH_API_KEY, else none."""
+    return env.get("SEARCH_PROVIDER") or ("tavily" if env.get("SEARCH_API_KEY") else None)
+
+
 # ---------------------------------------------------------------- rules
 Rule = Callable[[str, Env, str], tuple[str, str]]  # (value, env, profile) -> (level, note)
 
@@ -194,6 +203,26 @@ def _llm_model(value: str, env: Env, profile: str) -> tuple[str, str]:
     if resolved == "openai":
         return "ok", "OPENAI_MODEL is used"
     return "error", "the model id LM Studio shows (`lms ls`)" if resolved == "local" else "required for openrouter"
+
+
+def _search_provider(value: str, env: Env, profile: str) -> tuple[str, str]:
+    if value and value not in SEARCH_PROVIDERS:
+        return "error", f"not one of {', '.join(SEARCH_PROVIDERS)}"
+    resolved = search_provider(env)
+    if profile == "dev":
+        return "ok", ""
+    if resolved is None:
+        return "error", "unset with no SEARCH_API_KEY: every Researcher step would fail — set fake or tavily"
+    if profile == "live-providers" and resolved != "tavily":
+        return "error", "live-providers searches for real (SEARCH_PROVIDER=tavily)"
+    note = "made-up sources" if resolved == "fake" else "Tavily"
+    return "ok", note + ("" if value else " (unset)")
+
+
+def _search_key(value: str, env: Env, profile: str) -> tuple[str, str]:
+    if value or profile == "dev" or search_provider(env) != "tavily":
+        return "ok", ""
+    return "error", "SEARCH_PROVIDER=tavily needs it (the Researcher's real search)"
 
 
 def _required_in(*profiles: str, why: str = "") -> Rule:
@@ -258,7 +287,8 @@ RULES: dict[str, Rule] = {
     "LLM_STRUCTURED": _choice("json_schema", "json_object", "none"),
     "OPENAI_API_KEY": _key_for("openai", "OPENAI_API_KEY"),
     "OPENROUTER_API_KEY": _key_for("openrouter", "OPENROUTER_API_KEY"),
-    "SEARCH_API_KEY": _required_in("live-providers", why="the Researcher's real search (Tavily)"),
+    "SEARCH_PROVIDER": _search_provider,
+    "SEARCH_API_KEY": _search_key,
     "GOOGLE_CLIENT_ID": _google_pair("GOOGLE_CLIENT_SECRET"),
     "GOOGLE_CLIENT_SECRET": _google_pair("GOOGLE_CLIENT_ID"),
     "GOOGLE_REDIRECT_URI": _url(),
