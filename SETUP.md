@@ -151,11 +151,20 @@ Every variable is listed, with a comment, in [`.env.example`](.env.example). The
 | `STORAGE_BACKEND` | `local` | Where generated files go. `local` = `STORAGE_ROOT` on disk, served at `PUBLIC_FILES_URL` (development only). `supabase` = the private bucket `STORAGE_BUCKET`, downloaded through signed URLs. Set the same value for api and worker. Files are stored at `artifacts/{user_id}/{run_id}/…` either way. |
 | `STORAGE_BUCKET` | `artifacts` | Supabase Storage bucket for `STORAGE_BACKEND=supabase`. Must be **private**. |
 | `DOWNLOAD_URL_EXPIRES_IN` | `300` | Lifetime of a signed download URL, in seconds. |
-| `SUPABASE_URL` | the isnad project | Verifies sign-in tokens (JWKS) and, with `STORAGE_BACKEND=supabase`, is the Storage endpoint. |
+| `SUPABASE_URL` | empty | Your Supabase project, when you use one: verifies its sign-in tokens (JWKS) and, with `STORAGE_BACKEND=supabase`, is the Storage endpoint. Local development needs none. |
 | `SUPABASE_SERVICE_KEY` | empty | Needed only for `STORAGE_BACKEND=supabase` (worker uploads, API signs links). A secret that bypasses RLS: server side only, never `VITE_`-prefixed. |
 | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_REDIRECT_URI`, `CREDENTIALS_ENCRYPTION_KEY`, `FRONTEND_URL` | empty / local defaults | Settings → Connections (see below). Not needed with `FAKE_ADAPTERS=true`. |
 
 Never commit `.env`. Share keys through a password manager, not chat.
+
+Check a file without showing any value — names, SET / EMPTY, and what each profile still needs:
+
+```bash
+python scripts/check_env.py --profile dev            # fakes (the default setup)
+python scripts/check_env.py --profile live-local     # real adapters, the Writer on LM Studio
+python scripts/check_env.py --profile live-providers # plus search, Google and hosted-LLM keys
+python scripts/check_env.py --write-local-secrets    # generate JWT_SECRET / CREDENTIALS_ENCRYPTION_KEY into .env
+```
 
 ### Connect Google (Settings → Connections, D-09)
 

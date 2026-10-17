@@ -101,7 +101,7 @@ services:
       # Set VITE_AUTH_MODE=supabase in .env to switch P-01/P-02 off dev sign-in (needs JWT_SECRET
       # above to match, since the API verifies whatever mode issued the token — see INF-06).
       VITE_AUTH_MODE: ${VITE_AUTH_MODE:-dev}
-      VITE_SUPABASE_URL: ${VITE_SUPABASE_URL:-https://wawbngrkbmlidliybkbw.supabase.co}
+      VITE_SUPABASE_URL: ${VITE_SUPABASE_URL:-}
       VITE_SUPABASE_ANON_KEY: ${VITE_SUPABASE_ANON_KEY:-}
     # FRONTEND_HOST_PORT: same reason as API_HOST_PORT — lets a second stack run alongside the
     # default one (used by the W10 fullstack Playwright suite, `docker compose -p isnad-e2e`).
