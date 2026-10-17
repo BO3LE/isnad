@@ -42,6 +42,8 @@ jobs:
           ! grep -rnE '^[[:space:]]*(from|import)[[:space:]]+agents([.[:space:]]|$)' api/src worker/src
       - name: Agent shape (every agent folder has a valid manifest and entry point)
         run: source .venv/bin/activate && python scripts/validate_manifests.py
+      - name: The scripts' own tests (check_env never prints a value)
+        run: source .venv/bin/activate && python -m pytest tests/scripts -q
       - name: landing/site/index.html is up to date
         run: make landing-check
 
