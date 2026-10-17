@@ -21,7 +21,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, ValidationError
 
-from contracts.errors import AgentError
+from contracts.errors import AgentError, NonRetryableAgentError
 from contracts.graph import CycleError, ancestors, topological_order
 from contracts.ports import Ports
 from contracts.run import (
@@ -50,6 +50,15 @@ class _Cancelled(Exception):
     """The run was cancelled between two attempts of a step: no further attempt starts."""
 
 
+class StepTimedOut(NonRetryableAgentError):
+    """An attempt ran past the step deadline. Not retried: whatever held it would likely hold the next."""
+
+    def __init__(self, title: str, seconds: float):
+        minutes = seconds / 60
+        took = f"{minutes:g} minutes" if minutes >= 1 else f"{seconds:g} seconds"
+        super().__init__(f"{title} took longer than {took} and was stopped.", code="step_timeout")
+
+
 def backoff_delay(attempt: int, jitter: float) -> float:
     """`2**attempt + random()` seconds — exactly as M2 §7.3.3 specifies."""
     return 2**attempt + jitter
@@ -66,11 +75,15 @@ class Orchestrator:
         sleep: Sleep = asyncio.sleep,
         jitter: Callable[[], float] = random.random,
         ports_for: PortsFor | None = None,
+        step_timeout_s: float | None = None,
     ):
         self.store = store
         self.registry = registry
         self.ports = ports
         self._ports_for = ports_for
+        # One attempt's deadline. Each adapter has its own timeouts; this is the backstop for a call
+        # that has none, so a hung step can't hold the run until the broker hands the job out again.
+        self.step_timeout_s = step_timeout_s
         self.max_retries = max_retries
         self._sleep = sleep
         self._jitter = jitter
@@ -159,7 +172,7 @@ class Orchestrator:
                 # Google token is retried; an expired connection (not retryable) fails at once.
                 base = await self._ports_for(run_id, node) if self._ports_for else self.ports
                 ports = run_ports(base, snap.user_id, run_id)  # files land under {user_id}/{run_id}/
-                produced = await agent.execute(input_obj, ports)
+                produced = await self._attempt(agent, input_obj, ports)
                 payload = produced.model_dump() if isinstance(produced, BaseModel) else produced
                 output = agent.output_model.model_validate(payload).model_dump(mode="json")
             except Exception as exc:
@@ -187,6 +200,16 @@ class Orchestrator:
         if self.store.run_status(run_id) == RunStatus.CANCELLED:
             self.store.set_node_status(run_id, node.id, NodeStatus.SKIPPED, retry_count=retry_count)
             raise _Cancelled
+
+    async def _attempt(self, agent, input_obj: BaseModel, ports: Ports) -> Any:
+        deadline = asyncio.timeout(self.step_timeout_s)  # None: no deadline
+        try:
+            async with deadline:
+                return await agent.execute(input_obj, ports)
+        except TimeoutError as exc:
+            if deadline.expired():  # ours ran out — not a TimeoutError an adapter raised (that is retried)
+                raise StepTimedOut(agent.manifest.title, self.step_timeout_s) from exc
+            raise
 
     def _halt(self, snap: RunSnapshot, remaining: list[GraphNode], node: GraphNode | None, message: str) -> RunStatus:
         if node is not None:

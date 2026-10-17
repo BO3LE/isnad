@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import io
 import shutil
+import subprocess
 import time
 import wave
 from pathlib import Path
@@ -46,6 +47,22 @@ def _words(text: str) -> str:
     # Where a line wraps depends on the fonts the machine has (DejaVu on a slim Linux image,
     # others on CI's Ubuntu), so the golden pins the words in order, not the line breaks.
     return " ".join(text.split())
+
+
+def test_assemble_mp4_bounds_ffmpeg_and_ffprobe(monkeypatch):
+    """subprocess.run kills the child when `timeout` runs out, then raises TimeoutExpired."""
+    seen = []
+
+    def run(args, **kwargs):
+        seen.append((Path(args[0]).name, kwargs.get("timeout")))
+        raise subprocess.TimeoutExpired(args, kwargs["timeout"])
+
+    monkeypatch.setattr(shutil, "which", lambda name: f"/usr/bin/{name}")
+    monkeypatch.setattr(subprocess, "run", run)
+
+    with pytest.raises(subprocess.TimeoutExpired):
+        assemble_mp4(b"audio", timeout_s=42)
+    assert seen == [("ffmpeg", 42)]
 
 
 @pytest.mark.skipif(not shutil.which("ffmpeg"), reason="ffmpeg not installed")

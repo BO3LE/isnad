@@ -18,10 +18,11 @@ from adapters.search.fake import FakeSearch
 from adapters.storage.local import LocalStorage
 from adapters.tts.fake import FakeTTS
 from contracts.errors import NonRetryableAgentError
-from contracts.ports import LLMPort, Ports, SearchPort, Source, StoragePort
+from contracts.ports import EmailPort, LLMPort, Ports, SearchPort, Source, StoragePort
 
 LLMProvider = Literal["local", "openai", "openrouter", "fake"]
 SearchProvider = Literal["tavily", "fake"]
+EmailTransport = Literal["gmail", "smtp"]
 # Where each provider lives unless LLM_BASE_URL says otherwise. "local" is LLM_LOCAL_BASE_URL:
 # LM Studio's default port here, http://host.docker.internal:1234/v1 from inside Docker (compose
 # sets that), or Ollama's http://localhost:11434/v1.
@@ -60,6 +61,16 @@ class AdapterSettings:
     supabase_url: str | None = None
     supabase_service_key: str | None = None
     storage_bucket: str = "artifacts"
+    # Email (real mode only). "gmail": through the Google account the step names (D-09). "smtp":
+    # through this server's SMTP — Mailpit in development, which catches everything locally.
+    email_transport: EmailTransport = "gmail"
+    smtp_host: str | None = None
+    smtp_port: int = 1025
+    smtp_username: str | None = None
+    smtp_password: str | None = None  # a secret — never log it
+    smtp_starttls: bool = False
+    smtp_ssl: bool = False
+    email_from: str = "ISNAD <isnad@localhost>"
 
 
 def build_storage(settings: AdapterSettings) -> StoragePort:
@@ -92,21 +103,70 @@ def build_ports(settings: AdapterSettings) -> Ports:
     llm = build_llm(settings)
     search = build_search(settings)
 
-    from adapters._google import NoGoogleEmail, NoGooglePublisher
+    from adapters._google import NoGooglePublisher
     from adapters.tts.gtts import GTTS
 
-    # Publishing and email act as a person's Google account, so there is no process-wide real
-    # adapter: the worker swaps these placeholders for `adapters._google.google_ports(credential)`
-    # when a node names a connected account (D-09). Without one, the step fails with a readable
-    # "needs a Google connection" rather than pretending to publish.
+    # Publishing — and email with EMAIL_TRANSPORT=gmail — acts as a person's Google account, so there
+    # is no process-wide real adapter: the worker swaps these placeholders for
+    # `adapters._google.google_ports(credential)` when a node names a connected account (D-09).
+    # Without one, the step fails with a readable "needs a Google connection" rather than pretending.
+    # With EMAIL_TRANSPORT=smtp, email is this server's SMTP for every step (build_email).
     return Ports(
         llm=llm,
         search=search,
         tts=GTTS(),
         image=FakeImage(),
         storage=storage,
-        email=NoGoogleEmail(),
+        email=build_email(settings),
         publishers={"youtube": NoGooglePublisher(), "drive": NoGooglePublisher()},
+    )
+
+
+def connection_ports(settings: AdapterSettings) -> frozenset[str]:
+    """The `Ports` fields that, on this server, go through the Google account a step names.
+
+    A step's credential field says which port it supplies (`x-port` in its config schema). Publishing
+    always acts as the person's account; email does only with EMAIL_TRANSPORT=gmail.
+    """
+    if settings.fake:
+        return frozenset()
+    return frozenset({"publishers", "email"} if settings.email_transport == "gmail" else {"publishers"})
+
+
+class MisconfiguredEmail:
+    """Stands in when the email settings can't work: the Email step says why, before anything is sent."""
+
+    def __init__(self, message: str):
+        self.message = message
+
+    async def send(self, to: list[str], subject: str, body: str) -> str:
+        raise NonRetryableAgentError(self.message, code="email_misconfigured")
+
+
+def build_email(settings: AdapterSettings) -> EmailPort:
+    """The process-wide email port for real mode. With gmail, the worker swaps in the account's port per step."""
+    if settings.email_transport == "gmail":
+        from adapters._google import NoGoogleEmail
+
+        return NoGoogleEmail()
+    if settings.email_transport != "smtp":
+        return MisconfiguredEmail(f"EMAIL_TRANSPORT={settings.email_transport!r} isn't one of gmail, smtp.")
+    if not settings.smtp_host:
+        return MisconfiguredEmail("EMAIL_TRANSPORT=smtp needs SMTP_HOST (mailpit, inside docker compose).")
+    if settings.smtp_starttls and settings.smtp_ssl:
+        return MisconfiguredEmail("Set SMTP_STARTTLS or SMTP_SSL, not both.")
+    from adapters.email.smtp import SmtpConfig, SmtpEmail
+
+    return SmtpEmail(
+        SmtpConfig(
+            host=settings.smtp_host,
+            port=settings.smtp_port,
+            sender=settings.email_from,
+            username=settings.smtp_username,
+            password=settings.smtp_password,
+            starttls=settings.smtp_starttls,
+            ssl=settings.smtp_ssl,
+        )
     )
 
 

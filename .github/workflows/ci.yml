@@ -60,7 +60,7 @@ jobs:
           - component: db
             install: ./db
           - component: adapters
-            install: ./contracts "./adapters[storage,openai]"
+            install: ./contracts "./adapters[storage,openai,tts]"  # tts: test_gtts.py imports gTTS
           - component: exporters
             install: "./exporters[all,test]"
             ffmpeg: true
