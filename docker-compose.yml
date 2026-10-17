@@ -6,6 +6,7 @@
 #   redis     localhost:6379          broker + result backend
 #   db        localhost:5433          PostgreSQL 15 — development only; production uses Supabase
 #   migrate   —                       one-shot: alembic upgrade head + seed data
+#   mailpit   http://localhost:8025   catches every email the worker sends with EMAIL_TRANSPORT=smtp
 
 x-python-env: &python-env
   DATABASE_URL: postgresql://postgres:postgres@db:5432/gp
@@ -79,6 +80,9 @@ services:
       # LLM_PROVIDER=local: LM Studio runs on this machine, outside Docker, and the container reaches
       # it through host.docker.internal. LLM_BASE_URL in .env still overrides it.
       LLM_LOCAL_BASE_URL: http://host.docker.internal:${LM_STUDIO_PORT:-1234}/v1
+      # EMAIL_TRANSPORT=smtp in .env sends to the mailpit service below; SMTP_HOST in .env overrides it.
+      SMTP_HOST: ${SMTP_HOST:-mailpit}
+      SMTP_PORT: ${SMTP_PORT:-1025}
     extra_hosts: ["host.docker.internal:host-gateway"] # Linux; Docker Desktop provides it already
     volumes:
       - ./worker:/app/worker
@@ -91,6 +95,14 @@ services:
     depends_on:
       migrate: { condition: service_completed_successfully }
       redis: { condition: service_healthy }
+
+  mailpit:
+    # A local mail catcher: nothing it receives leaves this machine. Its inbox (web UI) is on
+    # localhost only, since it shows every message in full. The worker reaches SMTP on mailpit:1025.
+    image: axllent/mailpit:v1.31.3
+    ports:
+      - "127.0.0.1:${MAILPIT_UI_PORT:-8025}:8025"
+      - "127.0.0.1:${MAILPIT_SMTP_PORT:-1025}:1025" # for a worker run outside Docker
 
   frontend:
     build: { context: frontend, target: dev }

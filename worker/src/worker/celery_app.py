@@ -17,11 +17,27 @@ import redis
 from celery import Celery
 from celery.signals import worker_ready
 
-from adapters.factory import MisconfiguredLLM, build_llm, build_ports, llm_provider
+from adapters.email.smtp import SmtpEmail
+from adapters.factory import (
+    MisconfiguredEmail,
+    MisconfiguredLLM,
+    build_email,
+    build_llm,
+    build_ports,
+    connection_ports,
+    llm_provider,
+)
+from contracts.manifest import AgentManifest
 from contracts.queue import CATALOG_REDIS_KEY, RUN_WORKFLOW_TASK
 from db.crypto import CredentialCipher, CredentialKeyError
 from db.session import make_engine, make_session_factory
-from worker.credentials import CredentialPorts, CredentialResolver, GoogleClient
+from worker.credentials import (
+    CredentialPorts,
+    CredentialResolver,
+    GoogleClient,
+    credential_port_of,
+    mark_unused_connections,
+)
 from worker.orchestrator import Orchestrator
 from worker.registry import Registry
 from worker.settings import adapter_settings, get_settings
@@ -83,14 +99,47 @@ def credential_ports(ports):
         if settings.google_client_id and settings.google_client_secret
         else None
     )
-    return CredentialPorts(ports, CredentialResolver(sessions(), cipher, google))
+    return CredentialPorts(
+        ports,
+        CredentialResolver(sessions(), cipher, google),
+        ports=connection_ports(adapter_settings(settings)),
+        port_of=credential_port_of(registry().catalog()),
+    )
+
+
+def published_catalog() -> list[AgentManifest]:
+    """The catalog as this worker runs it: in real mode, an account field this server won't use
+    (Email over SMTP) is marked so, and the API doesn't ask for a Google connection there."""
+    manifests = registry().catalog()
+    if settings.fake_adapters:
+        return manifests
+    used = connection_ports(adapter_settings(settings))
+    return [mark_unused_connections(m, used) for m in manifests]
 
 
 def publish_catalog() -> int:
     """Write the agent catalog where the API can read it, without the API importing any agent."""
-    catalog = [m.model_dump(mode="json") for m in registry().catalog()]
+    catalog = [m.model_dump(mode="json") for m in published_catalog()]
     redis.Redis.from_url(settings.redis_url).set(CATALOG_REDIS_KEY, json.dumps(catalog))
     return len(catalog)
+
+
+def check_email() -> str:
+    """One line on where the Email step's messages go. Names the host only — never a password."""
+    if settings.fake_adapters:
+        return "Email: fake (FAKE_ADAPTERS=true)"
+    email = build_email(adapter_settings(settings))
+    if isinstance(email, MisconfiguredEmail):
+        return f"Email: not usable — {email.message}"
+    if isinstance(email, SmtpEmail):
+        where = f"{email.config.host}:{email.config.port}"
+        caught = (
+            " (Mailpit catches every message: http://localhost:8025)"
+            if email.config.host in ("mailpit", "localhost", "127.0.0.1")
+            else ""
+        )
+        return f"Email: smtp to {where}{caught}"
+    return "Email: gmail, through the Google account each Email step names"
 
 
 def check_llm() -> str:
@@ -122,10 +171,11 @@ def check_llm() -> str:
 def _on_ready(**_: object) -> None:
     count = publish_catalog()
     log.info("published %d agents to %s", count, CATALOG_REDIS_KEY)
-    try:
-        log.info(check_llm())
-    except Exception as exc:  # a startup report must never stop the worker
-        log.warning("LLM: couldn't check (%s)", type(exc).__name__)
+    for name, check in (("LLM", check_llm), ("Email", check_email)):
+        try:
+            log.info(check())
+        except Exception as exc:  # a startup report must never stop the worker
+            log.warning("%s: couldn't check (%s)", name, type(exc).__name__)
 
 
 @app.task(name=RUN_WORKFLOW_TASK)

@@ -39,13 +39,18 @@ class _Config(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
-def _credential_field():
-    """A connected Google account, by reference (D-09). Holds a `credentials.id`, never a token."""
+def _credential_field(port: str):
+    """A connected Google account, by reference (D-09). Holds a `credentials.id`, never a token.
+
+    `x-port` names the `Ports` field the account supplies. The worker that publishes the catalog
+    knows whether that port goes through a connection on this server: when it doesn't (Email over
+    SMTP), it marks the field `x-connection: "unused"` and the API doesn't ask for one.
+    """
     return Field(
         None,
         title="Google account",
         pattern=UUID_PATTERN,
-        json_schema_extra={"x-widget": "credential", "x-provider": "google", "format": "uuid"},
+        json_schema_extra={"x-widget": "credential", "x-provider": "google", "x-port": port, "format": "uuid"},
     )
 
 
@@ -139,7 +144,7 @@ class PublishConfig(_Config):
         title="Publish to",
         json_schema_extra={"x-enum-labels": {"youtube": "YouTube", "drive": "Google Drive"}},
     )
-    credential_id: str | None = _credential_field()
+    credential_id: str | None = _credential_field("publishers")
     title: str | None = Field(None, max_length=100, title="Title", description="Leave empty to use the article title.")
     tags: list[str] = Field(default_factory=list, title="Tags")
     privacy: Literal["unlisted", "private", "public"] = Field(
@@ -165,7 +170,7 @@ class PublishOutput(_Out):
 
 # ---------------------------------------------------------------- Email
 class EmailConfig(_Config):
-    credential_id: str | None = _credential_field()
+    credential_id: str | None = _credential_field("email")
     recipients: list[str] = Field(
         min_length=1, title="To", json_schema_extra={"items": {"type": "string", "format": "email"}}
     )
