@@ -31,6 +31,8 @@ export interface FormField {
   /** `email` for recipient lists, so the form checks addresses without knowing the agent. */
   itemFormat?: string;
   provider?: string;
+  /** `unused`: this server does the step without an account (the worker publishes it, D-09). */
+  connection?: string;
 }
 
 /** `str | None` arrives as `anyOf: [{type: string, ...}, {type: null}]`. Merge the real branch up. */
@@ -119,6 +121,7 @@ export function resolveFields(schema: JsonSchema | null | undefined): FormField[
       minItems: property.minItems as number | undefined,
       itemFormat: items?.format as string | undefined,
       provider: property["x-provider"] as string | undefined,
+      connection: property["x-connection"] as string | undefined,
     };
   });
 }

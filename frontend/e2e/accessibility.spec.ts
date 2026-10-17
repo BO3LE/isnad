@@ -258,6 +258,34 @@ test.describe("WCAG 2.1 AA — no serious or critical violations", () => {
     expect(await seriousViolations(page)).toEqual([]);
   });
 
+  test("P-10 connections", async ({ page }) => {
+    await mockApi(page);
+    await page.route("http://api.mock/connections", (r) =>
+      r.fulfill({
+        json: [
+          { id: "c1", provider: "google", account_email: "team@example.org", scopes: ["YouTube", "Drive", "Gmail"], status: "connected", expires_at: "2026-12-14T12:00:00Z", created_at: "2026-10-01T09:00:00Z", used_by: 2 },
+          { id: "c2", provider: "google", account_email: "old@example.org", scopes: ["Gmail"], status: "expired", expires_at: null, created_at: "2026-09-01T09:00:00Z", used_by: 0 },
+        ],
+      }),
+    );
+    await signIn(page);
+    await page.goto("/settings/connections");
+    await expect(page.getByText("team@example.org")).toBeVisible();
+    expect(await seriousViolations(page)).toEqual([]);
+    await page.getByRole("button", { name: "Disconnect team@example.org" }).click();
+    await expect(page.getByRole("dialog", { name: "Disconnect team@example.org?" })).toBeVisible();
+    expect(await seriousViolations(page)).toEqual([]);
+  });
+
+  test("P-10 connections, none yet", async ({ page }) => {
+    await mockApi(page);
+    await page.route("http://api.mock/connections", (r) => r.fulfill({ json: [] }));
+    await signIn(page);
+    await page.goto("/settings/connections");
+    await expect(page.getByText("No connections yet")).toBeVisible();
+    expect(await seriousViolations(page)).toEqual([]);
+  });
+
   test("not found", async ({ page }) => {
     await mockApi(page);
     await signIn(page);

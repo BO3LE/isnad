@@ -20,6 +20,7 @@ export type LogEntry = Schemas["LogEntry"];
 export type OutputLink = Schemas["OutputLink"];
 export type NodeStatus = Schemas["NodeStatus"];
 export type RunStatus = Schemas["RunStatus"];
+export type Connection = Schemas["Connection"];
 
 export const API_URL = (import.meta.env.VITE_API_URL as string | undefined) ?? "http://localhost:8000";
 
@@ -76,6 +77,11 @@ export const endpoints = {
   runLogs: (runId: string) => api<LogEntry[]>(`/runs/${runId}/logs`),
   /** A file's download URL, or the words themselves for text (api/routers/outputs.py). */
   output: (outputId: string) => api<OutputLink>(`/outputs/${outputId}`),
+  connections: () => api<Connection[]>("/connections"),
+  /** `credentials: "include"`: the API sets a cookie that ties Google's answer to this browser (D-09). */
+  startGoogle: (mode: "popup" | "redirect") =>
+    api<Schemas["ConnectStart"]>(`/connections/google/start?mode=${mode}`, { method: "POST", credentials: "include" }),
+  disconnect: (id: string) => api<void>(`/connections/${id}`, { method: "DELETE" }),
 };
 
 /**
