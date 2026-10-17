@@ -1,12 +1,24 @@
 import { endpoints, type Connection } from "./api";
-import { CHANNEL, connectGoogle, connectProblem, connectionStatus, MESSAGE_TYPE, reportToOpener, usedBy } from "./connections";
+import {
+  byAccount,
+  CHANNEL,
+  connectGoogle,
+  connectionLabel,
+  connectProblem,
+  connectionStatus,
+  MESSAGE_TYPE,
+  reportToOpener,
+  services,
+  usedBy,
+} from "./connections";
 
 const NOW = new Date("2026-10-17T12:00:00Z");
 const connection = (over: Partial<Connection> = {}): Connection => ({
   id: "c1",
   provider: "google",
   account_email: "team@example.org",
-  scopes: ["YouTube", "Drive", "Gmail"],
+  access: "youtube",
+  scopes: ["YouTube"],
   status: "connected",
   expires_at: null,
   created_at: "2026-10-01T09:00:00Z",
@@ -41,6 +53,25 @@ it("counts the workflows that use a connection", () => {
   expect(usedBy(3)).toBe("Used by 3 workflows");
 });
 
+it("says what a connection may do, and which one an option is", () => {
+  const drive = connection({ access: "drive_gmail", scopes: ["Drive", "Gmail"] });
+  expect(services(drive)).toBe("Drive · Gmail");
+  expect(services(connection({ scopes: [] }))).toMatch(/^Nothing allowed/);
+  expect(connectionLabel(connection())).toBe("team@example.org — YouTube");
+  expect(connectionLabel(connection({ status: "expired" }))).toBe("team@example.org — YouTube (expired)");
+});
+
+it("groups an account's connections, in the order the accounts were connected", () => {
+  const youtube = connection({ id: "c1" });
+  const other = connection({ id: "c2", account_email: "other@example.org" });
+  const drive = connection({ id: "c3", access: "drive_gmail", scopes: ["Drive", "Gmail"] });
+
+  expect(byAccount([youtube, other, drive])).toEqual([
+    { email: "team@example.org", connections: [youtube, drive] },
+    { email: "other@example.org", connections: [other] },
+  ]);
+});
+
 it("explains a failed connection, and says nothing about one that was simply closed", () => {
   expect(connectProblem("google_denied")).toMatch(/cancelled/);
   expect(connectProblem("state")).toMatch(/another browser/);
@@ -73,10 +104,10 @@ describe("connectGoogle", () => {
     const window_ = popup();
     const win = fakeWindow(window_);
 
-    const pending = connectGoogle(undefined, win);
+    const pending = connectGoogle("drive_gmail", undefined, win);
     expect(win.open).toHaveBeenCalledTimes(1); // synchronously, inside the click
     await vi.waitFor(() => expect(window_.location.href).toBe("https://accounts.google.test/o"));
-    expect(start).toHaveBeenCalledWith("popup");
+    expect(start).toHaveBeenCalledWith("drive_gmail", "popup");
 
     tell({ type: MESSAGE_TYPE, ok: true });
     await expect(pending).resolves.toEqual({ ok: true });
@@ -86,7 +117,7 @@ describe("connectGoogle", () => {
     vi.spyOn(endpoints, "startGoogle").mockResolvedValue({ authorization_url: "https://accounts.google.test/o" });
     const window_ = popup();
     window_.closed = true; // what Chrome reports once Google's COOP has cut the popup off
-    const pending = connectGoogle(undefined, fakeWindow(window_));
+    const pending = connectGoogle("youtube", undefined, fakeWindow(window_));
     await vi.waitFor(() => expect(window_.location.href).not.toBe(""));
 
     tell({ type: MESSAGE_TYPE, ok: false, error: "denied" });
@@ -97,7 +128,7 @@ describe("connectGoogle", () => {
     vi.spyOn(endpoints, "startGoogle").mockResolvedValue({ authorization_url: "https://accounts.google.test/o" });
     const window_ = popup();
     const win = fakeWindow(window_);
-    const pending = connectGoogle(undefined, win);
+    const pending = connectGoogle("youtube", undefined, win);
     await vi.waitFor(() => expect(window_.location.href).not.toBe(""));
     let settled = false;
     void pending.then(() => (settled = true));
@@ -114,7 +145,7 @@ describe("connectGoogle", () => {
     vi.spyOn(endpoints, "startGoogle").mockResolvedValue({ authorization_url: "https://accounts.google.test/o" });
     const window_ = popup();
     const controller = new AbortController();
-    const pending = connectGoogle(controller.signal, fakeWindow(window_));
+    const pending = connectGoogle("youtube", controller.signal, fakeWindow(window_));
     await vi.waitFor(() => expect(window_.location.href).not.toBe(""));
 
     controller.abort();
@@ -126,8 +157,8 @@ describe("connectGoogle", () => {
     const start = vi.spyOn(endpoints, "startGoogle").mockResolvedValue({ authorization_url: "https://accounts.google.test/r" });
     const win = fakeWindow(null);
 
-    await expect(connectGoogle(undefined, win)).resolves.toEqual({ ok: false, reason: "redirecting" });
-    expect(start).toHaveBeenCalledWith("redirect");
+    await expect(connectGoogle("youtube", undefined, win)).resolves.toEqual({ ok: false, reason: "redirecting" });
+    expect(start).toHaveBeenCalledWith("youtube", "redirect");
     expect(win.location.assign).toHaveBeenCalledWith("https://accounts.google.test/r");
   });
 
@@ -135,7 +166,7 @@ describe("connectGoogle", () => {
     vi.spyOn(endpoints, "startGoogle").mockRejectedValue(new Error("not set up"));
     const window_ = popup();
 
-    await expect(connectGoogle(undefined, fakeWindow(window_))).rejects.toThrow("not set up");
+    await expect(connectGoogle("youtube", undefined, fakeWindow(window_))).rejects.toThrow("not set up");
     expect(window_.close).toHaveBeenCalled();
   });
 });

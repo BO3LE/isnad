@@ -35,8 +35,8 @@ SENDING_SCOPES = frozenset(
     }
 )
 NO_SCOPE_MESSAGE = (
-    "This Google connection isn't allowed to send email. Reconnect Google in Settings → Connections "
-    "and leave Gmail ticked."
+    "This Google connection can't send email. In the step's settings choose a connection that lists Gmail, "
+    "or connect Drive and Gmail in Settings → Connections."
 )
 AMBIGUOUS_MESSAGE = (
     "Gmail didn't confirm the message, so it may have been sent. Check the account's Sent folder before running again."

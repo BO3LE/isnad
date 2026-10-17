@@ -31,9 +31,11 @@ UPLOAD_SCOPES = frozenset(
     }
 )
 CATEGORY_PEOPLE_AND_BLOGS = "22"
+# Google connects YouTube on its own, apart from Drive and Gmail (api/google_oauth.py), so the step
+# may simply name the account's other connection.
 NO_SCOPE_MESSAGE = (
-    "This Google connection isn't allowed to upload to YouTube. Reconnect Google in Settings → Connections "
-    "and leave YouTube ticked."
+    "This Google connection can't upload to YouTube. In the step's settings choose a connection that lists "
+    "YouTube, or connect YouTube in Settings → Connections."
 )
 # YouTube's limits on a video's details; it refuses `<` and `>` in the title and description.
 TITLE_MAX, DESCRIPTION_MAX_BYTES, TAGS_MAX_CHARS = 100, 5000, 500

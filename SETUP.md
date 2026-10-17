@@ -212,9 +212,11 @@ Both the API and the worker read these (the worker needs the client ID/secret to
 the key to decrypt them). To rotate the key: set `CREDENTIALS_ENCRYPTION_KEY=<new>,<old>` — new
 first — on both, and later drop the old one once every row has been refreshed or re-encrypted.
 
-**3. Check it:** sign in, open Settings → Connections, press **Connect Google**, choose a test user.
-You land back on `/settings/connections?connected=google`; `GET /connections` lists the account with
-"YouTube · Drive · Gmail". Errors come back as `?error=google_denied` (Cancel pressed),
+**3. Check it:** sign in, open Settings → Connections, press **Connect Google**, choose **YouTube**,
+then a test user. You land back on `/settings/connections?connected=google` with the account listed
+and "YouTube" connected; press **Connect** next to "Drive and Gmail" for the second connection.
+Google won't grant YouTube and Drive in one consent ("scopes that cannot be requested together"),
+so an account is connected twice, and each Publisher or Email step picks the connection it needs. Errors come back as `?error=google_denied` (Cancel pressed),
 `google_state` (link expired, reused or opened in another browser) or `google_failed`.
 
 **What publishing does with it.** A Publisher step uploads as the account it names, after you approve

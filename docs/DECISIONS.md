@@ -44,6 +44,15 @@ encrypts, all decrypt — that is the rotation path. A workflow step holds only 
   The agent never sees where the token came from. `invalid_grant` marks the row `invalid_at` and
   fails the step without retrying: "Your Google connection has expired or was removed. Reconnect
   Google, then run again." With `FAKE_ADAPTERS=true` none of this runs.
+- **Amended 2026-10-17 — YouTube apart from Drive and Gmail (migration `0006`).** Google now refuses
+  one consent for `youtube.upload` together with `drive.file` ("This request contains scopes that
+  cannot be requested together", Error 400 invalid_request; seen with ISNAD's client). YouTube
+  alone, YouTube with Gmail and Drive with Gmail are each accepted. So `start` takes
+  `access=youtube|drive_gmail`, the state carries it, `include_granted_scopes` is no longer sent,
+  and a row is one (user, provider, account, **access**): an account connected for both has two
+  rows, each with its own refresh token, and a step names the one it needs. Rows from before are
+  `access=all`. `DELETE /connections/{id}` now forgets every connection of that Google account,
+  since revoking one at Google may end the others. The worker is unchanged: it resolves one row.
 - **Guard rails.** Saving a workflow whose step settings contain a Google token, a client secret or
   a key named like one (`refresh_token`, `password`, …), or a `credential_id` that isn't a UUID, is
   refused with 422. `/validate` reports `missing_credential` / `expired_credential` on every

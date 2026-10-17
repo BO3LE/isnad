@@ -28,8 +28,8 @@ UPLOAD_URL = "https://www.googleapis.com/upload/drive/v3/files?uploadType=resuma
 # drive.file (what the connect flow asks for) reaches only files Isnad created; drive reaches all.
 UPLOAD_SCOPES = frozenset({"https://www.googleapis.com/auth/drive.file", "https://www.googleapis.com/auth/drive"})
 NO_SCOPE_MESSAGE = (
-    "This Google connection isn't allowed to save to Google Drive. Reconnect Google in Settings → Connections "
-    "and leave Drive ticked."
+    "This Google connection can't save to Google Drive. In the step's settings choose a connection that lists "
+    "Drive, or connect Drive and Gmail in Settings → Connections."
 )
 _UNSAFE_NAME = re.compile(r'[\\/:*?"<>|\x00-\x1f]+')
 

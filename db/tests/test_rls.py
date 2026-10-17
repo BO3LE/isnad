@@ -155,8 +155,8 @@ def _seed_user(conn: psycopg.Connection, email: str) -> uuid.UUID:
         (log, uid),
     )
     conn.execute(
-        "INSERT INTO credentials (id, user_id, provider, account_email, scopes, encrypted_payload)"
-        " VALUES (gen_random_uuid(), %s, 'google', %s, '[]', 'x')",
+        "INSERT INTO credentials (id, user_id, provider, account_email, access, scopes, encrypted_payload)"
+        " VALUES (gen_random_uuid(), %s, 'google', %s, 'youtube', '[]', 'x')",
         (uid, email),
     )
     return uid

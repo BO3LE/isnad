@@ -6,7 +6,10 @@ router, no log line and no workflow ever contains one. A step refers to a connec
     POST   /connections/google/start     → {authorization_url}; the browser (or a popup) goes there
     GET    /connections/google/callback  ← Google redirects here; stores the tokens, returns to the app
     GET    /connections                  → the signed-in user's connections
-    DELETE /connections/{id}             → revoke at Google (best effort) and forget
+    DELETE /connections/{id}             → revoke that Google account at Google (best effort) and forget it
+
+A Google account is connected once per access — YouTube, or Drive and Gmail — because Google won't
+grant both in one consent (api/google_oauth.py). Each is a connection of its own.
 """
 
 from __future__ import annotations
@@ -63,6 +66,7 @@ def _connection(row: Credential, used_by: int) -> Connection:
         id=row.id,
         provider="google",
         account_email=row.account_email,
+        access=row.access,
         scopes=google_oauth.plain_scopes(list(row.scopes or [])),
         status=status_of(row),
         expires_at=row.expires_at,
@@ -87,6 +91,10 @@ def list_connections(user: User = Depends(get_current_user), session: Session = 
 )
 def start_google(
     response: Response,
+    access: google_oauth.Access = Query(
+        description="`youtube`: upload to YouTube. `drive_gmail`: save to Drive and send email. Google "
+        "won't grant both in one consent, so each is connected on its own."
+    ),
     mode: Literal["redirect", "popup"] = Query(
         "redirect", description="`popup`: the callback answers with a page that tells the opener and closes."
     ),
@@ -97,7 +105,7 @@ def start_google(
     cookie that ties Google's answer to this browser; then open `authorization_url`."""
     _cipher(settings)
     nonce = google_oauth.new_nonce()
-    state = google_oauth.make_state(settings, user.id, nonce, mode)
+    state = google_oauth.make_state(settings, user.id, nonce, mode, access)
     response.set_cookie(
         google_oauth.NONCE_COOKIE,
         nonce,
@@ -107,7 +115,7 @@ def start_google(
         samesite="lax",
         path="/",
     )
-    return ConnectStart(authorization_url=google_oauth.authorization_url(settings, state))
+    return ConnectStart(authorization_url=google_oauth.authorization_url(settings, state, access))
 
 
 def _finish(settings: ApiSettings, mode: str, *, error: str | None = None) -> Response:
@@ -171,14 +179,15 @@ async def google_callback(
 
     now = datetime.now(UTC)
     granted = str(tokens.get("scope", "")).split()
-    if not google_oauth.grants_a_service(granted):
-        log.warning("google connect for user %s granted none of YouTube, Drive or Gmail", claims.user_id)
+    if not google_oauth.grants_a_service(granted, claims.access):
+        log.warning("google connect for user %s granted none of what it asked for", claims.user_id)
         return _finish(settings, claims.mode, error="scopes")
     row = session.scalar(
         select(Credential).where(
             Credential.user_id == claims.user_id,
             Credential.provider == google_oauth.PROVIDER,
             Credential.account_email == email,
+            Credential.access == claims.access,
         )
     )
     previous_refresh = None
@@ -204,7 +213,9 @@ async def google_callback(
     expires_at = now + timedelta(seconds=int(lifetime)) if lifetime else None
 
     if row is None:
-        row = Credential(user_id=claims.user_id, provider=google_oauth.PROVIDER, account_email=email)
+        row = Credential(
+            user_id=claims.user_id, provider=google_oauth.PROVIDER, account_email=email, access=claims.access
+        )
         session.add(row)
     row.scopes = granted
     row.encrypted_payload = cipher.encrypt(payload)
@@ -224,23 +235,34 @@ async def disconnect(
     settings: ApiSettings = Depends(get_settings),
     transport: httpx.AsyncBaseTransport | None = Depends(get_google_transport),
 ):
-    """Forget a connection. Steps that used it then show "needs a Google connection"."""
+    """Forget the Google account this connection is for — all of its connections (YouTube, and Drive
+    and Gmail). Revoking one of them at Google may end the others (Google keeps one grant per app and
+    account), so none is left behind looking connected. Steps that used them then show "needs a
+    Google connection"."""
     row = session.get(Credential, credential_id)
     if row is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Not found.")
     owned(user, row.user_id)
+    rows = session.scalars(
+        select(Credential).where(
+            Credential.user_id == row.user_id,
+            Credential.provider == row.provider,
+            Credential.account_email == row.account_email,
+        )
+    ).all()
 
-    token = None
-    try:
-        payload = CredentialCipher(settings.credentials_encryption_key).decrypt(row.encrypted_payload)
-        token = payload.get("refresh_token") or payload.get("access_token")
-    except (CredentialKeyError, CredentialDecryptError):
-        token = None
-    if token:
-        async with _client(transport) as client:
-            if not await google_oauth.revoke(token, client):
-                log.warning("couldn't revoke credential %s at Google; deleting it anyway", row.id)
+    async with _client(transport) as client:
+        for each in rows:
+            token = None
+            try:
+                payload = CredentialCipher(settings.credentials_encryption_key).decrypt(each.encrypted_payload)
+                token = payload.get("refresh_token") or payload.get("access_token")
+            except (CredentialKeyError, CredentialDecryptError):
+                token = None
+            if token and not await google_oauth.revoke(token, client):
+                log.warning("couldn't revoke credential %s at Google; deleting it anyway", each.id)
 
-    session.delete(row)
+    for each in rows:
+        session.delete(each)
     session.commit()
     return Response(status_code=status.HTTP_204_NO_CONTENT)

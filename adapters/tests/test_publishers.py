@@ -161,7 +161,7 @@ async def test_a_connection_without_the_youtube_scope_fails_before_any_request()
     with pytest.raises(AgentError) as failed:
         await youtube(google, credential=credential).publish(VIDEO_PATH, META)
     assert failed.value.code == "youtube_scope" and not failed.value.retryable
-    assert "leave YouTube ticked" in failed.value.message
+    assert "lists YouTube" in failed.value.message
     assert google.requests == []
 
 
@@ -186,7 +186,7 @@ async def test_a_file_missing_from_storage_fails_before_any_request():
         (google_error(400, "uploadLimitExceeded"), "youtube_upload_limit", False, "as many videos"),
         (google_error(401, "authError"), "expired_credential", False, "Reconnect Google"),
         (google_error(401, "youtubeSignupRequired"), "youtube_no_channel", False, "no YouTube channel"),
-        (google_error(403, "insufficientPermissions"), "youtube_scope", False, "leave YouTube ticked"),
+        (google_error(403, "insufficientPermissions"), "youtube_scope", False, "lists YouTube"),
         (google_error(400, "invalidTitle", "Bad title."), "youtube_rejected", False, "Bad title."),
         (httpx.Response(200), "youtube_no_session", True, "didn't open an upload"),
     ],
@@ -318,7 +318,7 @@ async def test_drive_names_are_safe_and_a_missing_link_is_built_from_the_id():
         (google_error(403, "storageQuotaExceeded"), "drive_full", False, "The Google Drive account is full."),
         (google_error(403, "userRateLimitExceeded"), "drive_rate_limited", True, "limiting"),
         (google_error(403, "dailyLimitExceeded"), "drive_quota", False, "daily limit"),
-        (google_error(403, "insufficientPermissions"), "drive_scope", False, "leave Drive ticked"),
+        (google_error(403, "insufficientPermissions"), "drive_scope", False, "lists Drive"),
         (google_error(401, "authError"), "expired_credential", False, "Reconnect Google"),
         (httpx.Response(500), "drive_unavailable", True, "500"),
     ],

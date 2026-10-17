@@ -5,9 +5,16 @@ consent URL, exchange the code, revoke — live here. Refreshing a token during 
 job (`worker.credentials`).
 
 `state` is a short-lived HS256 JWT signed with JWT_SECRET: it names the Isnad user who pressed
-Connect, a nonce, and whether the browser is a popup. Its nonce must also match the HttpOnly cookie
-set on the response to POST /connections/google/start, so a consent link can't be replayed in
-someone else's browser.
+Connect, a nonce, which access is being asked for, and whether the browser is a popup. Its nonce
+must also match the HttpOnly cookie set on the response to POST /connections/google/start, so a
+consent link can't be replayed in someone else's browser.
+
+Google won't grant YouTube and Drive in one consent: asked for `youtube.upload` with `drive.file`,
+it stops at "Access blocked: Authorisation error — This request contains scopes that cannot be
+requested together" (Error 400 invalid_request; seen with this app's client, 2026-10-17). YouTube
+alone, YouTube with Gmail and Drive with Gmail are each accepted. So a Google account is connected
+once per *access* — YouTube, or Drive and Gmail — and each is its own connection with its own
+refresh token (see `ACCESS`).
 """
 
 from __future__ import annotations
@@ -31,21 +38,20 @@ REVOKE_URI = "https://oauth2.googleapis.com/revoke"
 
 PROVIDER = "google"
 
-# What Publisher (YouTube, Drive) and Email (Gmail) need, plus who the account is.
-# drive.file only reaches files Isnad created — not the rest of the user's Drive.
-SCOPES = [
-    "openid",
-    "https://www.googleapis.com/auth/userinfo.email",
-    "https://www.googleapis.com/auth/youtube.upload",
-    "https://www.googleapis.com/auth/drive.file",
-    "https://www.googleapis.com/auth/gmail.send",
-]
-# Scopes as a person reads them on S-09 ("YouTube · Drive · Gmail").
-SCOPE_LABELS = {
-    "https://www.googleapis.com/auth/youtube.upload": "YouTube",
-    "https://www.googleapis.com/auth/drive.file": "Drive",
-    "https://www.googleapis.com/auth/gmail.send": "Gmail",
+YOUTUBE = "https://www.googleapis.com/auth/youtube.upload"
+DRIVE = "https://www.googleapis.com/auth/drive.file"  # only files Isnad created — not the rest of Drive
+GMAIL = "https://www.googleapis.com/auth/gmail.send"
+# Who the account is; asked for in every consent.
+IDENTITY = ["openid", "https://www.googleapis.com/auth/userinfo.email"]
+
+Access = Literal["youtube", "drive_gmail"]
+# What Publisher (YouTube, Drive) and Email (Gmail) need, in the groups Google grants together.
+ACCESS: dict[str, list[str]] = {
+    "youtube": [YOUTUBE],
+    "drive_gmail": [DRIVE, GMAIL],
 }
+# Scopes as a person reads them on S-09 ("YouTube", "Drive · Gmail").
+SCOPE_LABELS = {YOUTUBE: "YouTube", DRIVE: "Drive", GMAIL: "Gmail"}
 
 STATE_AUDIENCE = "isnad:google-oauth"
 STATE_TTL = timedelta(minutes=10)
@@ -67,18 +73,20 @@ class State:
     user_id: uuid.UUID
     nonce: str
     mode: Mode
+    access: Access
 
 
 def new_nonce() -> str:
     return secrets.token_urlsafe(24)
 
 
-def make_state(settings: ApiSettings, user_id: uuid.UUID, nonce: str, mode: Mode) -> str:
+def make_state(settings: ApiSettings, user_id: uuid.UUID, nonce: str, mode: Mode, access: Access) -> str:
     now = datetime.now(UTC)
     claims = {
         "sub": str(user_id),
         "nonce": nonce,
         "mode": mode,
+        "access": access,
         "aud": STATE_AUDIENCE,
         "iat": now,
         "exp": now + STATE_TTL,
@@ -89,25 +97,35 @@ def make_state(settings: ApiSettings, user_id: uuid.UUID, nonce: str, mode: Mode
 def read_state(settings: ApiSettings, token: str, cookie_nonce: str | None) -> State:
     try:
         claims = jwt.decode(token, settings.jwt_secret, algorithms=["HS256"], audience=STATE_AUDIENCE)
-        state = State(user_id=uuid.UUID(claims["sub"]), nonce=str(claims["nonce"]), mode=claims.get("mode", "redirect"))
+        state = State(
+            user_id=uuid.UUID(claims["sub"]),
+            nonce=str(claims["nonce"]),
+            mode=claims.get("mode", "redirect"),
+            access=claims["access"],
+        )
     except (jwt.PyJWTError, KeyError, ValueError):
         raise OAuthError("state") from None
-    if state.mode not in ("redirect", "popup"):
+    if state.mode not in ("redirect", "popup") or state.access not in ACCESS:
         raise OAuthError("state")
     if settings.oauth_bind_browser and not (cookie_nonce and hmac.compare_digest(cookie_nonce, state.nonce)):
         raise OAuthError("state")
     return state
 
 
-def authorization_url(settings: ApiSettings, state: str) -> str:
+def scopes_for(access: Access) -> list[str]:
+    return [*IDENTITY, *ACCESS[access]]
+
+
+def authorization_url(settings: ApiSettings, state: str, access: Access) -> str:
+    # No include_granted_scopes: it would fold the account's other access into this consent, which
+    # is the YouTube-with-Drive request Google refuses.
     params = {
         "client_id": settings.google_client_id,
         "redirect_uri": settings.google_redirect_uri,
         "response_type": "code",
-        "scope": " ".join(SCOPES),
+        "scope": " ".join(scopes_for(access)),
         "access_type": "offline",  # a refresh token, so runs work when the person is not around
         "prompt": "consent",  # …issued again on every connect, not only the first
-        "include_granted_scopes": "true",
         "state": state,
     }
     return f"{AUTH_URI}?{urlencode(params)}"
@@ -168,10 +186,10 @@ async def revoke(token: str, client: httpx.AsyncClient) -> bool:
     return response.status_code in (200, 400)
 
 
-def grants_a_service(scopes: list[str]) -> bool:
-    """Google's consent screen lets a person untick scopes. A connection that grants none of YouTube,
-    Drive or Gmail could do nothing for any step, so it is refused rather than stored."""
-    return any(scope in scopes for scope in SCOPE_LABELS)
+def grants_a_service(scopes: list[str], access: Access) -> bool:
+    """Google's consent screen lets a person untick scopes. A connection that grants none of what it
+    asked for could do nothing for any step, so it is refused rather than stored."""
+    return any(scope in scopes for scope in ACCESS[access])
 
 
 def plain_scopes(scopes: list[str]) -> list[str]:

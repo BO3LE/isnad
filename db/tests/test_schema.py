@@ -11,7 +11,7 @@ from sqlalchemy import create_engine, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from db.models import Base, ExecutionLog, ExecutionRun, User, Workflow
+from db.models import Base, Credential, ExecutionLog, ExecutionRun, User, Workflow
 
 
 @pytest.fixture()
@@ -65,3 +65,24 @@ def test_session_round_trip(session):
     session.add(User(email="x@y.co"))
     session.commit()
     assert session.scalar(select(User.email)) == "x@y.co"
+
+
+def test_an_account_has_one_connection_per_access(session):
+    """Google grants YouTube apart from Drive and Gmail, so one account can have a row for each."""
+    user = User(email="a@b.co")
+    session.add(user)
+    session.flush()
+    for access in ("youtube", "drive_gmail"):
+        session.add(
+            Credential(
+                user_id=user.id, provider="google", account_email="a@gmail.com", access=access, encrypted_payload=b"x"
+            )
+        )
+    session.flush()
+    session.add(
+        Credential(
+            user_id=user.id, provider="google", account_email="a@gmail.com", access="youtube", encrypted_payload=b"x"
+        )
+    )
+    with pytest.raises(IntegrityError):
+        session.flush()
