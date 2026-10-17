@@ -5,17 +5,19 @@ Opt-in and never run in CI: it needs a running model server. For each model × s
 mode × article length it runs the Writer `--runs` times on fixed research notes and records:
 
     ok              a valid WriteOutput came back (after at most the Writer's one reformat call)
-    first_try       valid on the first call, no reformat needed
+    first_try       valid on the first call: no reformat, no second attempt after a cut-off answer
+    expanded        the Writer asked once for a fuller version (first draft under 75% of the target)
     words           article length, and whether it is within ±25% of the target
     cited           the article cites a source as [n]
+    invented        figures in the article that the notes don't contain (the notes hold one: 2030)
     seconds         wall time; first-token time; completion tokens per second when reported
     mode_used       the structured mode the server actually accepted (the adapter falls back)
 
 and, per model, how reliably it calls a tool when it should (`contracts.tools.run_tools`).
 
 A model passes when, in json_schema mode, 100% of runs are first-try valid, at least 90% are within
-the length target, and the median long article takes under 3 minutes. The fastest passing model
-wins — and a person confirms the choice.
+the length target, no run invents a figure, and the median long article takes under 3 minutes. The
+fastest passing model wins — and a person confirms the choice.
 
     # LM Studio's server running with the model loaded (see SETUP.md → "Local LLM"):
     python scripts/llm_bench.py --models qwen3-30b-a3b-instruct-2507
@@ -42,7 +44,7 @@ from typing import Any
 
 from adapters.factory import AdapterSettings, build_ports
 from adapters.llm.openai_compatible import LLMConfig, OpenAICompatibleLLM
-from agents.writer.agent import LENGTH_WORDS, WriterAgent
+from agents.writer.agent import EXPAND, LENGTH_WORDS, REFORMAT, WriterAgent, figures
 from contracts.agent_io import WriteInput
 from contracts.errors import AgentError
 from contracts.ports import Tool
@@ -70,6 +72,7 @@ SOURCES = [
     {"title": f"Benchmark source {i}", "url": f"https://example.org/source-{i}", "snippet": ""} for i in range(1, 6)
 ]
 CITATION = re.compile(r"\[\d+\]")
+ALLOWED_FIGURES = figures(" ".join(NOTES))
 
 LOOKUP = Tool(
     name="capacity_lookup",
@@ -83,14 +86,20 @@ LOOKUP = Tool(
 
 
 class Counting:
-    """Wraps the adapter to count calls (a second call is the Writer's reformat attempt)."""
+    """Wraps the adapter to count the Writer's calls: the first, a reformat attempt, a fuller rewrite."""
 
     def __init__(self, inner: OpenAICompatibleLLM):
-        self.inner, self.calls = inner, 0
+        self.inner, self.calls, self.reformats, self.expansions, self.cutoffs = inner, 0, 0, 0, 0
 
     async def complete(self, prompt: str, **kwargs: Any) -> str:
         self.calls += 1
-        return await self.inner.complete(prompt, **kwargs)
+        self.reformats += prompt.startswith(REFORMAT.split("{", 1)[0])
+        self.expansions += prompt.startswith(EXPAND.split("{", 1)[0])
+        try:
+            return await self.inner.complete(prompt, **kwargs)
+        except AgentError as exc:
+            self.cutoffs += exc.code == "llm_truncated"  # the Writer tries a cut-off answer once more
+            raise
 
 
 @dataclass
@@ -106,6 +115,8 @@ class Result:
     target: int
     within: bool
     cited: bool
+    invented: list[str]
+    expanded: bool
     seconds: float
     first_token_seconds: float | None
     completion_tokens: int | None
@@ -136,12 +147,14 @@ async def write_once(llm: OpenAICompatibleLLM, model: str, mode: str, length: st
         length=length,
         run=run,
         ok=error is None,
-        first_try=error is None and counting.calls == 1,
+        first_try=error is None and counting.reformats == 0 and counting.cutoffs == 0,
+        expanded=counting.expansions > 0,
         error=error,
         words=words,
         target=target,
         within=error is None and abs(words - target) <= 0.25 * target,
         cited=bool(CITATION.search(article)),
+        invented=sorted(figures(article) - ALLOWED_FIGURES),
         seconds=round(seconds, 2),
         first_token_seconds=round(usage.first_token_seconds, 2) if usage.first_token_seconds else None,
         completion_tokens=usage.completion_tokens,
@@ -188,6 +201,8 @@ def summarise(results: list[Result], tool_rates: dict[str, float]) -> list[dict[
                 "first_try": f"{sum(r.first_try for r in group)}/{len(group)}",
                 "within_25pct": f"{sum(r.within for r in group)}/{len(group)}",
                 "cited": f"{sum(r.cited for r in group)}/{len(group)}",
+                "invented": f"{sum(bool(r.invented) for r in group)}/{len(group)}",
+                "expanded": f"{sum(r.expanded for r in group)}/{len(group)}",
                 "median_s": round(statistics.median(times), 1),
                 "p95_s": round(times[min(len(times) - 1, int(0.95 * len(times)))], 1),
                 "median_tok_s": round(statistics.median(speeds), 1) if speeds else None,
@@ -212,6 +227,9 @@ def verdict(model: str, results: list[Result]) -> tuple[bool, str]:
         reasons.append(f"first-try valid {first_try:.0%} < 100%")
     if within < 0.9:
         reasons.append(f"within length {within:.0%} < 90%")
+    inventing = sum(bool(r.invented) for r in schema)
+    if inventing:
+        reasons.append(f"invented figures in {inventing}/{len(schema)} runs")
     if median_long is None:
         reasons.append("no long runs")
     elif median_long >= 180:
@@ -228,6 +246,8 @@ def print_table(rows: list[dict[str, Any]]) -> None:
         "first_try",
         "within_25pct",
         "cited",
+        "invented",
+        "expanded",
         "median_s",
         "p95_s",
         "median_tok_s",
@@ -298,7 +318,8 @@ async def main() -> int:
                     status = "ok" if result.ok else f"✗ {result.error}"
                     print(
                         f"   {mode:<11} {length:<6} run {run}: {status:<24} {result.words:>5} words "
-                        f"{result.seconds:>6.1f}s  tok/s {result.tokens_per_second or '-'}",
+                        f"{result.seconds:>6.1f}s  tok/s {result.tokens_per_second or '-'}"
+                        + (f"  invented: {', '.join(result.invented)}" if result.invented else ""),
                         flush=True,
                     )
         if args.tool_runs:
