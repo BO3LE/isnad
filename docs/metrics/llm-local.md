@@ -45,13 +45,42 @@ See **Method** below to reproduce.
 | Blog → Video (YouTube step removed) | succeeded, 29 s; MP4 H.264 1280×720 + AAC, 105 s |
 | Blog → Video → YouTube | refused before it starts: "Publisher needs a Google connection" — as designed |
 
+## A second model: `qwen/qwen3.8-27b` — 2026-10-17
+
+Dense 27B, GGUF Q6_K (22.43 GB, llama.cpp engine), same machine, context and Writer (the code above).
+It **thinks before it answers by default**: 1,500 tokens of reasoning for a 120-word paragraph, and no
+answer at all. `LLM_REASONING_EFFORT=none` (sent as `reasoning_effort`) turns that off in LM Studio;
+`chat_template_kwargs`, `/no_think` and `reasoning.effort` don't. Every result below is with it off.
+
+| `scripts/llm_bench.py`, 5 runs per length | qwen3-30b-a3b | qwen3.8-27b |
+|---|---|---|
+| Valid on the first try | 14/15 | **15/15** |
+| Within ±25% of the target length | 2/15 (7/15 in an earlier run) | **13/15** (short 5/5, medium 4/5, long 4/5) |
+| States a figure the notes don't contain | 0/15 | 0/15 |
+| Cites its sources | 15/15 | 15/15 |
+| Needed the fuller rewrite | 15/15 | 0/15 |
+| Median short · medium · long | 13 s · 40 s · **62 s** | 57 s · 130 s · **225 s** (p95 323 s) |
+| Output speed | ≈ 45–50 tokens/s | ≈ 8–10 tokens/s |
+| Tool calling | 5/5 | 5/5 |
+| Live compatibility (`test_live_llm.py`) | 4/4 | 4/4 |
+| Notes from fake search, medium, 5 runs: invented figures | 0/5 | 0/5 (751–964 words against 800) |
+
+The benchmark's verdict on qwen3.8-27b is **FAIL**, narrowly: 87% within length against the 90% bar,
+and a median long article of 225 s against the 3-minute bar. It writes to length, where
+qwen3-30b-a3b doesn't, at about a fifth of the speed. Its slowest long article took 323 s, more than
+the default `LLM_TIMEOUT_S=300`. A worker on this model needs `LLM_TIMEOUT_S=600` as well as
+`LLM_REASONING_EFFORT=none`. Data: `data/llm-bench-qwen3.8-27b.json`.
+
+qwen3-30b-a3b also reasons by default in LM Studio when asked for plain text, but not visibly under
+`json_schema`, which is how the Writer asks. With `LLM_REASONING_EFFORT=none` its Writer runs took
+about the same time (2 short + 2 medium runs each way: 15–21 s and 39–45 s unset, 18 s and 31–40 s
+off), and one short run came back as a valid 10-word article. Leave it unset for that model.
+
 ## Open
 
-- **Length.** On notes this thin (8 one-line notes), the model writes shorter than asked rather than
-  pad or invent, and varies widely run to run. Choosing between shorter targets, richer research
-  notes (more sources, longer extracts) or another model is a product decision.
-- `qwen/qwen3.8-27b` (downloaded) and Qwen3-30B-A3B-Instruct-2507 (not downloaded) are not
-  benchmarked yet.
+- **Which model.** qwen3-30b-a3b is fast and writes short; qwen3.8-27b writes to length but makes a
+  long article a four-minute step. Neither passes every bar. Shorter targets, richer research notes or
+  a third model (Qwen3-30B-A3B-Instruct-2507, not downloaded) are the other levers. A product decision.
 
 ## Method
 
@@ -60,4 +89,10 @@ lms load qwen/qwen3-30b-a3b --context-length 16384 --parallel 2
 lms server start --port 1234 --bind 127.0.0.1
 LIVE_LLM=1 LLM_MODEL=qwen/qwen3-30b-a3b python -m pytest adapters/tests/test_live_llm.py -v
 python scripts/llm_bench.py --models qwen/qwen3-30b-a3b --out docs/metrics/data/llm-bench.json
+
+# a thinking model
+lms load qwen/qwen3.8-27b --context-length 16384 --parallel 2
+LIVE_LLM=1 LLM_MODEL=qwen/qwen3.8-27b LLM_REASONING_EFFORT=none LLM_TIMEOUT_S=600 \
+  python -m pytest adapters/tests/test_live_llm.py -v
+python scripts/llm_bench.py --models qwen/qwen3.8-27b --reasoning-effort none
 ```
