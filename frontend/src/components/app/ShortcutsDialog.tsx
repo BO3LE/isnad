@@ -2,7 +2,11 @@ import { Dialog } from "@/design-system/components/Dialog";
 import { Kbd } from "@/design-system/components/Kbd";
 
 // DESIGN-SYSTEM.md §13 — opened with "?" from anywhere, and from the user menu.
-// Canvas-only shortcuts are listed here but implemented with the canvas in Part 3.
+//
+// Only shortcuts that actually work are listed. This dialog spent several parts advertising a
+// connection mode and a duplicate shortcut that were never built, which is worse than saying
+// nothing: someone learns the key, presses it, and concludes the keyboard is unreliable here.
+// §13 still specifies both, and they belong here the day they exist.
 const GROUPS: { title: string; rows: { keys: string[]; action: string }[] }[] = [
   {
     title: "Anywhere",
@@ -16,12 +20,14 @@ const GROUPS: { title: string; rows: { keys: string[]; action: string }[] }[] = 
     title: "Canvas",
     rows: [
       { keys: ["Enter"], action: "Configure the focused step" },
-      { keys: ["C"], action: "Start a connection" },
       { keys: ["⌫"], action: "Delete the selected step or connection" },
-      { keys: ["⌘", "D"], action: "Duplicate the step" },
       { keys: ["⌘", "Z"], action: "Undo" },
+      { keys: ["⌘", "⇧", "Z"], action: "Redo" },
       { keys: ["⌘", "↵"], action: "Run workflow" },
-      { keys: ["+", "-", "0"], action: "Zoom in, out, fit" },
+      { keys: ["+"], action: "Zoom in" },
+      { keys: ["-"], action: "Zoom out" },
+      { keys: ["0"], action: "Fit the whole chain" },
+      { keys: ["1"], action: "Actual size" },
     ],
   },
   {

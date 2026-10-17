@@ -17,6 +17,7 @@ import { Select } from "@/design-system/components/Select";
 import { Skeleton, SkeletonCard } from "@/design-system/components/Skeleton";
 import { Switch } from "@/design-system/components/Switch";
 import { Tabs } from "@/design-system/components/Tabs";
+import { tabPanel } from "@/design-system/components/tab-panel";
 import { useToast } from "@/design-system/components/toast-context";
 import { Tooltip } from "@/design-system/components/Tooltip";
 import { ChainRule } from "@/design-system/patterns/ChainRule";
@@ -76,6 +77,8 @@ const TYPE_SCALE: { cls: string; token: string; spec: string }[] = [
   { cls: "font-mono text-mono-md", token: "mono-md", spec: "13 / 20 · 400" },
   { cls: "font-mono text-mono-sm", token: "mono-sm", spec: "12 / 16 · 400" },
 ];
+
+const RUN_SECTIONS = "Run sections";
 
 export function DevDesignPage() {
   const toast = useToast();
@@ -272,7 +275,7 @@ export function DevDesignPage() {
       <Section title="Containers">
         <Row label="Tabs">
           <Tabs
-            label="Run sections"
+            label={RUN_SECTIONS}
             value={tab}
             onChange={setTab}
             tabs={[
@@ -282,6 +285,11 @@ export function DevDesignPage() {
               { id: "approval", label: "Approval", badge: <span className="h-1.5 w-1.5 rounded-full bg-status-approval-solid" /> },
             ]}
           />
+          {/* The gallery shows the tab strip rather than any real content, but a tab whose
+              `aria-controls` points at nothing is not the component as it ships. */}
+          <div {...tabPanel(RUN_SECTIONS, tab)} className="text-body-sm text-text-muted">
+            The {tab} panel would be here.
+          </div>
         </Row>
         <div className="grid gap-4 md:grid-cols-3">
           <Card className="grid gap-3">
