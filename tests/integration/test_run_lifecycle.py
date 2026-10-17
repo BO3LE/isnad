@@ -23,6 +23,7 @@ from worker.orchestrator import Orchestrator
 pytestmark = pytest.mark.integration
 
 BLOG = "Blog post"
+DOCX = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
 VIDEO = "Blog → Video → YouTube"
 EMAIL = "Research → PDF → Email"
 
@@ -87,7 +88,7 @@ def _assert_finished_in_order(db, run_id: uuid.UUID, store) -> list[ExecutionLog
 # ------------------------------------------------------------------ happy path
 
 
-async def test_blog_template_runs_queued_to_succeeded(db, store, registry, ports):
+async def test_blog_template_runs_queued_to_succeeded(db, store, registry, ports, storage_root):
     run_id = db.start_run(db.template(BLOG).id)
     assert _run(db, run_id).status == RunStatus.QUEUED
     assert {log.status for log in _logs(db, run_id)} == {NodeStatus.PENDING}
@@ -106,6 +107,12 @@ async def test_blog_template_runs_queued_to_succeeded(db, store, registry, ports
     research, write = logs
     assert _outputs(db, research.id)[0].content_json["sources"]
     assert _outputs(db, write.id)[0].content_json["article_md"]
+    # FR-04: the article as a PDF and a Word document, each a file the Outputs page lists and serves.
+    files = {o.mime_type: o for o in _outputs(db, write.id) if o.output_type == "file"}
+    assert set(files) == {"application/pdf", DOCX}
+    for f in files.values():
+        assert f.bytes and f.bytes > 0
+        assert (storage_root / f.storage_path).read_bytes()[:4] in (b"%PDF", b"PK\x03\x04")
 
 
 @pytest.mark.usefixtures("ffmpeg")

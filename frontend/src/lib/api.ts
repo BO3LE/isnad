@@ -2,6 +2,7 @@
 // (`npm run gen:api`) — never hand-written — so the frontend cannot drift from the API.
 import type { components } from "./api-types";
 import { useAuth } from "./auth";
+import { withFreshIds } from "./graph";
 
 type Schemas = components["schemas"];
 export type WorkflowSummary = Schemas["WorkflowSummary"];
@@ -95,5 +96,5 @@ export async function duplicateWorkflow(id: string): Promise<WorkflowOut> {
   const source = await endpoints.workflow(id);
   const copy = await endpoints.createWorkflow(`${source.name} (copy)`);
   if (!source.graph?.nodes?.length) return copy;
-  return endpoints.saveWorkflow(copy.id, { graph: source.graph });
+  return endpoints.saveWorkflow(copy.id, { graph: withFreshIds(source.graph) });
 }

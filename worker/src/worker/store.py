@@ -8,17 +8,24 @@ tested with `worker.testing.InMemoryRunStore` — no database, no network.
 from __future__ import annotations
 
 import mimetypes
+from collections.abc import Collection
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Protocol
 from uuid import UUID
 
-from sqlalchemy import func, select, update
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session, sessionmaker
 
 from contracts.run import TERMINAL_RUN_STATUSES, ApprovalDecision, NodeStatus, RunStatus, WorkflowGraph
 from db.models import AgentOutput, Approval, ExecutionLog, ExecutionRun, Workflow
+
+# DESIGN-SYSTEM §23.5 ("Worker lost"), and why it isn't simply run again.
+INTERRUPTED_SEND = (
+    "This step was interrupted because the server restarted. It may already have sent or published, so it "
+    "isn't repeated by itself: check first, then run again if it didn't."
+)
 
 
 @dataclass
@@ -58,6 +65,11 @@ class RunStore(Protocol):
 
 def _now() -> datetime:
     return datetime.now(UTC)
+
+
+# The Writer's Word document (FR-04). Python's own table lacks it where the system has no MIME
+# database — the worker image (python:3.13-slim) among them — so its type would be recorded as unknown.
+mimetypes.add_type("application/vnd.openxmlformats-officedocument.wordprocessingml.document", ".docx")
 
 
 class SqlRunStore:
@@ -179,14 +191,26 @@ class SqlRunStore:
             )
             return ApprovalDecision(decision) if decision else None
 
-    def mark_interrupted(self, run_id: UUID) -> None:
-        """Used when a worker restarts mid-node (RB-01): a `running` node is put back to `pending`."""
+    def mark_interrupted(self, run_id: UUID, *, unrepeatable: Collection[str] = ()) -> None:
+        """Used when a worker restarts mid-node (RB-01): a `running` node is put back to `pending`, so
+        the new worker runs it again.
+
+        Not a node whose agent type is in `unrepeatable` (those that send content out — Email,
+        Publisher): the dead worker may have sent the email or finished the upload, and running it
+        again could do it twice. It fails, saying so (INTERRUPTED_SEND), and the run stops there. A
+        `retrying` node is waiting out a backoff after an error that said a retry is safe, so it
+        resumes either way.
+        """
         with self._sessions.begin() as s:
-            s.execute(
-                update(ExecutionLog)
+            for log in s.scalars(
+                select(ExecutionLog)
                 .where(ExecutionLog.run_id == run_id, ExecutionLog.status.in_(["running", "retrying"]))
-                .values(status="pending")
-            )
+                .with_for_update()
+            ):
+                if log.status == "running" and log.agent_type in unrepeatable:
+                    _apply_node_status(log, NodeStatus.FAILED, error=INTERRUPTED_SEND)
+                else:
+                    log.status = "pending"
 
 
 def _apply_node_status(

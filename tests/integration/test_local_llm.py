@@ -117,7 +117,11 @@ async def test_the_blog_template_writes_its_article_with_a_local_model(db, store
     log = _writer_log(db, run_id)
     with db.sessions() as s:
         saved = s.scalars(select(AgentOutput).where(AgentOutput.log_id == log.id)).all()
-    assert [o.content_json for o in saved] == [ARTICLE]  # exactly what the model wrote, validated
+    [article] = [o.content_json for o in saved if o.output_type == "text"]
+    assert {k: article[k] for k in ARTICLE} == ARTICLE  # exactly what the model wrote, validated
+    # and the files the Writer rendered from it itself (FR-04), never paths the model gave
+    assert sorted(o.storage_path.rsplit(".", 1)[1] for o in saved if o.output_type == "file") == ["docx", "pdf"]
+    assert article["pdf_path"].endswith(".pdf") and article["docx_path"].endswith(".docx")
 
 
 async def test_with_lm_studio_stopped_the_writer_retries_then_says_what_to_do(db, store, registry, ports, sleeps):

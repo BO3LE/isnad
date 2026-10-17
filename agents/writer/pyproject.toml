@@ -7,7 +7,7 @@ name = "gp-agent-writer"
 version = "0.1.0"
 description = "Writer agent — Turns research notes into an article."
 requires-python = ">=3.11"
-dependencies = ["gp-contracts"]
+dependencies = ["gp-contracts", "gp-exporters[pdf,docx]"]
 
 [project.optional-dependencies]
 test = ["gp-adapters"]

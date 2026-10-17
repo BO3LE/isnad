@@ -12,5 +12,7 @@
   ],
   "length": "short",
   "style": "informative",
-  "format": "blog_post"
+  "format": "blog_post",
+  "save_pdf": false,
+  "save_docx": false
 }

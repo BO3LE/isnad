@@ -83,5 +83,6 @@ export async function openOutputsFromCanvas(page: Page) {
   const filesTab = page.getByRole("link", { name: /^Files/ });
   await expect(filesTab).toBeVisible({ timeout: 20_000 });
   await filesTab.click();
-  await expect(page.getByRole("heading", { name: "Files" })).toBeVisible({ timeout: 20_000 });
+  // exact: the page's "Files" title, not the "3 files" heading under it (names match as substrings).
+  await expect(page.getByRole("heading", { name: "Files", exact: true })).toBeVisible({ timeout: 20_000 });
 }

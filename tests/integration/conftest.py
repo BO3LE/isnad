@@ -55,6 +55,16 @@ def ffmpeg() -> None:
 
 
 @pytest.fixture(scope="session")
+def pango() -> None:
+    """Every template's Writer saves its article as a PDF (FR-04), which WeasyPrint renders with Pango.
+    Where it isn't installed (a Mac without `brew install pango`), run the suite in the worker image."""
+    try:
+        import weasyprint  # noqa: F401
+    except (ImportError, OSError):
+        unavailable("Pango is not installed — every template's Writer saves its article as a PDF")
+
+
+@pytest.fixture(scope="session")
 def database_url() -> str:
     url = os.environ.get("INTEGRATION_DATABASE_URL") or os.environ.get("DATABASE_URL")
     if not url:
@@ -93,7 +103,7 @@ def session_factory(database_url: str) -> Iterator[sessionmaker[Session]]:
 
 
 @pytest.fixture(scope="session")
-def registry() -> Registry:
+def registry(pango: None) -> Registry:
     """The agents discovered exactly as the worker discovers them: by `gp.agents` entry point."""
     found = Registry.from_entry_points()
     missing = REQUIRED_AGENTS - {m.name for m in found.catalog()}
