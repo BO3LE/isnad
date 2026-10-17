@@ -74,7 +74,12 @@ services:
     # worker still installs every agent under agents/, just not live-edited).
     build: { context: ., dockerfile: worker/Dockerfile, target: "${WORKER_BUILD_TARGET:-dev}" }
     env_file: [{ path: .env, required: false }]
-    environment: *python-env
+    environment:
+      <<: *python-env
+      # LLM_PROVIDER=local: LM Studio runs on this machine, outside Docker, and the container reaches
+      # it through host.docker.internal. LLM_BASE_URL in .env still overrides it.
+      LLM_LOCAL_BASE_URL: http://host.docker.internal:${LM_STUDIO_PORT:-1234}/v1
+    extra_hosts: ["host.docker.internal:host-gateway"] # Linux; Docker Desktop provides it already
     volumes:
       - ./worker:/app/worker
       - ./agents:/app/agents

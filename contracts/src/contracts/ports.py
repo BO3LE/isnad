@@ -6,9 +6,9 @@ Every port has a fake in `adapters/*/fake.py`.
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
-from typing import Literal, Protocol, runtime_checkable
+from typing import Any, Literal, Protocol, runtime_checkable
 
 from pydantic import BaseModel, Field
 
@@ -33,7 +33,61 @@ class PublishResult(BaseModel):
 
 @runtime_checkable
 class LLMPort(Protocol):
-    async def complete(self, prompt: str, *, system: str | None = None, json_mode: bool = False) -> str: ...
+    async def complete(
+        self,
+        prompt: str,
+        *,
+        system: str | None = None,
+        json_mode: bool = False,
+        json_schema: dict[str, Any] | None = None,
+    ) -> str:
+        """The model's answer as text.
+
+        `json_mode` asks for a JSON object. `json_schema` (a JSON Schema, e.g. a pydantic model's
+        `model_json_schema()`) asks for one of that shape: where the provider can, decoding is
+        constrained to it. Either way the agent still validates what comes back.
+        """
+        ...
+
+
+@dataclass(frozen=True)
+class Tool:
+    """A function the model may ask to call: its name, what it does, its arguments as JSON Schema."""
+
+    name: str
+    description: str
+    parameters: dict[str, Any]
+
+
+@dataclass(frozen=True)
+class ToolCall:
+    id: str
+    name: str
+    arguments: dict[str, Any]  # parsed; {"_unparsed": "..."} when the model sent invalid JSON
+
+
+@dataclass(frozen=True)
+class ChatReply:
+    content: str
+    tool_calls: tuple[ToolCall, ...] = ()
+    finish_reason: str | None = None
+
+
+@runtime_checkable
+class ToolCallingLLMPort(Protocol):
+    """An LLM that can also be handed tools. Optional: check `isinstance(ports.llm, ToolCallingLLMPort)`.
+
+    `messages` are OpenAI-style chat messages. See `contracts.tools.run_tools` for the loop that
+    executes the calls and hands the results back.
+    """
+
+    async def chat(
+        self,
+        messages: Sequence[dict[str, Any]],
+        *,
+        tools: Sequence[Tool] = (),
+        json_schema: dict[str, Any] | None = None,
+    ) -> ChatReply: ...
 
 
 @runtime_checkable
