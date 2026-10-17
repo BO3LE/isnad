@@ -17,7 +17,10 @@ test("Blog post: sign in, run, and the article shows up on Outputs", async ({ pa
   await expect(page.getByRole("heading", { name: "Writer" })).toBeVisible();
   await expect(page.getByText(/article:/i)).toBeVisible();
 
-  // This template has no file or published output.
+  // The Writer also saves the article as a PDF and a Word document (FR-04): two file cards.
+  await expect(page.locator("h2").filter({ hasText: /^2 files$/ })).toBeVisible();
+  await expect(page.getByText("PDF", { exact: true })).toBeVisible();
+  await expect(page.getByText("DOCX", { exact: true })).toBeVisible();
+  // Nothing is published by this template.
   await expect(page.getByRole("heading", { name: "Published" })).toHaveCount(0);
-  await expect(page.locator("h2").filter({ hasText: /^\d+ files?$/ })).toHaveCount(0);
 });

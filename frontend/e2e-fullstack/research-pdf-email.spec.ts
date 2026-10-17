@@ -12,7 +12,8 @@ import { DEMO_EMAIL, openOutputsFromCanvas, openTemplate, runToCompletion, signI
 // only as a generic "Text" card with its raw fields rendered as words — there is no distinct
 // "sent to demo@gp.local" link or file card the way the video template gets one for its publish
 // step. This test asserts exactly that: the email step shows up under "Text", with the recipient
-// readable in it, and nothing under "Published" or "Files".
+// readable in it, and nothing under "Published". The files are the Writer's PDF and Word document
+// (FR-04).
 test("Research → PDF → Email: run, approve the Email step, and it shows up on Outputs as text (no link card — see note above)", async ({
   page,
 }) => {
@@ -28,7 +29,8 @@ test("Research → PDF → Email: run, approve the Email step, and it shows up o
   // EmailOutput.recipients, rendered generically by the API's _as_text.
   await expect(page.getByText(new RegExp(DEMO_EMAIL.replace(".", "\\.")))).toBeVisible();
 
-  // The gap: no Published or Files section for this template.
+  // The gap: no Published section for this template.
   await expect(page.getByRole("heading", { name: "Published" })).toHaveCount(0);
-  await expect(page.locator("h2").filter({ hasText: /^\d+ files?$/ })).toHaveCount(0);
+  await expect(page.locator("h2").filter({ hasText: /^2 files$/ })).toBeVisible();
+  await expect(page.getByText("PDF", { exact: true })).toBeVisible();
 });

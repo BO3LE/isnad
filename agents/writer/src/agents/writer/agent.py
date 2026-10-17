@@ -1,15 +1,19 @@
 from __future__ import annotations
 
+import asyncio
 import json
 import re
+import uuid
+from collections.abc import Callable
 from pathlib import Path
 
-from pydantic import ValidationError
+from pydantic import ConfigDict, ValidationError, create_model
 
 from contracts.agent import BaseAgent
 from contracts.agent_io import WriteConfig, WriteInput, WriteOutput
-from contracts.errors import AgentError
+from contracts.errors import AgentError, NonRetryableAgentError
 from contracts.ports import Ports
+from exporters import MissingDependencyError, to_docx, to_pdf
 
 LENGTH_WORDS = {"short": 400, "medium": 800, "long": 1500}
 # Sections the prompt asks for: a structure a model keeps to more reliably than a word count.
@@ -58,7 +62,19 @@ class WriterAgent(BaseAgent[WriteInput, WriteOutput]):
             # reported as it is (it names LLM_MAX_OUTPUT_TOKENS).
             answer = await ports.llm.complete(prompt, system=SYSTEM, json_mode=True, json_schema=OUTPUT_SCHEMA)
         article = await self._first_valid(answer, ports)
-        return await self._to_length(article, input_data, ports)
+        article = await self._to_length(article, input_data, ports)
+        return await self._save_files(article, input_data, ports)
+
+    async def _save_files(self, article: WriteOutput, input_data: WriteInput, ports: Ports) -> WriteOutput:
+        """FR-04: the finished article as PDF and Word files, next to the run's other outputs."""
+        folder = f"artifacts/articles/{uuid.uuid4().hex[:8]}"
+        name = _file_stem(article.title)
+        files: dict[str, str] = {}
+        for switch, key, render, suffix, mime in EXPORTS:
+            if getattr(input_data, switch):
+                data = await _render(render, switch, key, article)
+                files[key] = await ports.storage.put(f"{folder}/{name}.{suffix}", data, mime)
+        return article.model_copy(update=files)
 
     async def _to_length(self, article: WriteOutput, input_data: WriteInput, ports: Ports) -> WriteOutput:
         """One fuller rewrite when the article is well short of its target — kept only if it is valid,
@@ -103,7 +119,21 @@ class WriterAgent(BaseAgent[WriteInput, WriteOutput]):
                 ) from second
 
 
-OUTPUT_SCHEMA = WriteOutput.model_json_schema()
+# What the model writes: WriteOutput's text, nothing else. The files' paths are the Writer's own —
+# taken from a model's answer, a prompt-injected one could name another user's file.
+WRITTEN = ("title", "summary", "article_md")
+Draft = create_model(
+    "WriteOutput",
+    __config__=ConfigDict(extra="forbid"),
+    **{name: (WriteOutput.model_fields[name].annotation, WriteOutput.model_fields[name]) for name in WRITTEN},
+)
+OUTPUT_SCHEMA = Draft.model_json_schema()
+DOCX_MIME = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+# The Writer step's switch, the output it fills, and how: FR-04.
+EXPORTS = (
+    ("save_pdf", "pdf_path", to_pdf, "pdf", "application/pdf"),
+    ("save_docx", "docx_path", to_docx, "docx", DOCX_MIME),
+)
 _FENCE = re.compile(r"^\s*```(?:json)?\s*\n(.*?)\n\s*```\s*$", re.S | re.I)
 
 
@@ -122,7 +152,28 @@ def _parse(answer: str) -> WriteOutput:
     data = json.loads(_json_text(answer))
     if isinstance(data, dict) and "article_md" in data:
         data["article_md"] = _unescape_twice_escaped(data["article_md"])
-    return WriteOutput.model_validate(data)
+    return WriteOutput.model_validate(Draft.model_validate(data).model_dump())
+
+
+async def _render(render: Callable[..., bytes], switch: str, key: str, article: WriteOutput) -> bytes:
+    """One export, off the event loop (WeasyPrint takes about a second). Neither failure is retried:
+    the same article on the same server fails the same way."""
+    kind = WriteOutput.model_fields[key].title
+    try:
+        return await asyncio.to_thread(render, article.article_md, title=article.title)
+    except MissingDependencyError as exc:
+        raise NonRetryableAgentError(
+            f"This server can't save the article as a {kind}: {exc}. Install it on the worker, or turn off "
+            f"“{WriteConfig.model_fields[switch].title}” in the Writer step.",
+            code="export_unavailable",
+        ) from exc
+    except ValueError as exc:
+        raise NonRetryableAgentError(f"The article couldn't be saved as a {kind}: {exc}", code="export_failed") from exc
+
+
+def _file_stem(title: str) -> str:
+    """The files' name, from the title: "Solar energy in KSA" → solar-energy-in-ksa."""
+    return re.sub(r"[^a-z0-9]+", "-", title.lower()).strip("-")[:60].strip("-") or "article"
 
 
 def _unescape_twice_escaped(value: object) -> object:

@@ -11,7 +11,7 @@ from collections.abc import Iterable
 from importlib.metadata import entry_points
 
 from contracts.agent import BaseAgent
-from contracts.manifest import AgentManifest
+from contracts.manifest import AgentFamily, AgentManifest
 
 ENTRY_POINT_GROUP = "gp.agents"
 log = logging.getLogger(__name__)
@@ -64,6 +64,13 @@ class Registry:
 
     def catalog(self) -> list[AgentManifest]:
         return [agent.catalog_entry() for _, agent in sorted(self._agents.items())]
+
+    def sends_out(self) -> frozenset[str]:
+        """The agent types that send content out of the platform (Email, Publisher): a step of one
+        that a lost worker was running isn't run again by itself (`SqlRunStore.mark_interrupted`)."""
+        return frozenset(
+            name for name, agent in self._agents.items() if agent.manifest.family == AgentFamily.DISTRIBUTE
+        )
 
     def __contains__(self, agent_type: object) -> bool:
         return agent_type in self._agents
