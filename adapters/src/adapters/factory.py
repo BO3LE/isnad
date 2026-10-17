@@ -149,7 +149,12 @@ def build_llm(settings: AdapterSettings) -> LLMPort:
         hint = " — the id LM Studio shows (`lms ls`, or GET /v1/models)" if provider == "local" else ""
         return MisconfiguredLLM(f"Set LLM_MODEL to the model to use{hint}.")
 
-    from adapters.llm.openai_compatible import LLMConfig, OpenAICompatibleLLM
+    try:
+        import openai  # noqa: F401 — the SDK is an extra: gp-adapters[openai]
+
+        from adapters.llm.openai_compatible import LLMConfig, OpenAICompatibleLLM
+    except ImportError:
+        return MisconfiguredLLM("The LLM adapter isn't installed on this worker: install gp-adapters[openai].")
 
     return OpenAICompatibleLLM(
         LLMConfig(

@@ -65,7 +65,7 @@ jobs:
             pango: true # WeasyPrint (to_pdf) needs Pango at runtime, and HarfBuzz-Subset to subset fonts
           # The worker suite runs with NO agents installed — the C3 decoupling test.
           - component: worker
-            install: ./contracts ./db "./adapters[storage]" ./worker
+            install: ./contracts ./db "./adapters[storage,openai]" ./worker
           # The API suite runs with no worker, Redis or PostgreSQL — the C2 decoupling test.
           - component: api
             install: ./contracts ./db ./api[test]

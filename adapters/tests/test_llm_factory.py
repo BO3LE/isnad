@@ -95,3 +95,20 @@ async def test_a_setting_that_cant_work_fails_each_step_readably_and_never_falls
 
 def test_fake_can_still_be_chosen_explicitly_in_real_mode():
     assert isinstance(build_llm(real(llm_provider="fake")), FakeLLM)
+
+
+def test_without_the_openai_sdk_installed_a_step_says_what_to_install(monkeypatch):
+    import builtins
+
+    real_import = builtins.__import__
+
+    def no_openai(name, *args, **kwargs):
+        if name == "openai" or name.startswith("openai."):
+            raise ImportError(name)
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", no_openai)
+    llm = build_llm(real(llm_model="m"))
+
+    assert isinstance(llm, MisconfiguredLLM)
+    assert "gp-adapters[openai]" in llm.message
