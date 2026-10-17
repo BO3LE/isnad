@@ -87,7 +87,7 @@ export function LoginPage() {
 
         <p className="text-body-md text-text-muted">
           New here?{" "}
-          <Link to={`/register${next === "/workflows" ? "" : `?next=${encodeURIComponent(next)}`}`} className="text-interactive hover:underline">
+          <Link to={`/register${next === "/workflows" ? "" : `?next=${encodeURIComponent(next)}`}`} className="text-interactive underline decoration-1 underline-offset-2 hover:decoration-2">
             Create an account
           </Link>
         </p>

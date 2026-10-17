@@ -49,7 +49,7 @@ export function CanvasStatusBar({ steps, validation, lastRun, zoom, mockAgents }
             <StatusChip meta={runStatusMeta[lastRun.status]} />
             {formatRelativeTime(lastRun.createdAt)}
           </span>
-          <Link to={`/runs/${lastRun.id}`} className="text-interactive hover:underline">
+          <Link to={`/runs/${lastRun.id}`} className="text-interactive underline decoration-1 underline-offset-2 hover:decoration-2">
             View run
           </Link>
         </>
