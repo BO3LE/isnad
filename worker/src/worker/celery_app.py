@@ -17,7 +17,8 @@ import redis
 from celery import Celery
 from celery.signals import worker_ready
 
-from adapters.factory import MisconfiguredLLM, build_llm, build_ports, llm_provider
+from adapters.factory import MisconfiguredLLM, MisconfiguredSearch, build_llm, build_ports, build_search, llm_provider
+from adapters.search.fake import FakeSearch
 from contracts.queue import CATALOG_REDIS_KEY, RUN_WORKFLOW_TASK
 from db.crypto import CredentialCipher, CredentialKeyError
 from db.session import make_engine, make_session_factory
@@ -118,14 +119,33 @@ def check_llm() -> str:
     return f"LLM: {where} — ready"
 
 
+def check_search() -> str:
+    """One line on where the Researcher's sources come from. No request is made: a search costs a credit."""
+    if settings.fake_adapters:
+        return "Search: fake (FAKE_ADAPTERS=true)"
+    search = build_search(adapter_settings(settings))
+    if isinstance(search, MisconfiguredSearch):
+        return f"Search: not usable — {search.message}"
+    if isinstance(search, FakeSearch):
+        return "Search: fake (SEARCH_PROVIDER=fake) — the Researcher's sources are made up"
+    return "Search: tavily"
+
+
+def check_image() -> str:
+    if settings.fake_adapters:
+        return "Image: fake (FAKE_ADAPTERS=true)"
+    return "Image: fake — there is no real image adapter yet; the Image step makes placeholders"
+
+
 @worker_ready.connect
 def _on_ready(**_: object) -> None:
     count = publish_catalog()
     log.info("published %d agents to %s", count, CATALOG_REDIS_KEY)
-    try:
-        log.info(check_llm())
-    except Exception as exc:  # a startup report must never stop the worker
-        log.warning("LLM: couldn't check (%s)", type(exc).__name__)
+    for name, check in (("LLM", check_llm), ("Search", check_search), ("Image", check_image)):
+        try:
+            log.info(check())
+        except Exception as exc:  # a startup report must never stop the worker
+            log.warning("%s: couldn't check (%s)", name, type(exc).__name__)
 
 
 @app.task(name=RUN_WORKFLOW_TASK)
