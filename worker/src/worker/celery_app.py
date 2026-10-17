@@ -210,7 +210,7 @@ def _on_ready(**_: object) -> None:
 def run_workflow(run_id: str) -> str:
     ports = build_ports(adapter_settings(settings))
     run_store = store()
-    run_store.mark_interrupted(UUID(run_id))
+    run_store.mark_interrupted(UUID(run_id), unrepeatable=registry().sends_out())
     orchestrator = Orchestrator(
         run_store,
         registry(),

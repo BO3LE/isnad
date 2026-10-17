@@ -2,6 +2,7 @@
 // (`npm run gen:api`) — never hand-written — so the frontend cannot drift from the API.
 import type { components } from "./api-types";
 import { useAuth } from "./auth";
+import { withFreshIds } from "./graph";
 
 type Schemas = components["schemas"];
 export type WorkflowSummary = Schemas["WorkflowSummary"];
@@ -19,6 +20,7 @@ export type LogEntry = Schemas["LogEntry"];
 export type OutputLink = Schemas["OutputLink"];
 export type NodeStatus = Schemas["NodeStatus"];
 export type RunStatus = Schemas["RunStatus"];
+export type Connection = Schemas["Connection"];
 
 export const API_URL = (import.meta.env.VITE_API_URL as string | undefined) ?? "http://localhost:8000";
 
@@ -75,6 +77,11 @@ export const endpoints = {
   runLogs: (runId: string) => api<LogEntry[]>(`/runs/${runId}/logs`),
   /** A file's download URL, or the words themselves for text (api/routers/outputs.py). */
   output: (outputId: string) => api<OutputLink>(`/outputs/${outputId}`),
+  connections: () => api<Connection[]>("/connections"),
+  /** `credentials: "include"`: the API sets a cookie that ties Google's answer to this browser (D-09). */
+  startGoogle: (mode: "popup" | "redirect") =>
+    api<Schemas["ConnectStart"]>(`/connections/google/start?mode=${mode}`, { method: "POST", credentials: "include" }),
+  disconnect: (id: string) => api<void>(`/connections/${id}`, { method: "DELETE" }),
 };
 
 /**
@@ -89,5 +96,5 @@ export async function duplicateWorkflow(id: string): Promise<WorkflowOut> {
   const source = await endpoints.workflow(id);
   const copy = await endpoints.createWorkflow(`${source.name} (copy)`);
   if (!source.graph?.nodes?.length) return copy;
-  return endpoints.saveWorkflow(copy.id, { graph: source.graph });
+  return endpoints.saveWorkflow(copy.id, { graph: withFreshIds(source.graph) });
 }

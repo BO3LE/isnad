@@ -226,6 +226,12 @@ def test_registry_catalog_includes_config_schema(registry):
     assert entry.config_schema["properties"]["text"]["default"] == "hello"
 
 
+def test_the_agents_that_send_content_out_are_the_distribute_family(registry):
+    # A step of one of these that a lost worker was running isn't run again (SqlRunStore.mark_interrupted).
+    # "gate" waits for approval too, but sends nothing out, so it is safe to run again.
+    assert registry.sends_out() == {"send"}
+
+
 async def test_outputs_from_all_ancestors_reach_later_steps(store, registry, ports):
     """Regression: the third step must see the first step's output too, not only its direct parent's."""
     from conftest import GateAgent

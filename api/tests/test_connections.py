@@ -271,6 +271,8 @@ def test_popup_mode_tells_the_opener_and_closes(client, headers):
     assert response.status_code == 200
     assert "postMessage" in response.text and "isnad:google-connection" in response.text
     assert '"http://localhost:5173"' in response.text  # only the app's origin receives it
+    # Cut off from its opener (Google's COOP), it goes to the app's page, which tells the waiting tab.
+    assert '"http://localhost:5173/settings/connections?connected=google&popup=1"' in response.text
     assert ACCESS not in response.text
 
 

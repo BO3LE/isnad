@@ -80,6 +80,9 @@ class WriteConfig(_Config):
     length: Length = Field("medium", title="Length", description="Short ≈ 400 words · Medium ≈ 800 · Long ≈ 1500")
     style: Style = Field("informative", title="Style")
     format: Format = Field("blog_post", title="Format", description="Pick Video script when a Video step follows.")
+    # FR-04: the article is also saved as files, listed on the run's Outputs.
+    save_pdf: bool = Field(True, title="Also save as PDF")
+    save_docx: bool = Field(True, title="Also save as Word (.docx)")
 
 
 class WriteInput(_In):
@@ -88,12 +91,17 @@ class WriteInput(_In):
     length: Length = "medium"
     style: Style = "informative"
     format: Format = "blog_post"
+    save_pdf: bool = True
+    save_docx: bool = True
 
 
 class WriteOutput(_Out):
     title: str = Field(min_length=1, max_length=200, title="title")
     summary: str = Field(min_length=1, title="summary")
     article_md: str = Field(min_length=1, title="article")
+    # Set by the Writer from what it rendered — never taken from the model's answer.
+    pdf_path: str | None = Field(None, title="PDF")
+    docx_path: str | None = Field(None, title="Word document")
 
 
 # ---------------------------------------------------------------- Image

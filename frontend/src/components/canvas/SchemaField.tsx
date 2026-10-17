@@ -1,5 +1,6 @@
 import { CircleAlert, Link2, TriangleAlert } from "lucide-react";
 import { useEffect, useRef, useState, type ReactNode } from "react";
+import { CredentialPicker } from "@/components/connections/CredentialPicker";
 import { Button } from "@/design-system/components/Button";
 import { Field } from "@/design-system/components/Field";
 import { Input, NumberInput, Textarea } from "@/design-system/components/Input";
@@ -269,17 +270,17 @@ export function SchemaField({ field, value, onChange, onBeginEdit, fallback, cou
             );
           }
           case "credential":
-            // Secrets are never text fields (UX-SPEC §4.5 rule 4). Connecting an account needs the
-            // credentials endpoints (D-09), which don't exist yet.
-            return empty ? (
-              <div className="grid justify-items-start gap-2">
-                <InheritChip tone="broken" from={`No ${field.provider === "google" ? "Google " : ""}account connected`} />
-                <Button size="sm" disabled title="Connections aren't available yet">
-                  Connect {field.provider === "google" ? "Google" : "an account"}
-                </Button>
-              </div>
-            ) : (
-              <InheritChip from="Account connected" />
+            // Secrets are never text fields (UX-SPEC §4.5 rule 4): the step stores which account, by id.
+            return (
+              <CredentialPicker
+                id={id}
+                field={field}
+                value={typeof value === "string" ? value : undefined}
+                onChange={(next) => {
+                  change(next);
+                  end();
+                }}
+              />
             );
           default:
             return (
