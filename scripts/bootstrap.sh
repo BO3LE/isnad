@@ -15,7 +15,7 @@ python -m pip install --quiet --upgrade pip
 # compat mode puts each src/ folder on sys.path, which keeps the `agents` namespace package
 # resolvable from the repository root (see docs/DECISIONS.md, INF-01).
 EDITABLE=(--config-settings editable_mode=compat)
-PACKAGES=(-e ./contracts -e ./db -e "./adapters[all]" -e ./exporters -e ./worker -e "./api[test]")
+PACKAGES=(-e ./contracts -e ./db -e "./adapters[all]" -e "./exporters[all,test]" -e ./worker -e "./api[test]")
 for agent in agents/*/; do
   [ -f "$agent/pyproject.toml" ] && PACKAGES+=(-e "./${agent%/}")
 done

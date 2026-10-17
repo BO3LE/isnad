@@ -270,6 +270,10 @@ export interface paths {
         /**
          * Decide
          * @description UC-04: record the decision, then hand the run back to the worker, which resumes or halts it.
+         *
+         *     A step is decided once. A second decision, or one on a run that has finished or been
+         *     cancelled, is refused with 409. If the job queue is unavailable the decision is not kept
+         *     (503), so it can simply be made again.
          */
         post: operations["decide_runs__run_id__nodes__node_id__approve_post"];
         delete?: never;

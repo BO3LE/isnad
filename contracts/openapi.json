@@ -1800,7 +1800,7 @@
     },
     "/runs/{run_id}/nodes/{node_id}/approve": {
       "post": {
-        "description": "UC-04: record the decision, then hand the run back to the worker, which resumes or halts it.",
+        "description": "UC-04: record the decision, then hand the run back to the worker, which resumes or halts it.\n\nA step is decided once. A second decision, or one on a run that has finished or been\ncancelled, is refused with 409. If the job queue is unavailable the decision is not kept\n(503), so it can simply be made again.",
         "operationId": "decide_runs__run_id__nodes__node_id__approve_post",
         "parameters": [
           {
