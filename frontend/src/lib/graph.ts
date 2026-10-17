@@ -117,6 +117,24 @@ export function toWorkflowGraph(
   };
 }
 
+/**
+ * The same graph with new step ids, and its connections pointed at them.
+ *
+ * A step's id is unique across every workflow (it is the `agent_nodes` key), so a copy that keeps
+ * the original's ids can't be saved: the API answers 409 "step ids already used by another workflow".
+ */
+export function withFreshIds(graph: WorkflowGraph, newId: () => string = () => crypto.randomUUID()): WorkflowGraph {
+  const ids = new Map((graph.nodes ?? []).map((n) => [n.id, newId()]));
+  return {
+    nodes: (graph.nodes ?? []).map((n) => ({ ...n, id: ids.get(n.id)! })),
+    edges: (graph.edges ?? []).map((e) => {
+      const source = ids.get(e.source) ?? e.source;
+      const target = ids.get(e.target) ?? e.target;
+      return { id: `${source}-${target}`, source, target };
+    }),
+  };
+}
+
 /** True when two graphs are the same, so autosave does not PUT a graph nobody changed. */
 export function graphsEqual(a: WorkflowGraph | null, b: WorkflowGraph | null): boolean {
   return JSON.stringify(a) === JSON.stringify(b);

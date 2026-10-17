@@ -1,4 +1,4 @@
-import { graphsEqual, refuseConnection, snapPosition, snapToGrid, stepNumbers } from "./graph";
+import { graphsEqual, refuseConnection, snapPosition, snapToGrid, stepNumbers, withFreshIds } from "./graph";
 
 const edge = (source: string, target: string) => ({ id: `${source}-${target}`, source, target });
 
@@ -89,5 +89,36 @@ describe("graphsEqual", () => {
     const graph = { nodes: [{ id: "a", agent_type: "writer", position: { x: 0, y: 0 }, configuration: {}, requires_approval: false }], edges: [] };
     expect(graphsEqual(graph, structuredClone(graph))).toBe(true);
     expect(graphsEqual(graph, { ...graph, edges: [{ id: "e", source: "a", target: "b" }] })).toBe(false);
+  });
+});
+
+describe("withFreshIds (duplicating a workflow)", () => {
+  const graph = {
+    nodes: [
+      { id: "r", agent_type: "researcher", configuration: { topic: "Solar" }, requires_approval: false, position: { x: 0, y: 0 } },
+      { id: "w", agent_type: "writer", configuration: {}, requires_approval: false, position: { x: 240, y: 0 } },
+      { id: "e", agent_type: "email", configuration: {}, requires_approval: true, position: { x: 480, y: 0 } },
+    ],
+    edges: [edge("r", "w"), edge("w", "e")],
+  };
+
+  it("gives every step a new id and keeps everything else", () => {
+    let n = 0;
+    const copy = withFreshIds(graph, () => `new-${++n}`);
+    const nodes = copy.nodes ?? [];
+    expect(nodes.map((node) => node.id)).toEqual(["new-1", "new-2", "new-3"]);
+    expect(nodes.map((node) => ({ ...node, id: "" }))).toEqual(graph.nodes.map((node) => ({ ...node, id: "" })));
+  });
+
+  it("points the connections at the new ids", () => {
+    let n = 0;
+    const copy = withFreshIds(graph, () => `new-${++n}`);
+    expect(copy.edges).toEqual([edge("new-1", "new-2"), edge("new-2", "new-3")]);
+  });
+
+  it("leaves the original untouched", () => {
+    const before = JSON.stringify(graph);
+    withFreshIds(graph);
+    expect(JSON.stringify(graph)).toBe(before);
   });
 });
