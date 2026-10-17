@@ -190,7 +190,7 @@ class CredentialPorts:
         if port is not None and port not in self._ports:
             return self._base
         credential = await self._resolver.resolve(run_id, ref)
-        publishers, email = google_ports(credential)
+        publishers, email = google_ports(credential, self._base.storage)
         return dataclasses.replace(
             self._base,
             publishers=publishers if "publishers" in self._ports else self._base.publishers,

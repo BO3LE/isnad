@@ -217,6 +217,12 @@ You land back on `/settings/connections?connected=google`; `GET /connections` li
 "YouTube · Drive · Gmail". Errors come back as `?error=google_denied` (Cancel pressed),
 `google_state` (link expired, reused or opened in another browser) or `google_failed`.
 
+**What publishing does with it.** A Publisher step uploads as the account it names, after you approve
+it: to YouTube **unlisted** unless the step says otherwise, or to that account's Google Drive, where
+the file stays private (nothing is shared). The file comes from the run's storage. If the answer to
+an upload is lost, the step asks Google whether it finished instead of uploading again; when Google
+can't say, the step fails without a retry and asks you to check YouTube Studio (or Drive) first.
+
 ### Local LLM (LM Studio, no per-token cost)
 
 With `FAKE_ADAPTERS=false` the Writer uses `LLM_PROVIDER` — `local` by default: any
