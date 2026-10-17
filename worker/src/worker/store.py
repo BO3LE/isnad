@@ -67,6 +67,11 @@ def _now() -> datetime:
     return datetime.now(UTC)
 
 
+# The Writer's Word document (FR-04). Python's own table lacks it where the system has no MIME
+# database — the worker image (python:3.13-slim) among them — so its type would be recorded as unknown.
+mimetypes.add_type("application/vnd.openxmlformats-officedocument.wordprocessingml.document", ".docx")
+
+
 class SqlRunStore:
     def __init__(self, session_factory: sessionmaker[Session], storage_root: str | None = None):
         self._sessions = session_factory

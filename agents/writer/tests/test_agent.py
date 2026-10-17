@@ -1,4 +1,6 @@
+import io
 import json
+import os
 from pathlib import Path
 
 import pytest
@@ -45,7 +47,14 @@ async def test_the_writer_asks_for_its_output_schema(ports):
     await agent.execute(agent.input_model.model_validate(FIXTURE), replace(ports, llm=llm))
     assert llm.calls  # the first call, and a fuller rewrite since the fake's article is short
     for call in llm.calls:
-        assert call["json_schema"] == WriteOutput.model_json_schema()
+        # The article's text only: the files' paths are the Writer's, never the model's to choose.
+        schema = call["json_schema"]
+        assert set(schema["properties"]) == {"title", "summary", "article_md"}
+        assert schema["required"] == ["title", "summary", "article_md"]
+        assert schema["additionalProperties"] is False
+        assert {k: schema["properties"][k] for k in schema["properties"]} == {
+            k: v for k, v in WriteOutput.model_json_schema()["properties"].items() if k in schema["properties"]
+        }
         assert call["json_mode"] is True
 
 
@@ -211,3 +220,90 @@ async def test_cut_off_twice_is_reported_as_it_is(ports):
     with pytest.raises(AgentError) as caught:
         await agent.execute(agent.input_model.model_validate(FIXTURE), replace(ports, llm=llm))
     assert caught.value.code == "llm_truncated" and len(llm.calls) == 2
+
+
+# ---------------------------------------------------------------- FR-04: the article as files
+def _pdf_unavailable() -> str | None:
+    try:
+        import weasyprint  # noqa: F401
+    except ImportError:
+        return "WeasyPrint isn't installed"
+    except OSError:
+        return "the Pango library isn't installed"
+    return None
+
+
+PDF_UNAVAILABLE = _pdf_unavailable()
+if PDF_UNAVAILABLE and os.environ.get("REQUIRE_PDF"):
+    raise RuntimeError(f"REQUIRE_PDF is set but WeasyPrint can't load: {PDF_UNAVAILABLE}")
+ARTICLE = json.dumps(
+    {"title": "Solar energy in Saudi Arabia", "summary": "Two sentences.", "article_md": "# Solar\n\nIt grows [1]."}
+)
+
+
+async def test_the_article_is_saved_as_a_word_document_named_after_its_title(ports, tmp_path):
+    from dataclasses import replace
+
+    from docx import Document
+
+    agent = WriterAgent()
+    out = await agent.execute(
+        agent.input_model.model_validate({**FIXTURE, "save_docx": True}), replace(ports, llm=FakeLLM(response=ARTICLE))
+    )
+
+    assert out.pdf_path is None
+    assert out.docx_path.startswith("artifacts/articles/")
+    assert out.docx_path.endswith("/solar-energy-in-saudi-arabia.docx")
+    saved = await ports.storage.get(out.docx_path)
+    text = [p.text for p in Document(io.BytesIO(saved)).paragraphs]
+    assert "Solar energy in Saudi Arabia" in text and "It grows [1]." in text
+
+
+@pytest.mark.skipif(PDF_UNAVAILABLE is not None, reason=f"to_pdf can't run here: {PDF_UNAVAILABLE}")
+async def test_the_article_is_saved_as_a_pdf(ports):
+    from dataclasses import replace
+
+    agent = WriterAgent()
+    out = await agent.execute(
+        agent.input_model.model_validate({**FIXTURE, "save_pdf": True, "save_docx": True}),
+        replace(ports, llm=FakeLLM(response=ARTICLE)),
+    )
+
+    assert out.pdf_path.endswith("/solar-energy-in-saudi-arabia.pdf")
+    assert out.pdf_path.rsplit("/", 1)[0] == out.docx_path.rsplit("/", 1)[0]  # one folder per article
+    assert (await ports.storage.get(out.pdf_path)).startswith(b"%PDF-")
+
+
+async def test_a_server_that_cant_render_the_file_says_how_to_turn_it_off(ports, monkeypatch):
+    from dataclasses import replace
+
+    from agents.writer import agent as writer
+    from exporters import MissingDependencyError
+
+    def no_pango(markdown, *, title=None):
+        raise MissingDependencyError("to_pdf needs WeasyPrint and its native libraries (Pango)")
+
+    monkeypatch.setattr(writer, "EXPORTS", (("save_pdf", "pdf_path", no_pango, "pdf", "application/pdf"),))
+    agent = WriterAgent()
+    with pytest.raises(AgentError) as failed:
+        await agent.execute(
+            agent.input_model.model_validate({**FIXTURE, "save_pdf": True}),
+            replace(ports, llm=FakeLLM(response=ARTICLE)),
+        )
+    assert failed.value.code == "export_unavailable" and not failed.value.retryable
+    assert "can't save the article as a PDF" in failed.value.message
+    assert "“Also save as PDF”" in failed.value.message
+
+
+async def test_a_file_path_in_the_models_answer_is_never_taken(ports):
+    """A model fed a prompt-injected web page could name another user's file as "its" PDF."""
+    from dataclasses import replace
+
+    smuggled = json.dumps({**json.loads(ARTICLE), "pdf_path": "someone-else/their-run/secret.pdf"})
+    llm = FakeLLM(response=smuggled)
+    agent = WriterAgent()
+
+    with pytest.raises(AgentError) as failed:
+        await agent.execute(agent.input_model.model_validate(FIXTURE), replace(ports, llm=llm))
+    assert failed.value.code == "invalid_model_output"  # an unknown key, after the one reformat call
+    assert "pdf_path" in failed.value.message
