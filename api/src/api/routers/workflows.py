@@ -5,6 +5,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Response, status
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from api.catalog import CatalogSource
@@ -22,7 +23,7 @@ from api.schemas import (
 from api.services.credentials import secrets_in, user_credentials
 from api.services.run_reason import rejected_runs
 from api.services.validation import validate_graph
-from api.services.workflows import ordered_nodes, save_graph
+from api.services.workflows import STEPS_TAKEN, GraphNotSaved, ordered_nodes, save_graph
 from api.settings import ApiSettings, get_settings
 from contracts.run import NodeStatus, RunStatus, WorkflowGraph
 from db.models import ExecutionLog, ExecutionRun, User, Workflow
@@ -120,8 +121,7 @@ def create_workflow(
     _refuse_secrets(body.graph)
     workflow = Workflow(user_id=user.id, name=body.name)
     session.add(workflow)
-    save_graph(session, workflow, body.graph)
-    session.commit()
+    _save(session, workflow, body.graph)
     session.refresh(workflow)
     return _out(workflow)
 
@@ -143,10 +143,24 @@ def update_workflow(
         workflow.name = body.name
     if body.graph is not None:
         _refuse_secrets(body.graph)
-        save_graph(session, workflow, body.graph)
-    session.commit()
+        _save(session, workflow, body.graph)
+    else:
+        session.commit()
     session.refresh(workflow)
     return _out(workflow)
+
+
+def _save(session: Session, workflow: Workflow, graph: WorkflowGraph) -> None:
+    """save_graph, then commit — a graph agent_nodes can't hold is a 422 or 409, never a 500."""
+    try:
+        save_graph(session, workflow, graph)
+        session.commit()
+    except GraphNotSaved as exc:
+        session.rollback()
+        raise HTTPException(exc.status_code, exc.message) from None
+    except IntegrityError:  # two saves racing for the same ids
+        session.rollback()
+        raise HTTPException(status.HTTP_409_CONFLICT, STEPS_TAKEN) from None
 
 
 @router.delete("/{workflow_id}", status_code=status.HTTP_204_NO_CONTENT)
