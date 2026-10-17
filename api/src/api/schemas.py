@@ -126,6 +126,8 @@ class RunOutput(BaseModel):
 class Connection(BaseModel):
     """A connected account on S-09 and in the credential picker (D-09). Never carries a token.
 
+    `access` is what it was connected for: `youtube`, or `drive_gmail` — Google won't grant both in
+    one consent, so one account can have a connection for each (`all`: connected before that split).
     `status`: `expired` once Google has refused the connection or `expires_at` has passed;
     `expiring` within 7 days of `expires_at`; otherwise `connected`. `expires_at` is empty when
     Google gave no end date. `scopes` are the granted services as a person reads them
@@ -135,6 +137,7 @@ class Connection(BaseModel):
     id: UUID
     provider: Literal["google"]
     account_email: str
+    access: Literal["youtube", "drive_gmail", "all"]
     scopes: list[str]
     status: Literal["connected", "expiring", "expired"]
     expires_at: datetime | None = None

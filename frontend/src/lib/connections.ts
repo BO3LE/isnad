@@ -7,7 +7,11 @@
 // with `popup=1`, and that page — same origin as this tab — reports on a BroadcastChannel and closes
 // itself. Where the opener survives, the callback's own postMessage is accepted too. A blocked popup
 // becomes a full-page redirect that ends on the same Connections page.
-import { API_URL, endpoints, type Connection } from "./api";
+//
+// Google won't grant YouTube and Drive in one consent ("scopes that cannot be requested together"),
+// so an account is connected once for YouTube and once for Drive and Gmail — two connections, each
+// shown and chosen on its own (api/google_oauth.py).
+import { API_URL, endpoints, type Connection, type ConnectionAccess } from "./api";
 
 export type ConnectResult = { ok: true } | { ok: false; reason: "cancelled" | "denied" | "state" | "failed" | "redirecting" };
 export interface ConnectMessage {
@@ -16,27 +20,37 @@ export interface ConnectMessage {
   error?: string | null;
 }
 
+export const SECURITY = "Tokens are stored encrypted and never appear in your workflows.";
+
+/** The two things a Google account can be connected for, in the order they are offered. */
+export const ACCESS: Record<ConnectionAccess, { label: string; does: string }> = {
+  youtube: { label: "YouTube", does: "Upload videos to the account's YouTube channel, unlisted unless a step says otherwise." },
+  drive_gmail: { label: "Drive and Gmail", does: "Save files to the account's Google Drive and send email as it." },
+};
+export const ACCESS_ORDER: ConnectionAccess[] = ["youtube", "drive_gmail"];
+
 export const MESSAGE_TYPE = "isnad:google-connection";
 export const CHANNEL = "isnad-google-connection";
 const POPUP = "width=520,height=680";
 
 /**
- * Open Google's consent screen and settle when it reports back — or when `signal` aborts, which is
- * how the person cancels (a closed popup can't be told apart from one on Google's page; see above).
+ * Open Google's consent screen for `access` and settle when it reports back — or when `signal`
+ * aborts, which is how the person cancels (a closed popup can't be told apart from one on Google's
+ * page; see above).
  *
  * Call it straight from a click: the window is opened before anything is awaited, which is what
  * keeps popup blockers from stopping it.
  */
-export async function connectGoogle(signal?: AbortSignal, win: Window = window): Promise<ConnectResult> {
+export async function connectGoogle(access: ConnectionAccess, signal?: AbortSignal, win: Window = window): Promise<ConnectResult> {
   const popup = win.open("", "isnad-google", POPUP);
   if (!popup) {
-    const { authorization_url } = await endpoints.startGoogle("redirect");
+    const { authorization_url } = await endpoints.startGoogle(access, "redirect");
     win.location.assign(authorization_url);
     return { ok: false, reason: "redirecting" };
   }
   let url: string;
   try {
-    url = (await endpoints.startGoogle("popup")).authorization_url;
+    url = (await endpoints.startGoogle(access, "popup")).authorization_url;
   } catch (error) {
     popup.close();
     throw error;
@@ -115,6 +129,31 @@ export function connectionStatus(connection: Connection, now: Date = new Date())
     return { tone: "warning", text: expires === null ? "Expiring soon — Reconnect" : `Expires ${inDays(expires)} — Reconnect` };
   }
   return { tone: "ok", text: expires === null ? "Connected" : `Connected · expires ${inDays(expires)}` };
+}
+
+/** What a connection may do as a person reads it ("YouTube", "Drive · Gmail"). */
+export function services(connection: Connection): string {
+  return connection.scopes.length ? connection.scopes.join(" · ") : "Nothing allowed — reconnect and tick it on Google's screen";
+}
+
+/** A connection in the step's account picker: "team@example.org — YouTube". */
+export function connectionLabel(connection: Connection): string {
+  const label = `${connection.account_email} — ${services(connection)}`;
+  return connection.status === "expired" ? `${label} (expired)` : label;
+}
+
+export interface GoogleAccount {
+  email: string;
+  connections: Connection[];
+}
+
+/** Connections grouped by Google account, in the order each account was first connected. */
+export function byAccount(connections: Connection[]): GoogleAccount[] {
+  const accounts = new Map<string, Connection[]>();
+  for (const connection of connections) {
+    accounts.set(connection.account_email, [...(accounts.get(connection.account_email) ?? []), connection]);
+  }
+  return [...accounts].map(([email, grouped]) => ({ email, connections: grouped }));
 }
 
 export function usedBy(count: number): string {

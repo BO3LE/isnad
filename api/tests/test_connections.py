@@ -39,7 +39,6 @@ GOOGLE = SETTINGS.model_copy(
 )
 ACCESS = "ya29.a0-ACCESS-TOKEN-never-shown-anywhere"
 REFRESH = "1//0REFRESH-TOKEN-never-shown-anywhere"
-SCOPE = " ".join(google_oauth.SCOPES)
 
 PUBLISHER = AgentManifest(
     name="publisher",
@@ -58,7 +57,8 @@ def id_token(email: str = "Hasan.Team@gmail.com", aud: str = GOOGLE.google_clien
 
 
 class FakeGoogle:
-    """Google's token and revoke endpoints."""
+    """Google's token and revoke endpoints. Unless a test says otherwise, the person grants every
+    scope the last consent asked for (`asked`)."""
 
     def __init__(self) -> None:
         self.token_response: tuple[int, dict] = (
@@ -67,11 +67,11 @@ class FakeGoogle:
                 "access_token": ACCESS,
                 "refresh_token": REFRESH,
                 "expires_in": 3599,
-                "scope": SCOPE,
                 "token_type": "Bearer",
                 "id_token": id_token(),
             },
         )
+        self.asked = ""
         self.revoked: list[str] = []
         self.revoke_status = 200
 
@@ -81,7 +81,7 @@ class FakeGoogle:
             assert form["grant_type"] == ["authorization_code"]
             assert form["redirect_uri"] == [GOOGLE.google_redirect_uri]
             status, body = self.token_response
-            return httpx.Response(status, json=body)
+            return httpx.Response(status, json={"scope": self.asked, **body} if status == 200 else body)
         if request.url.path == "/revoke":
             self.revoked.append(form["token"][0])
             return httpx.Response(self.revoke_status)
@@ -112,25 +112,36 @@ def client(sessions, enqueuer, google, settings):
     app.dependency_overrides[get_catalog] = lambda: StaticCatalog([*CATALOG, PUBLISHER])
     app.dependency_overrides[get_google_transport] = lambda: httpx.MockTransport(google.handler)
     with TestClient(app) as test_client:
+        test_client.google = google  # type: ignore[attr-defined]
         yield test_client
 
 
-def start(client, headers, mode: str = "redirect") -> str:
-    response = client.post(f"/connections/google/start?mode={mode}", headers=headers)
+def start(client, headers, mode: str = "redirect", access: str = "youtube") -> str:
+    response = client.post(f"/connections/google/start?access={access}&mode={mode}", headers=headers)
     assert response.status_code == 200, response.text
-    return parse_qs(urlparse(response.json()["authorization_url"]).query)["state"][0]
+    query = parse_qs(urlparse(response.json()["authorization_url"]).query)
+    client.google.asked = query["scope"][0]
+    return query["state"][0]
 
 
-def connect(client, headers, **params) -> httpx.Response:
-    state = start(client, headers)
+def connect(client, headers, access: str = "youtube", **params) -> httpx.Response:
+    state = start(client, headers, access=access)
     return client.get(
         "/connections/google/callback", params={"state": state, "code": "4/code", **params}, follow_redirects=False
     )
 
 
+YOUTUBE = "https://www.googleapis.com/auth/youtube.upload"
+DRIVE = "https://www.googleapis.com/auth/drive.file"
+GMAIL = "https://www.googleapis.com/auth/gmail.send"
+
+
 # ---------------------------------------------------------------- start
-def test_start_asks_google_for_offline_access_and_the_three_services(client, headers):
-    response = client.post("/connections/google/start", headers=headers)
+@pytest.mark.parametrize(
+    ("access", "services"), [("youtube", {YOUTUBE}), ("drive_gmail", {DRIVE, GMAIL})], ids=["youtube", "drive_gmail"]
+)
+def test_start_asks_google_for_offline_access_to_one_access(client, headers, access, services):
+    response = client.post(f"/connections/google/start?access={access}", headers=headers)
     assert response.status_code == 200
     url = urlparse(response.json()["authorization_url"])
     query = {k: v[0] for k, v in parse_qs(url.query).items()}
@@ -139,21 +150,36 @@ def test_start_asks_google_for_offline_access_and_the_three_services(client, hea
     assert query["prompt"] == "consent"
     assert query["redirect_uri"] == GOOGLE.google_redirect_uri
     assert query["client_id"] == GOOGLE.google_client_id
-    for scope in ("youtube.upload", "drive.file", "gmail.send"):
-        assert f"https://www.googleapis.com/auth/{scope}" in query["scope"].split()
-    # The state is bound to this user and to this browser's cookie.
+    assert set(query["scope"].split()) == {"openid", "https://www.googleapis.com/auth/userinfo.email", *services}
+    # The state is bound to this user, to what was asked for and to this browser's cookie.
     claims = jwt.decode(query["state"], SETTINGS.jwt_secret, algorithms=["HS256"], audience="isnad:google-oauth")
+    assert claims["access"] == access
     assert client.cookies.get(google_oauth.NONCE_COOKIE) == claims["nonce"]
     assert "httponly" in response.headers["set-cookie"].lower()
 
 
+@pytest.mark.parametrize("access", list(google_oauth.ACCESS))
+def test_start_never_asks_for_youtube_together_with_drive(client, headers, access):
+    """Google refuses that consent: "This request contains scopes that cannot be requested together".
+    Nor may it fold the account's other access in (include_granted_scopes)."""
+    response = client.post(f"/connections/google/start?access={access}", headers=headers)
+    query = parse_qs(urlparse(response.json()["authorization_url"]).query)
+    assert not {YOUTUBE, DRIVE} <= set(query["scope"][0].split())
+    assert "include_granted_scopes" not in query
+
+
+def test_start_says_which_access(client, headers):
+    assert client.post("/connections/google/start", headers=headers).status_code == 422
+    assert client.post("/connections/google/start?access=everything", headers=headers).status_code == 422
+
+
 def test_start_needs_sign_in(client):
-    assert client.post("/connections/google/start").status_code == 401
+    assert client.post("/connections/google/start?access=youtube").status_code == 401
 
 
 def test_start_without_google_configured_is_503(client, headers, settings):
     settings.google_client_id = ""
-    response = client.post("/connections/google/start", headers=headers)
+    response = client.post("/connections/google/start?access=youtube", headers=headers)
     assert response.status_code == 503
     assert "aren't set up" in response.json()["detail"]
 
@@ -193,7 +219,7 @@ def test_a_state_signed_with_another_secret_is_refused(client, headers, sessions
     start(client, headers)  # sets this browser's cookie
     nonce = client.cookies.get(google_oauth.NONCE_COOKIE)
     other = SETTINGS.model_copy(update={"jwt_secret": "x" * 40})
-    forged = google_oauth.make_state(other, uuid4(), nonce, "redirect")
+    forged = google_oauth.make_state(other, uuid4(), nonce, "redirect", "youtube")
     response = client.get("/connections/google/callback", params={"state": forged, "code": "c"}, follow_redirects=False)
     assert "error=google_state" in response.headers["location"]
 
@@ -228,20 +254,21 @@ def test_an_id_token_for_another_client_is_refused(client, headers, google):
     assert connect(client, headers).headers["location"].endswith("?error=google_failed")
 
 
-def test_a_consent_that_grants_none_of_the_services_is_refused(client, headers, google, sessions):
-    # Google's consent screen lets the person untick YouTube, Drive and Gmail; only who they are is left.
+@pytest.mark.parametrize("access", list(google_oauth.ACCESS))
+def test_a_consent_that_grants_none_of_what_it_asked_for_is_refused(client, headers, google, sessions, access):
+    # Google's consent screen lets the person untick each service; only who they are is left.
     google.token_response[1]["scope"] = "openid https://www.googleapis.com/auth/userinfo.email"
-    response = connect(client, headers)
+    response = connect(client, headers, access=access)
     assert response.headers["location"].endswith("?error=google_scopes")
     with sessions() as s:
         assert s.query(Credential).count() == 0
 
 
 def test_a_consent_that_grants_only_some_services_is_kept_with_what_it_grants(client, headers, google, sessions):
-    google.token_response[1]["scope"] = "openid https://www.googleapis.com/auth/drive.file"
-    assert connect(client, headers).headers["location"].endswith("?connected=google")
+    google.token_response[1]["scope"] = f"openid {GMAIL}"
+    assert connect(client, headers, access="drive_gmail").headers["location"].endswith("?connected=google")
     listed = client.get("/connections", headers=headers).json()
-    assert [c["scopes"] for c in listed] == [["Drive"]]
+    assert [(c["access"], c["scopes"]) for c in listed] == [("drive_gmail", ["Gmail"])]
 
 
 def test_connecting_writes_no_token_code_or_state_to_the_logs(client, headers, google, caplog):
@@ -297,6 +324,33 @@ def test_reconnecting_the_same_account_keeps_its_id(client, headers, google, ses
     assert payload["refresh_token"] == REFRESH
 
 
+def test_youtube_and_drive_gmail_are_two_connections_of_one_account(client, headers, google, sessions):
+    connect(client, headers, access="youtube")
+    google.token_response[1].update(access_token="ya29.drive", refresh_token="1//0drive-refresh")
+    connect(client, headers, access="drive_gmail")
+
+    listed = client.get("/connections", headers=headers).json()
+    assert sorted((c["account_email"], c["access"], c["scopes"]) for c in listed) == [
+        ("hasan.team@gmail.com", "drive_gmail", ["Drive", "Gmail"]),
+        ("hasan.team@gmail.com", "youtube", ["YouTube"]),
+    ]
+    with sessions() as s:
+        tokens = {
+            row.access: CredentialCipher(KEY).decrypt(row.encrypted_payload)["refresh_token"]
+            for row in s.query(Credential)
+        }
+    assert tokens == {"youtube": REFRESH, "drive_gmail": "1//0drive-refresh"}
+
+    # Reconnecting YouTube renews only YouTube's connection, in place.
+    google.token_response[1].update(access_token="ya29.youtube-again", refresh_token="1//0youtube-again")
+    connect(client, headers, access="youtube")
+    again = client.get("/connections", headers=headers).json()
+    assert sorted(c["id"] for c in again) == sorted(c["id"] for c in listed)
+    with sessions() as s:
+        row = s.query(Credential).filter_by(access="drive_gmail").one()
+        assert CredentialCipher(KEY).decrypt(row.encrypted_payload)["refresh_token"] == "1//0drive-refresh"
+
+
 def test_a_testing_mode_app_gets_an_end_date(client, headers, google):
     google.token_response[1]["refresh_token_expires_in"] = 7 * 24 * 3600
     connect(client, headers)
@@ -312,10 +366,21 @@ def test_list_shows_plain_words_and_never_a_token(client, headers):
     assert response.status_code == 200
     [conn] = response.json()
     assert conn["account_email"] == "hasan.team@gmail.com"
-    assert conn["scopes"] == ["YouTube", "Drive", "Gmail"]
+    assert conn["access"] == "youtube"
+    assert conn["scopes"] == ["YouTube"]
     assert conn["status"] == "connected"
     assert conn["used_by"] == 0
-    assert set(conn) == {"id", "provider", "account_email", "scopes", "status", "expires_at", "created_at", "used_by"}
+    assert set(conn) == {
+        "id",
+        "provider",
+        "account_email",
+        "access",
+        "scopes",
+        "status",
+        "expires_at",
+        "created_at",
+        "used_by",
+    }
     for secret in (ACCESS, REFRESH, "ya29", "1//", "GOCSPX", KEY):
         assert secret not in response.text
 
@@ -354,6 +419,22 @@ def test_disconnect_revokes_at_google_and_forgets(client, headers, google, sessi
     assert client.delete(f"/connections/{conn['id']}", headers=headers).status_code == 204
     assert google.revoked == [REFRESH]
     assert client.get("/connections", headers=headers).json() == []
+
+
+def test_disconnect_forgets_every_connection_of_that_google_account(client, headers, google):
+    """Google may end an account's other connections when one is revoked, so none is left behind."""
+    connect(client, headers, access="youtube")
+    google.token_response[1]["refresh_token"] = "1//0drive-refresh"
+    connect(client, headers, access="drive_gmail")
+    google.token_response[1].update(id_token=id_token("other@gmail.com"), refresh_token="1//0other-refresh")
+    connect(client, headers, access="youtube")
+    youtube = next(
+        c for c in client.get("/connections", headers=headers).json() if c["account_email"] != "other@gmail.com"
+    )
+
+    assert client.delete(f"/connections/{youtube['id']}", headers=headers).status_code == 204
+    assert sorted(google.revoked) == sorted([REFRESH, "1//0drive-refresh"])
+    assert [c["account_email"] for c in client.get("/connections", headers=headers).json()] == ["other@gmail.com"]
 
 
 def test_disconnect_still_forgets_when_google_is_down(client, headers, google):

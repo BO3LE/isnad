@@ -1,15 +1,16 @@
 import { useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useToast } from "@/design-system/components/toast-context";
-import { ApiError, endpoints, type Connection } from "@/lib/api";
+import { ApiError, endpoints, type Connection, type ConnectionAccess } from "@/lib/api";
 import { connectGoogle, connectProblem } from "@/lib/connections";
 
 export const CONNECTIONS_KEY = ["connections"] as const;
 
 /**
- * "Connect Google", with the waiting state it needs: Google's screen is in another window, which
- * this tab can't watch, so the person can cancel the wait (see `lib/connections.ts`). On success
- * the connections are fetched again and `onConnected` gets the account that is new or renewed.
+ * "Connect Google" for one access (YouTube, or Drive and Gmail), with the waiting state it needs:
+ * Google's screen is in another window, which this tab can't watch, so the person can cancel the
+ * wait (see `lib/connections.ts`). On success the connections are fetched again and `onConnected`
+ * gets the connection that is new or renewed.
  */
 export function useConnectGoogle(onConnected?: (connection: Connection | undefined) => void) {
   const client = useQueryClient();
@@ -19,19 +20,22 @@ export function useConnectGoogle(onConnected?: (connection: Connection | undefin
 
   useEffect(() => () => abort.current?.abort(), []);
 
-  const connect = useCallback(async () => {
+  const connect = useCallback(async (access: ConnectionAccess) => {
     abort.current?.abort();
     const controller = new AbortController();
     abort.current = controller;
     const before = client.getQueryData<Connection[]>(CONNECTIONS_KEY) ?? [];
     setWaiting(true);
     try {
-      const result = await connectGoogle(controller.signal);
+      const result = await connectGoogle(access, controller.signal);
       if (result.ok) {
         const after = await client.fetchQuery({ queryKey: CONNECTIONS_KEY, queryFn: endpoints.connections, staleTime: 0 });
         const known = new Set(before.map((c) => c.id));
-        // A reconnect keeps its id (api: same account → same row), so fall back to the newest one.
-        const fresh = after.find((c) => !known.has(c.id)) ?? [...after].sort((a, b) => b.created_at.localeCompare(a.created_at))[0];
+        // A reconnect keeps its id (api: same account and access → same row), so fall back to the
+        // newest connection for that access.
+        const fresh =
+          after.find((c) => !known.has(c.id)) ??
+          after.filter((c) => c.access === access).sort((a, b) => b.created_at.localeCompare(a.created_at))[0];
         toast({ variant: "success", message: fresh ? `Connected ${fresh.account_email}.` : "Google connected." });
         onConnected?.(fresh);
       } else {

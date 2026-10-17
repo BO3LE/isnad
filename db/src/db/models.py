@@ -179,17 +179,24 @@ class Credential(Base):
     token, whose expiry lives inside the encrypted payload. `invalid_at` is set when Google answers
     `invalid_grant` (revoked, expired, password changed); the row stays so the UI can say
     "Reconnect" rather than silently forgetting the account.
+
+    `access` is what the connection was asked for: `youtube`, or `drive_gmail`. Google won't grant
+    YouTube and Drive in one consent, so one Google account can have a row for each, each with its
+    own refresh token (api/google_oauth.py). `all` is a row from before that split.
     """
 
     __tablename__ = "credentials"
     __table_args__ = (
-        UniqueConstraint("user_id", "provider", "account_email", name="uq_credentials_user_provider_account"),
+        UniqueConstraint(
+            "user_id", "provider", "account_email", "access", name="uq_credentials_user_provider_account_access"
+        ),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
     user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
     provider: Mapped[str] = mapped_column(String(32), nullable=False)
     account_email: Mapped[str] = mapped_column(String(320), nullable=False)
+    access: Mapped[str] = mapped_column(String(16), nullable=False, default="all")
     scopes: Mapped[list[str]] = mapped_column(JSONType, nullable=False, default=list)
     encrypted_payload: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
     expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

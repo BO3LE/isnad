@@ -263,8 +263,9 @@ test.describe("WCAG 2.1 AA — no serious or critical violations", () => {
     await page.route("http://api.mock/connections", (r) =>
       r.fulfill({
         json: [
-          { id: "c1", provider: "google", account_email: "team@example.org", scopes: ["YouTube", "Drive", "Gmail"], status: "connected", expires_at: "2026-12-14T12:00:00Z", created_at: "2026-10-01T09:00:00Z", used_by: 2 },
-          { id: "c2", provider: "google", account_email: "old@example.org", scopes: ["Gmail"], status: "expired", expires_at: null, created_at: "2026-09-01T09:00:00Z", used_by: 0 },
+          { id: "c1", provider: "google", account_email: "team@example.org", access: "youtube", scopes: ["YouTube"], status: "connected", expires_at: "2026-12-14T12:00:00Z", created_at: "2026-10-01T09:00:00Z", used_by: 2 },
+          { id: "c3", provider: "google", account_email: "team@example.org", access: "drive_gmail", scopes: ["Drive", "Gmail"], status: "expiring", expires_at: "2026-10-20T12:00:00Z", created_at: "2026-10-02T09:00:00Z", used_by: 0 },
+          { id: "c2", provider: "google", account_email: "old@example.org", access: "drive_gmail", scopes: ["Gmail"], status: "expired", expires_at: null, created_at: "2026-09-01T09:00:00Z", used_by: 0 },
         ],
       }),
     );
@@ -272,6 +273,10 @@ test.describe("WCAG 2.1 AA — no serious or critical violations", () => {
     await page.goto("/settings/connections");
     await expect(page.getByText("team@example.org")).toBeVisible();
     expect(await seriousViolations(page)).toEqual([]);
+    await page.getByRole("button", { name: "Connect YouTube for old@example.org" }).click();
+    await expect(page.getByRole("radiogroup", { name: "What Isnad may do" })).toBeVisible();
+    expect(await seriousViolations(page)).toEqual([]);
+    await page.getByRole("button", { name: "Cancel" }).click();
     await page.getByRole("button", { name: "Disconnect team@example.org" }).click();
     await expect(page.getByRole("dialog", { name: "Disconnect team@example.org?" })).toBeVisible();
     expect(await seriousViolations(page)).toEqual([]);

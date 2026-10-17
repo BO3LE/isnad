@@ -21,6 +21,8 @@ export type OutputLink = Schemas["OutputLink"];
 export type NodeStatus = Schemas["NodeStatus"];
 export type RunStatus = Schemas["RunStatus"];
 export type Connection = Schemas["Connection"];
+/** What one Google consent asks for: Google won't grant YouTube and Drive together, so each is a connection. */
+export type ConnectionAccess = Exclude<Connection["access"], "all">;
 
 export const API_URL = (import.meta.env.VITE_API_URL as string | undefined) ?? "http://localhost:8000";
 
@@ -79,8 +81,11 @@ export const endpoints = {
   output: (outputId: string) => api<OutputLink>(`/outputs/${outputId}`),
   connections: () => api<Connection[]>("/connections"),
   /** `credentials: "include"`: the API sets a cookie that ties Google's answer to this browser (D-09). */
-  startGoogle: (mode: "popup" | "redirect") =>
-    api<Schemas["ConnectStart"]>(`/connections/google/start?mode=${mode}`, { method: "POST", credentials: "include" }),
+  startGoogle: (access: ConnectionAccess, mode: "popup" | "redirect") =>
+    api<Schemas["ConnectStart"]>(`/connections/google/start?access=${access}&mode=${mode}`, {
+      method: "POST",
+      credentials: "include",
+    }),
   disconnect: (id: string) => api<void>(`/connections/${id}`, { method: "DELETE" }),
 };
 

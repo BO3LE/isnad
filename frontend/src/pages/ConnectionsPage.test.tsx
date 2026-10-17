@@ -13,7 +13,8 @@ const connection = (over: Partial<Connection> = {}): Connection => ({
   id: "c1",
   provider: "google",
   account_email: "team@example.org",
-  scopes: ["YouTube", "Drive", "Gmail"],
+  access: "youtube",
+  scopes: ["YouTube"],
   status: "connected",
   expires_at: null,
   created_at: "2026-10-01T09:00:00Z",
@@ -41,19 +42,30 @@ function show(connections: Connection[] | Error, url = "/settings/connections") 
 afterEach(() => vi.restoreAllMocks());
 
 describe("ConnectionsPage", () => {
-  it("shows each account with what it may do, its status and what uses it", async () => {
-    show([connection(), connection({ id: "c2", account_email: "old@example.org", status: "expired", scopes: ["Gmail"], used_by: 0 })]);
+  it("shows each account with what each of its connections may do, its status and what uses it", async () => {
+    show([
+      connection(),
+      connection({ id: "c2", account_email: "old@example.org", access: "drive_gmail", status: "expired", scopes: ["Gmail"], used_by: 0 }),
+      connection({ id: "c3", access: "drive_gmail", scopes: ["Drive", "Gmail"], used_by: 1 }),
+    ]);
 
     const list = await screen.findByRole("list", { name: "Connected accounts" });
-    const rows = within(list).getAllByRole("listitem");
-    expect(rows).toHaveLength(2);
-    const [first, second] = rows as [HTMLElement, HTMLElement];
-    expect(within(first).getByText("team@example.org")).toBeInTheDocument();
-    expect(within(first).getByText("YouTube · Drive · Gmail")).toBeInTheDocument();
-    expect(within(first).getByText("Connected")).toBeInTheDocument();
-    expect(within(first).getByText("Used by 2 workflows")).toBeInTheDocument();
-    expect(within(second).getByText("Connection expired — Reconnect")).toBeInTheDocument();
-    expect(within(second).getByText("Not used by any workflow yet")).toBeInTheDocument();
+    expect(within(list).getAllByRole("list")).toHaveLength(2); // one card per account
+    const team = screen.getByRole("list", { name: "What team@example.org may do" });
+    const [youtube, drive] = within(team).getAllByRole("listitem") as [HTMLElement, HTMLElement];
+    expect(within(youtube).getByText("YouTube")).toBeInTheDocument();
+    expect(within(youtube).getByText("Connected")).toBeInTheDocument();
+    expect(within(youtube).getByText("Used by 2 workflows")).toBeInTheDocument();
+    expect(within(drive).getByText("Drive · Gmail")).toBeInTheDocument();
+    expect(within(drive).getByText("Used by 1 workflow")).toBeInTheDocument();
+
+    // An account connected only for Drive and Gmail offers YouTube.
+    const old = screen.getByRole("list", { name: "What old@example.org may do" });
+    const [missing, expired] = within(old).getAllByRole("listitem") as [HTMLElement, HTMLElement];
+    expect(within(missing).getByText("Not connected")).toBeInTheDocument();
+    expect(within(missing).getByRole("button", { name: "Connect YouTube for old@example.org" })).toBeEnabled();
+    expect(within(expired).getByText("Connection expired — Reconnect")).toBeInTheDocument();
+    expect(within(expired).getByText("Not used by any workflow yet")).toBeInTheDocument();
     expect(screen.getByText(/Tokens are stored encrypted/)).toBeInTheDocument();
   });
 
@@ -64,26 +76,49 @@ describe("ConnectionsPage", () => {
     expect(screen.getAllByRole("button", { name: "Connect Google" })).toHaveLength(2); // header and empty state
   });
 
-  it("explains what Google will be asked before sending anyone there", async () => {
+  it("explains what Google will be asked — YouTube, or Drive and Gmail — before sending anyone there", async () => {
     show([]);
+    const start = vi.spyOn(endpoints, "startGoogle").mockResolvedValue({ authorization_url: "https://accounts.google.test/o" });
+    vi.spyOn(window, "open").mockReturnValue({ location: { href: "" }, close: vi.fn() } as unknown as Window);
     const user = userEvent.setup();
 
     const [inHeader] = await screen.findAllByRole("button", { name: "Connect Google" });
     await user.click(inHeader!);
 
     const dialog = screen.getByRole("dialog", { name: "Connect Google" });
-    expect(within(dialog).getByText(/upload to YouTube, save to Drive and send email as you/)).toBeInTheDocument();
-    expect(within(dialog).getByRole("button", { name: "Continue to Google" })).toBeInTheDocument();
+    expect(within(dialog).getByText(/Google connects YouTube on its own, apart from Drive and Gmail/)).toBeInTheDocument();
+    expect(within(dialog).getByRole("radio", { name: "YouTube" })).toBeChecked();
+    expect(within(dialog).getByText(/Upload videos to the account's YouTube channel/)).toBeInTheDocument();
+    expect(start).not.toHaveBeenCalled();
+
+    await user.click(within(dialog).getByRole("radio", { name: "Drive and Gmail" }));
+    expect(within(dialog).getByText(/Save files to the account's Google Drive and send email/)).toBeInTheDocument();
+    await user.click(within(dialog).getByRole("button", { name: "Continue to Google" }));
+
+    await waitFor(() => expect(start).toHaveBeenCalledWith("drive_gmail", "popup"));
+    expect(await screen.findByText(/Waiting for Google/)).toBeInTheDocument();
   });
 
-  it("disconnects only after a confirmation that says what will break", async () => {
+  it("reconnects the connection it is shown on", async () => {
     show([connection()]);
+    const user = userEvent.setup();
+
+    await user.click(await screen.findByRole("button", { name: "Connect Drive and Gmail for team@example.org" }));
+    expect(screen.getByRole("radio", { name: "Drive and Gmail" })).toBeChecked();
+    await user.click(screen.getByRole("button", { name: "Cancel" }));
+
+    await user.click(screen.getByRole("button", { name: "Reconnect YouTube for team@example.org" }));
+    expect(screen.getByRole("radio", { name: "YouTube" })).toBeChecked();
+  });
+
+  it("disconnects the whole account only after a confirmation that says what will break", async () => {
+    show([connection(), connection({ id: "c2", access: "drive_gmail", scopes: ["Drive", "Gmail"], used_by: 1 })]);
     const disconnect = vi.spyOn(endpoints, "disconnect").mockResolvedValue(undefined);
     const user = userEvent.setup();
 
     await user.click(await screen.findByRole("button", { name: "Disconnect team@example.org" }));
     const dialog = screen.getByRole("dialog", { name: "Disconnect team@example.org?" });
-    expect(within(dialog).getByText(/Used by 2 workflows\. Their steps .* will need another account/)).toBeInTheDocument();
+    expect(within(dialog).getByText(/Used by 3 workflows\. Their steps .* will need another account/)).toBeInTheDocument();
     expect(disconnect).not.toHaveBeenCalled();
 
     await user.click(within(dialog).getByRole("button", { name: "Disconnect" }));

@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import { CredentialPicker } from "./CredentialPicker";
@@ -23,7 +23,8 @@ const connection = (over: Partial<Connection> = {}): Connection => ({
   id: "c1",
   provider: "google",
   account_email: "team@example.org",
-  scopes: ["YouTube", "Drive", "Gmail"],
+  access: "youtube",
+  scopes: ["YouTube"],
   status: "connected",
   expires_at: null,
   created_at: "2026-10-01T09:00:00Z",
@@ -48,11 +49,12 @@ function picker(connections: Connection[], props: { value?: string; field?: Form
 
 afterEach(() => vi.restoreAllMocks());
 
-it("stores the chosen account's id, and nothing else", async () => {
-  const { onChange } = picker([connection(), connection({ id: "c2", account_email: "other@example.org" })]);
+it("stores the chosen connection's id, and nothing else", async () => {
+  const { onChange } = picker([connection(), connection({ id: "c2", access: "drive_gmail", scopes: ["Drive", "Gmail"] })]);
   const user = userEvent.setup();
 
-  await user.selectOptions(await screen.findByRole("combobox"), "other@example.org");
+  // One account, two connections: each option says what it may do.
+  await user.selectOptions(await screen.findByRole("combobox"), "team@example.org — Drive · Gmail");
 
   expect(onChange).toHaveBeenCalledWith("c2");
   expect(screen.getByRole("link", { name: "Manage connections" })).toHaveAttribute("href", "/settings/connections");
@@ -62,7 +64,7 @@ it("shows how the chosen account stands", async () => {
   picker([connection({ status: "expired" })], { value: "c1" });
 
   expect(await screen.findByText("Connection expired — Reconnect")).toBeInTheDocument();
-  expect(screen.getByRole("option", { name: "team@example.org (expired)" })).toBeInTheDocument();
+  expect(screen.getByRole("option", { name: "team@example.org — YouTube (expired)" })).toBeInTheDocument();
 });
 
 it("says so when the account the step used has been disconnected", async () => {
@@ -71,11 +73,16 @@ it("says so when the account the step used has been disconnected", async () => {
   expect(await screen.findByText("The account this step used was disconnected. Choose another.")).toBeInTheDocument();
 });
 
-it("offers to connect Google when there is no account", async () => {
+it("offers to connect Google when there is no account, asking which access first", async () => {
   picker([]);
+  const user = userEvent.setup();
 
   expect(await screen.findByText("No Google account connected")).toBeInTheDocument();
-  expect(screen.getByRole("button", { name: "Connect Google" })).toBeEnabled();
+  await user.click(screen.getByRole("button", { name: "Connect Google" }));
+
+  const dialog = screen.getByRole("dialog", { name: "Connect Google" });
+  expect(within(dialog).getByRole("radio", { name: "YouTube" })).toBeChecked();
+  expect(within(dialog).getByRole("radio", { name: "Drive and Gmail" })).not.toBeChecked();
 });
 
 it("asks for no account where this server doesn't use one", async () => {

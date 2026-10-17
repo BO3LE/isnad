@@ -115,7 +115,10 @@ export interface paths {
         post?: never;
         /**
          * Disconnect
-         * @description Forget a connection. Steps that used it then show "needs a Google connection".
+         * @description Forget the Google account this connection is for — all of its connections (YouTube, and Drive
+         *     and Gmail). Revoking one of them at Google may end the others (Google keeps one grant per app and
+         *     account), so none is left behind looking connected. Steps that used them then show "needs a
+         *     Google connection".
          */
         delete: operations["disconnect_connections__credential_id__delete"];
         options?: never;
@@ -557,12 +560,19 @@ export interface components {
          * Connection
          * @description A connected account on S-09 and in the credential picker (D-09). Never carries a token.
          *
+         *     `access` is what it was connected for: `youtube`, or `drive_gmail` — Google won't grant both in
+         *     one consent, so one account can have a connection for each (`all`: connected before that split).
          *     `status`: `expired` once Google has refused the connection or `expires_at` has passed;
          *     `expiring` within 7 days of `expires_at`; otherwise `connected`. `expires_at` is empty when
          *     Google gave no end date. `scopes` are the granted services as a person reads them
          *     ("YouTube", "Drive", "Gmail"). `used_by` counts this user's workflows whose steps reference it.
          */
         Connection: {
+            /**
+             * Access
+             * @enum {string}
+             */
+            access: "youtube" | "drive_gmail" | "all";
             /** Account Email */
             account_email: string;
             /**
@@ -1069,7 +1079,9 @@ export interface operations {
     };
     start_google_connections_google_start_post: {
         parameters: {
-            query?: {
+            query: {
+                /** @description `youtube`: upload to YouTube. `drive_gmail`: save to Drive and send email. Google won't grant both in one consent, so each is connected on its own. */
+                access: "youtube" | "drive_gmail";
                 /** @description `popup`: the callback answers with a page that tells the opener and closes. */
                 mode?: "redirect" | "popup";
             };

@@ -1,18 +1,21 @@
 import { useQuery } from "@tanstack/react-query";
 import { CircleCheck, CircleX, TriangleAlert } from "lucide-react";
+import { useState } from "react";
 import { Link } from "react-router-dom";
+import { ConnectGoogleDialog } from "./ConnectGoogleDialog";
 import { GoogleLogo } from "./GoogleLogo";
 import { CONNECTIONS_KEY, useConnectGoogle } from "./useConnectGoogle";
 import { Button } from "@/design-system/components/Button";
 import { Select } from "@/design-system/components/Select";
 import { Skeleton } from "@/design-system/components/Skeleton";
-import { endpoints } from "@/lib/api";
-import { connectionStatus } from "@/lib/connections";
+import { endpoints, type ConnectionAccess } from "@/lib/api";
+import { connectionLabel, connectionStatus } from "@/lib/connections";
 import type { FormField } from "@/lib/schema";
 
 // DESIGN-SYSTEM §17.3 — which connected account a step acts as. The step stores only the
 // connection's id (`credential_id`); the account's tokens never reach the browser or the graph.
-// Drawn from the schema alone (`x-widget: credential`), so it names no agent (AT-12).
+// Drawn from the schema alone (`x-widget: credential`), so it names no agent (AT-12). An account
+// can have two connections — YouTube, and Drive and Gmail — so each option says what it may do.
 
 const TONE = {
   ok: { icon: CircleCheck, className: "text-status-success-fg" },
@@ -31,6 +34,17 @@ export function CredentialPicker({ field, value, onChange, id }: CredentialPicke
   const provider = field.provider === "google" ? "Google" : "an";
   const connections = useQuery({ queryKey: CONNECTIONS_KEY, queryFn: endpoints.connections, enabled: field.connection !== "unused" });
   const { connect, cancel, waiting } = useConnectGoogle((fresh) => fresh && onChange(fresh.id));
+  const [asking, setAsking] = useState<ConnectionAccess | null>(null);
+  const dialog = (
+    <ConnectGoogleDialog
+      initial={asking}
+      onClose={() => setAsking(null)}
+      onContinue={(access) => {
+        setAsking(null);
+        void connect(access);
+      }}
+    />
+  );
 
   // This server does this step without an account (e.g. it sends email over its own SMTP).
   if (field.connection === "unused") {
@@ -64,10 +78,11 @@ export function CredentialPicker({ field, value, onChange, id }: CredentialPicke
           <TriangleAlert size={14} aria-hidden />
           No {provider} account connected
         </p>
-        <Button size="sm" icon={<GoogleLogo size={14} />} onClick={() => void connect()} disabled={waiting}>
+        <Button size="sm" icon={<GoogleLogo size={14} />} onClick={() => setAsking("youtube")} disabled={waiting}>
           Connect {provider === "an" ? "an account" : provider}
         </Button>
         {waitingNote}
+        {dialog}
       </div>
     );
   }
@@ -84,7 +99,7 @@ export function CredentialPicker({ field, value, onChange, id }: CredentialPicke
         invalid={!chosen && field.required}
         options={all.map((c) => ({
           value: c.id,
-          label: c.status === "expired" ? `${c.account_email} (expired)` : c.account_email,
+          label: connectionLabel(c),
         }))}
         onChange={(event) => onChange(event.target.value || undefined)}
       />
@@ -101,14 +116,15 @@ export function CredentialPicker({ field, value, onChange, id }: CredentialPicke
         </p>
       )}
       <div className="flex flex-wrap gap-x-4">
-        <Button variant="link" size="sm" onClick={() => void connect()} disabled={waiting}>
-          Connect another account
+        <Button variant="link" size="sm" onClick={() => setAsking("youtube")} disabled={waiting}>
+          Add a connection
         </Button>
         <Link to="/settings/connections" className="text-caption text-accent-text underline-offset-2 hover:underline">
           Manage connections
         </Link>
       </div>
       {waitingNote}
+      {dialog}
     </div>
   );
 }
