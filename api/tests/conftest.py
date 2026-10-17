@@ -54,8 +54,11 @@ CATALOG = [
 class RecordingEnqueuer:
     def __init__(self) -> None:
         self.runs: list[UUID] = []
+        self.down = False  # set to simulate Redis being unreachable
 
     def enqueue_run(self, run_id: UUID) -> None:
+        if self.down:
+            raise ConnectionError("Error 111 connecting to redis:6379. Connection refused.")
         self.runs.append(run_id)
 
 

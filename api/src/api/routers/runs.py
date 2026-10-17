@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+import logging
 from pathlib import PurePosixPath
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select, update
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from api.deps import get_current_user, get_enqueuer, get_session, owned
@@ -21,11 +23,16 @@ from contracts.run import (
 )
 from db.models import AgentOutput, Approval, ExecutionLog, ExecutionRun, User, Workflow
 
+log = logging.getLogger(__name__)
+
 router = APIRouter(prefix="/runs", tags=["runs"])
 
+ALREADY_DECIDED = "This step has already been decided."
 
-def _load(session: Session, user: User, run_id: UUID) -> ExecutionRun:
-    run = session.get(ExecutionRun, run_id)
+
+def _load(session: Session, user: User, run_id: UUID, *, lock: bool = False) -> ExecutionRun:
+    # `lock` takes the run row FOR UPDATE until the request commits (a no-op on SQLite).
+    run = session.get(ExecutionRun, run_id, with_for_update=lock)
     if run is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "This run doesn't exist or isn't yours.")
     owned(user, session.scalar(select(Workflow.user_id).where(Workflow.id == run.workflow_id)))
@@ -172,25 +179,59 @@ def decide(
     session: Session = Depends(get_session),
     enqueuer: Enqueuer = Depends(get_enqueuer),
 ):
-    """UC-04: record the decision, then hand the run back to the worker, which resumes or halts it."""
-    run = _load(session, user, run_id)
+    """UC-04: record the decision, then hand the run back to the worker, which resumes or halts it.
+
+    A step is decided once. A second decision, or one on a run that has finished or been
+    cancelled, is refused with 409. If the job queue is unavailable the decision is not kept
+    (503), so it can simply be made again.
+    """
+    # The run row stays locked until this request commits, as `cancel` locks it, so a decision and
+    # a cancel can't interleave: whichever arrives second sees what the first did.
+    run = _load(session, user, run_id, lock=True)
+    if RunStatus(run.status) in TERMINAL_RUN_STATUSES:
+        raise HTTPException(status.HTTP_409_CONFLICT, "This run has already finished.")
     row = session.scalar(select(ExecutionLog).where(ExecutionLog.run_id == run.id, ExecutionLog.node_id == node_id))
     if row is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "This step isn't part of the run.")
     if row.status != NodeStatus.AWAITING_APPROVAL:
         raise HTTPException(status.HTTP_409_CONFLICT, "This step isn't waiting for approval.")
+    # Until the worker picks the run up, the step still reads as waiting — so a double click or a
+    # second tab lands here, after a decision is already on record.
+    if session.scalar(select(Approval.id).where(Approval.log_id == row.id)) is not None:
+        raise HTTPException(status.HTTP_409_CONFLICT, ALREADY_DECIDED)
     if body.decision == "reject" and not (body.note or "").strip():
         raise HTTPException(422, "Add a note to reject — it's kept with the run.")
-    session.add(Approval(log_id=row.id, decision=body.decision.value, decided_by=user.id, note=body.note))
+
+    previous_status = run.status
+    approval = Approval(log_id=row.id, decision=body.decision.value, decided_by=user.id, note=body.note)
+    session.add(approval)
     run.status = RunStatus.QUEUED.value
-    session.commit()
-    enqueuer.enqueue_run(run.id)
+    try:
+        session.commit()
+    except IntegrityError:  # two requests that both passed the check above
+        session.rollback()
+        raise HTTPException(status.HTTP_409_CONFLICT, ALREADY_DECIDED) from None
+
+    try:
+        enqueuer.enqueue_run(run.id)
+    except Exception as exc:
+        log.warning("couldn't enqueue run %s after a decision: %s", run.id, type(exc).__name__)
+        # Undone rather than stranded. Kept, the decision would leave a run marked queued that no
+        # worker will ever pick up — and one that can't be decided again, since a decision exists.
+        session.delete(approval)
+        run.status = previous_status
+        session.commit()
+        raise HTTPException(
+            status.HTTP_503_SERVICE_UNAVAILABLE,
+            "Couldn't hand your decision to the worker: the job queue is unavailable. Nothing was sent. "
+            "Try again in a moment.",
+        ) from None
     return RunCreated(run_id=run.id, status=RunStatus.QUEUED)
 
 
 @router.post("/{run_id}/cancel", response_model=RunState, status_code=status.HTTP_202_ACCEPTED)
 def cancel(run_id: UUID, user: User = Depends(get_current_user), session: Session = Depends(get_session)):
-    run = _load(session, user, run_id)
+    run = _load(session, user, run_id, lock=True)  # serialises with `decide`
     if RunStatus(run.status) in TERMINAL_RUN_STATUSES:
         raise HTTPException(status.HTTP_409_CONFLICT, "This run has already finished.")
     run.status = RunStatus.CANCELLED.value
