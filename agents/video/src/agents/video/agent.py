@@ -27,6 +27,10 @@ class VideoAgent(BaseAgent[VideoInput, VideoOutput]):
             raise NonRetryableAgentError(
                 "The video couldn't be assembled: FFmpeg is not installed.", code="ffmpeg_missing"
             ) from exc
+        except subprocess.TimeoutExpired as exc:
+            raise NonRetryableAgentError(
+                f"The video took longer than {exc.timeout:g} s to assemble and was stopped.", code="ffmpeg_timeout"
+            ) from exc
         except subprocess.CalledProcessError as exc:
             raise AgentError("The video couldn't be assembled.", code="ffmpeg_failed") from exc
         path = await ports.storage.put(f"artifacts/videos/{uuid.uuid4().hex[:8]}/video.mp4", rendered.data, "video/mp4")

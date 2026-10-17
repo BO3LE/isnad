@@ -147,6 +147,7 @@ Every variable is listed, with a comment, in [`.env.example`](.env.example). The
 | `JWT_SECRET` | placeholder | Token signing secret. Generate a real one for any shared deployment. |
 | `ENABLE_DEV_LOGIN` | `true` | Password-less sign-in. Always disabled when `ENVIRONMENT=production`. |
 | `LLM_PROVIDER`, `LLM_MODEL` | `local`, empty | The Writer's model when `FAKE_ADAPTERS=false`: `local` (LM Studio or Ollama), `openai` or `openrouter`. See "Local LLM" below. |
+| `STEP_TIMEOUT_S` | `1800` | The longest one attempt of a step may run before the worker stops it, without a retry. Each service call (LLM, search, narration, FFmpeg, email) has its own shorter timeout; this is the backstop. `0` turns it off. |
 | `OPENAI_API_KEY`, `OPENROUTER_API_KEY`, `SEARCH_API_KEY` | empty | Used only when `FAKE_ADAPTERS=false`, by the provider that needs it. |
 | `STORAGE_BACKEND` | `local` | Where generated files go. `local` = `STORAGE_ROOT` on disk, served at `PUBLIC_FILES_URL` (development only). `supabase` = the private bucket `STORAGE_BUCKET`, downloaded through signed URLs. Set the same value for api and worker. Files are stored at `artifacts/{user_id}/{run_id}/…` either way. |
 | `STORAGE_BUCKET` | `artifacts` | Supabase Storage bucket for `STORAGE_BACKEND=supabase`. Must be **private**. |

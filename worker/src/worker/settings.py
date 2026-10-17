@@ -43,6 +43,9 @@ class WorkerSettings(BaseSettings):
     google_client_id: str | None = None
     google_client_secret: str | None = None
     credentials_encryption_key: str | None = None
+    # The longest one attempt of a step may run before it is stopped (and not retried). Each adapter
+    # has its own, shorter timeouts; this catches a call that has none. 0 turns it off.
+    step_timeout_s: float = 1800.0
 
 
 def adapter_settings(settings: WorkerSettings) -> AdapterSettings:

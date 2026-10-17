@@ -1,10 +1,11 @@
+import asyncio
 from uuid import uuid4
 
 import pytest
 from conftest import ReverseAgent, SendAgent, chain
 
 from contracts.run import ApprovalDecision, NodeStatus, RunStatus
-from worker.orchestrator import Orchestrator, scrub
+from worker.orchestrator import Orchestrator, StepTimedOut, scrub
 
 
 def _run(store, graph):
@@ -128,6 +129,55 @@ async def test_cancelled_run_skips_remaining_nodes(store, registry, ports):
     store.set_node_status = cancel_after_first_success
     assert await Orchestrator(store, registry, ports).execute(run_id) == RunStatus.CANCELLED
     assert store.status_of(run_id, graph.nodes[1].id) == NodeStatus.SKIPPED
+
+
+async def test_an_attempt_past_the_step_deadline_is_stopped_and_not_retried(
+    store, registry, ports, sleeps, monkeypatch
+):
+    calls = []
+
+    async def hangs(self, input_data, ports):
+        calls.append(1)
+        await asyncio.sleep(30)  # a call with no timeout of its own
+
+    monkeypatch.setattr(ReverseAgent, "execute", hangs)
+    graph = chain("shout", "reverse", "shout", config={"text": "abc"})
+    run_id = _run(store, graph)
+
+    status = await Orchestrator(store, registry, ports, sleep=sleeps, step_timeout_s=0.05).execute(run_id)
+
+    assert status == RunStatus.FAILED
+    assert calls == [1] and sleeps == []  # stopped once, not retried
+    assert store.nodes[(run_id, graph.nodes[1].id)]["errors"] == [
+        "Reverse took longer than 0.05 seconds and was stopped."
+    ]
+    assert store.status_of(run_id, graph.nodes[2].id) == NodeStatus.SKIPPED
+
+
+async def test_a_timeout_an_adapter_raises_is_still_retried(store, registry, ports, sleeps, monkeypatch):
+    original = ReverseAgent.execute
+    calls = []
+
+    async def times_out_once(self, input_data, ports):
+        calls.append(1)
+        if len(calls) == 1:
+            raise TimeoutError  # e.g. a read timeout inside an adapter: retryable, as before
+        return await original(self, input_data, ports)
+
+    monkeypatch.setattr(ReverseAgent, "execute", times_out_once)
+    graph = chain("shout", "reverse", config={"text": "abc"})
+    run_id = _run(store, graph)
+
+    status = await Orchestrator(store, registry, ports, sleep=sleeps, jitter=lambda: 0, step_timeout_s=60).execute(
+        run_id
+    )
+
+    assert status == RunStatus.SUCCEEDED
+    assert len(calls) == 2 and sleeps == [2]
+
+
+def test_minutes_read_as_minutes():
+    assert StepTimedOut("Writer", 1800).message == "Writer took longer than 30 minutes and was stopped."
 
 
 async def test_missing_input_is_reported_not_retried(store, registry, ports, sleeps):
