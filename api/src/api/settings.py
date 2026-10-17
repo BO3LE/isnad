@@ -5,6 +5,10 @@ from typing import Literal
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+# The value .env.example ships with. Public, so it must never sign anything in production.
+PLACEHOLDER_JWT_SECRET = "change-me-in-.env-at-least-32-characters-long"
+MIN_SECRET_LENGTH = 32
+
 
 class ApiSettings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
@@ -15,7 +19,8 @@ class ApiSettings(BaseSettings):
 
     # HS256 secret for POST /auth/dev-login tokens only. Supabase-issued tokens are verified via
     # JWKS instead (see api/auth.py) — this never needs to match anything on Supabase's side.
-    jwt_secret: str = "change-me-in-.env-at-least-32-characters-long"
+    # It also signs the Google connect `state` (api/google_oauth.py), so production needs a real one.
+    jwt_secret: str = PLACEHOLDER_JWT_SECRET
     jwt_audience: str = "authenticated"
     jwt_expiry_minutes: int = 60 * 24 * 7
     enable_dev_login: bool = True
@@ -60,6 +65,18 @@ class ApiSettings(BaseSettings):
     @property
     def dev_login_allowed(self) -> bool:
         return self.enable_dev_login and self.environment != "production"
+
+    def production_problems(self) -> list[str]:
+        """Why this configuration must not serve production traffic. Names variables, never values."""
+        if self.environment != "production":
+            return []
+        problems = []
+        if self.jwt_secret == PLACEHOLDER_JWT_SECRET or len(self.jwt_secret) < MIN_SECRET_LENGTH:
+            problems.append(
+                f"JWT_SECRET is the example value or shorter than {MIN_SECRET_LENGTH} characters. Generate one with "
+                '`python -c "import secrets; print(secrets.token_urlsafe(48))"`.'
+            )
+        return problems
 
 
 @lru_cache

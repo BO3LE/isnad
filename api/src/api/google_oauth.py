@@ -168,5 +168,11 @@ async def revoke(token: str, client: httpx.AsyncClient) -> bool:
     return response.status_code in (200, 400)
 
 
+def grants_a_service(scopes: list[str]) -> bool:
+    """Google's consent screen lets a person untick scopes. A connection that grants none of YouTube,
+    Drive or Gmail could do nothing for any step, so it is refused rather than stored."""
+    return any(scope in scopes for scope in SCOPE_LABELS)
+
+
 def plain_scopes(scopes: list[str]) -> list[str]:
     return [label for scope, label in SCOPE_LABELS.items() if scope in scopes]

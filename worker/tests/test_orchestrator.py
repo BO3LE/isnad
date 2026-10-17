@@ -1,9 +1,10 @@
 from uuid import uuid4
 
+import pytest
 from conftest import ReverseAgent, SendAgent, chain
 
 from contracts.run import ApprovalDecision, NodeStatus, RunStatus
-from worker.orchestrator import Orchestrator
+from worker.orchestrator import Orchestrator, scrub
 
 
 def _run(store, graph):
@@ -162,3 +163,41 @@ async def test_outputs_from_all_ancestors_reach_later_steps(store, registry, por
     finally:
         GateAgent.execute = original
     assert captured["text"] == "CBA"
+
+
+async def test_a_librarys_error_reaches_the_step_and_the_log_without_its_credentials(
+    store, registry, ports, monkeypatch, caplog
+):
+    leaky = (
+        "Client error '401' for url 'https://api.example.com/v1/search?api_key=tvly-SECRET1&q=x' "
+        "via https://user:SECRET2@proxy.example.com with Authorization: Bearer SECRET3 token=SECRET4"
+    )
+
+    async def fails(self, input_data, ports):
+        raise RuntimeError(leaky)
+
+    monkeypatch.setattr(ReverseAgent, "execute", fails)
+    graph = chain("shout", "reverse", config={"text": "abc"})
+    run_id = _run(store, graph)
+
+    assert await Orchestrator(store, registry, ports, max_retries=0).execute(run_id) == RunStatus.FAILED
+
+    (shown,) = store.nodes[(run_id, graph.nodes[1].id)]["errors"]
+    assert "Client error '401' for url 'https://api.example.com/v1/search?[redacted]'" in shown
+    for text in (shown, caplog.text):
+        assert "SECRET" not in text
+
+
+@pytest.mark.parametrize(
+    ("raw", "scrubbed"),
+    [
+        ("GET https://h.example/p?key=abc&x=1 failed", "GET https://h.example/p?[redacted] failed"),
+        ("postgresql://isnad:hunter2@db:5432/gp refused", "postgresql://[redacted]@db:5432/gp refused"),
+        ("header Authorization: Basic dXNlcjpwYXNz", "header Authorization: [redacted] [redacted]"),
+        ('{"access_token": "ya29.abc"}', '{"access_token": "[redacted]"}'),
+        ("client_secret=GOCSPX-abc; next", "client_secret=[redacted]; next"),
+        ("FFmpeg exited with status 1", "FFmpeg exited with status 1"),
+    ],
+)
+def test_scrub(raw, scrubbed):
+    assert scrub(raw) == scrubbed

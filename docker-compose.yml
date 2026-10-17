@@ -74,7 +74,12 @@ services:
     # worker still installs every agent under agents/, just not live-edited).
     build: { context: ., dockerfile: worker/Dockerfile, target: "${WORKER_BUILD_TARGET:-dev}" }
     env_file: [{ path: .env, required: false }]
-    environment: *python-env
+    environment:
+      <<: *python-env
+      # LLM_PROVIDER=local: LM Studio runs on this machine, outside Docker, and the container reaches
+      # it through host.docker.internal. LLM_BASE_URL in .env still overrides it.
+      LLM_LOCAL_BASE_URL: http://host.docker.internal:${LM_STUDIO_PORT:-1234}/v1
+    extra_hosts: ["host.docker.internal:host-gateway"] # Linux; Docker Desktop provides it already
     volumes:
       - ./worker:/app/worker
       - ./agents:/app/agents
@@ -96,7 +101,7 @@ services:
       # Set VITE_AUTH_MODE=supabase in .env to switch P-01/P-02 off dev sign-in (needs JWT_SECRET
       # above to match, since the API verifies whatever mode issued the token — see INF-06).
       VITE_AUTH_MODE: ${VITE_AUTH_MODE:-dev}
-      VITE_SUPABASE_URL: ${VITE_SUPABASE_URL:-https://wawbngrkbmlidliybkbw.supabase.co}
+      VITE_SUPABASE_URL: ${VITE_SUPABASE_URL:-}
       VITE_SUPABASE_ANON_KEY: ${VITE_SUPABASE_ANON_KEY:-}
     # FRONTEND_HOST_PORT: same reason as API_HOST_PORT — lets a second stack run alongside the
     # default one (used by the W10 fullstack Playwright suite, `docker compose -p isnad-e2e`).
