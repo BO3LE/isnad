@@ -39,8 +39,7 @@ NO_SCOPE_MESSAGE = (
     "and leave Gmail ticked."
 )
 AMBIGUOUS_MESSAGE = (
-    "Gmail didn't confirm the message, so it may have been sent. Check the account's Sent folder "
-    "before running again."
+    "Gmail didn't confirm the message, so it may have been sent. Check the account's Sent folder before running again."
 )
 
 
