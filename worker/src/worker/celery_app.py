@@ -209,7 +209,13 @@ def run_workflow(run_id: str) -> str:
     ports = build_ports(adapter_settings(settings))
     run_store = store()
     run_store.mark_interrupted(UUID(run_id))
-    orchestrator = Orchestrator(run_store, registry(), ports, ports_for=credential_ports(ports))
+    orchestrator = Orchestrator(
+        run_store,
+        registry(),
+        ports,
+        ports_for=credential_ports(ports),
+        step_timeout_s=settings.step_timeout_s or None,
+    )
     status = asyncio.run(orchestrator.execute(UUID(run_id)))
     log.info("run %s finished with status %s", run_id, status)
     return status.value

@@ -26,7 +26,9 @@ class RenderedVideo:
     duration_seconds: float
 
 
-def assemble_mp4(audio: bytes, *, resolution: str = "720p", background: str = "0x0B0B0A") -> RenderedVideo:
+def assemble_mp4(
+    audio: bytes, *, resolution: str = "720p", background: str = "0x0B0B0A", timeout_s: float = 600.0
+) -> RenderedVideo:
     """TODO(W5, Zain): add title and content slides (images from the Image agent) timed to the narration."""
     ffmpeg, ffprobe = shutil.which("ffmpeg"), shutil.which("ffprobe")
     if not ffmpeg or not ffprobe:
@@ -62,12 +64,14 @@ def assemble_mp4(audio: bytes, *, resolution: str = "720p", background: str = "0
             ],
             check=True,
             capture_output=True,
+            timeout=timeout_s,  # raises subprocess.TimeoutExpired after killing ffmpeg
         )
         probe = subprocess.run(
             [ffprobe, "-v", "error", "-show_entries", "format=duration", "-of", "json", str(video_path)],
             check=True,
             capture_output=True,
             text=True,
+            timeout=60,
         )
         duration = float(json.loads(probe.stdout)["format"]["duration"])
         return RenderedVideo(data=video_path.read_bytes(), duration_seconds=duration)
