@@ -562,3 +562,97 @@ test("the video a step made plays inside the drawer", async ({ page }) => {
     .poll(() => video.evaluate((el: { readyState: number }) => el.readyState), { timeout: 15_000 })
     .toBeGreaterThanOrEqual(1);
 });
+
+// §13's keyboard table for the canvas. These were listed in the shortcuts dialog for several
+// parts before anything implemented them.
+test("the canvas can be zoomed and fitted from the keyboard", async ({ page }) => {
+  const step = await openSeededWorkflow(page, []);
+  await expect(step("research")).toBeVisible();
+
+  const zoomOf = () => page.evaluate(() => {
+    const el = (globalThis as unknown as { document: { querySelector(s: string): { style: { transform: string } } | null } })
+      .document.querySelector(".react-flow__viewport");
+    return el ? Number(/scale\(([\d.]+)\)/.exec(el.style.transform)?.[1] ?? 1) : 1;
+  });
+
+  const start = await zoomOf();
+  await page.keyboard.press("+");
+  await expect.poll(zoomOf).toBeGreaterThan(start);
+
+  await page.keyboard.press("-");
+  await expect.poll(zoomOf).toBeLessThanOrEqual(start + 0.001);
+
+  // "1" is actual size, whatever the view was doing before.
+  await page.keyboard.press("1");
+  await expect.poll(zoomOf).toBeCloseTo(1, 2);
+});
+
+test("Run can be pressed without a mouse, and not while a run owns the canvas", async ({ page }) => {
+  let started = 0;
+  await withRun(page);
+  // Count the run requests ourselves: `withRun` answers them but does not tally them.
+  await page.route(`http://api.mock/workflows/${WORKFLOW_ID}/run`, (route) => {
+    started += 1;
+    return route.fulfill({ status: 202, json: { run_id: RUN_ID, status: "queued" } });
+  });
+
+  await page.keyboard.press("Meta+Enter");
+  await expect(page.getByRole("region", { name: "Run progress" })).toBeVisible({ timeout: 15_000 });
+  expect(started).toBe(1);
+
+  // The canvas belongs to the run now; the shortcut must not start a second one on top of it.
+  await page.keyboard.press("Meta+Enter");
+  await page.waitForTimeout(500);
+  expect(started).toBe(1);
+});
+
+test("typing in a field never triggers a canvas shortcut", async ({ page }) => {
+  const step = await openSeededWorkflow(page, []);
+  await step("research").click();
+  const drawer = page.getByRole("complementary", { name: "Researcher settings" });
+  const topic = drawer.getByLabel(/Topic/);
+
+  // "-" and "0" are zoom keys on the canvas; inside a field they are just characters.
+  await topic.fill("");
+  await topic.type("solar-2030");
+  await expect(topic).toHaveValue("solar-2030");
+});
+
+test("a shortcut cannot reach the canvas through an open dialog", async ({ page }) => {
+  // A <dialog> makes what is behind it inert to the pointer, but a document-level key listener
+  // still hears everything. With the shortcuts dialog open, Meta+Enter started a real run and "+"
+  // zoomed the canvas underneath it.
+  let started = 0;
+  await withRun(page);
+  await page.route(`http://api.mock/workflows/${WORKFLOW_ID}/run`, (route) => {
+    started += 1;
+    return route.fulfill({ status: 202, json: { run_id: RUN_ID, status: "queued" } });
+  });
+
+  const zoomOf = () => page.evaluate(() => {
+    const el = (globalThis as unknown as { document: { querySelector(s: string): { style: { transform: string } } | null } })
+      .document.querySelector(".react-flow__viewport");
+    return el ? Number(/scale\(([\d.]+)\)/.exec(el.style.transform)?.[1] ?? 1) : 1;
+  });
+
+  await page.keyboard.press("?");
+  const dialog = page.getByRole("dialog", { name: "Keyboard shortcuts" });
+  await expect(dialog).toBeVisible();
+
+  const zoomBefore = await zoomOf();
+  await page.keyboard.press("Meta+Enter");
+  await page.keyboard.press("+");
+  await page.keyboard.press("+");
+  await page.waitForTimeout(400);
+
+  expect(started).toBe(0);
+  expect(await zoomOf()).toBeCloseTo(zoomBefore, 2);
+  await expect(dialog).toBeVisible();
+
+  // And they work again once it is closed.
+  await page.keyboard.press("Escape");
+  await expect(dialog).toBeHidden();
+  await page.keyboard.press("Meta+Enter");
+  await expect(page.getByRole("region", { name: "Run progress" })).toBeVisible({ timeout: 15_000 });
+  expect(started).toBe(1);
+});

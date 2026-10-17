@@ -75,7 +75,7 @@ export function StepList({ steps, agents, actionFor }: StepListProps) {
                   aria-expanded={expanded}
                   aria-controls={`step-detail-${step.node_id}`}
                   onClick={() => setOpen(expanded ? null : step.node_id)}
-                  className="flex items-center gap-1 rounded-xs text-body-sm text-text-muted hover:text-text"
+                  className="-mx-1.5 flex h-8 items-center gap-1 rounded-xs px-1.5 text-body-sm text-text-muted hover:text-text"
                 >
                   <ChevronRight size={14} aria-hidden className={expanded ? "rotate-90 transition-transform" : "transition-transform"} />
                   {expanded ? "Hide details" : "Details"}

@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { ChevronRight, Copy, Download } from "lucide-react";
-import { Fragment, useCallback, useMemo, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useSearchParams } from "react-router-dom";
 import { AppShell, PageBody } from "@/components/app/AppShell";
 import { RunTabs } from "@/components/runs/RunTabs";
@@ -162,9 +162,29 @@ export function LogsPage() {
   const toast = useToast();
   const [params, setParams] = useSearchParams();
   const [open, setOpen] = useState<string | null>(null);
+  const search = useRef<HTMLInputElement>(null);
 
   const filter = useMemo(() => readFilter(params), [params]);
   const zone: TimeZonePreference = params.get("tz") === "utc" ? "utc" : "local";
+
+  // §13 keyboard: "F" focuses the filter. A log is read by narrowing it, and reaching the field
+  // otherwise means tabbing past the whole header.
+  useEffect(() => {
+    function onKeyDown(event: KeyboardEvent) {
+      const target = event.target as HTMLElement | null;
+      if (event.metaKey || event.ctrlKey || event.altKey || event.shiftKey) return;
+      if (target?.matches("input, textarea, select, [contenteditable='true']")) return;
+      // A modal makes the page behind it inert, so focusing the filter would fail after the key
+      // had already been swallowed — the press would simply vanish.
+      if (document.querySelector("dialog[open]")) return;
+      if (event.key !== "f" && event.key !== "F") return;
+      event.preventDefault();
+      search.current?.focus();
+      search.current?.select();
+    }
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, []);
 
   const run = useQuery({
     queryKey: ["run", runId],
@@ -271,6 +291,7 @@ export function LogsPage() {
             <label className="grid min-w-[12rem] flex-1 gap-1.5 text-body-sm text-text-muted" htmlFor="log-search">
               Search
               <SearchInput
+                ref={search}
                 id="log-search"
                 label="Search the log by agent or error text"
                 value={filter.text}

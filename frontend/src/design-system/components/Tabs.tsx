@@ -1,6 +1,17 @@
 import { useRef, type KeyboardEvent, type ReactNode } from "react";
+import { slug } from "./tab-panel";
 
 // DESIGN-SYSTEM.md §14.9 — arrow keys move between tabs (roving tabindex).
+//
+// A tab that controls nothing is only half a tab: a screen reader announces "tab, 1 of 2" and then
+// has no way to reach what it selected, and nothing tells the reader the panel below belongs to it.
+// So each tab carries an id and `aria-controls`, and `tabPanel()` hands the matching attributes to
+// whoever renders the panel — the pairing is easy to get subtly wrong by hand.
+//
+// Only the selected panel is rendered, so an unselected tab's `aria-controls` points at an id that
+// is not in the document. That is deliberate and widely tolerated: the alternative is rendering
+// every panel and hiding all but one, which costs more than it buys here. Pass the same string to
+// `Tabs` and to `tabPanel` — a shared constant, not two literals — or the panel silently dangles.
 export interface TabItem {
   id: string;
   label: string;
@@ -14,9 +25,15 @@ export interface TabsProps {
   value: string;
   onChange: (id: string) => void;
   className?: string;
+  /**
+   * Namespace for the generated ids. Needed when two tablists share a page — the drawer shows a
+   * step's panels and, inside one of them, the outputs that step made.
+   */
+  idPrefix?: string;
 }
 
-export function Tabs({ label, tabs, value, onChange, className = "" }: TabsProps) {
+export function Tabs({ label, tabs, value, onChange, className = "", idPrefix }: TabsProps) {
+  const prefix = slug(idPrefix ?? label);
   const listRef = useRef<HTMLDivElement>(null);
 
   function onKeyDown(event: KeyboardEvent<HTMLDivElement>) {
@@ -45,9 +62,11 @@ export function Tabs({ label, tabs, value, onChange, className = "" }: TabsProps
         return (
           <button
             key={tab.id}
+            id={`${prefix}-tab-${tab.id}`}
             type="button"
             role="tab"
             data-tab-id={tab.id}
+            aria-controls={`${prefix}-panel-${tab.id}`}
             aria-selected={selected}
             tabIndex={selected ? 0 : -1}
             disabled={tab.disabled}
