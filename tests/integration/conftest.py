@@ -138,9 +138,17 @@ class RecordingStore(SqlRunStore):
         self.history.append(("node", node_id, NodeStatus(status).value))
         super().set_node_status(run_id, node_id, status, retry_count=retry_count, error=error)
 
-    def complete_node(self, run_id, node_id, output, *, retry_count):
+    def complete_node(self, run_id, node_id, output, *, retry_count, status=NodeStatus.SUCCESS):
+        self.history.append(("node", node_id, NodeStatus(status).value))
+        super().complete_node(run_id, node_id, output, retry_count=retry_count, status=status)
+
+    def accept_result(self, run_id, node_id, output=None):
         self.history.append(("node", node_id, NodeStatus.SUCCESS.value))
-        super().complete_node(run_id, node_id, output, retry_count=retry_count)
+        super().accept_result(run_id, node_id, output)
+
+    def start_redo(self, run_id, node_id):
+        self.history.append(("node", node_id, NodeStatus.PENDING.value))
+        super().start_redo(run_id, node_id)
 
     def run_transitions(self) -> list[str]:
         return [status for kind, _, status in self.history if kind == "run"]

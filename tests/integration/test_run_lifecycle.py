@@ -185,7 +185,7 @@ async def test_email_template_parks_for_approval_then_resumes(db, store, registr
 
 
 async def test_a_rejection_halts_the_run_and_skips_what_follows(db, store, registry, ports):
-    """The email template with the writer gated too, so the rejected step has a step after it."""
+    """The email template with the writer's result reviewed too, so the rejected step has a step after it."""
     template = WorkflowGraph.model_validate(db.template(EMAIL).graph_definition)
     nodes = [
         n.model_copy(update={"requires_approval": True}) if n.agent_type == "writer" else n for n in template.nodes
@@ -211,7 +211,8 @@ async def test_a_rejection_halts_the_run_and_skips_what_follows(db, store, regis
     assert research.status == NodeStatus.SUCCESS
     assert write.status == NodeStatus.FAILED
     assert REJECTED_BY_REVIEWER in write.error_message
-    assert _outputs(db, write.id) == []
+    # The article the reviewer read and rejected stays with the run; nothing after it ran.
+    assert [o.output_type for o in _outputs(db, write.id)] == ["text", "file", "file"]
     assert email.status == NodeStatus.SKIPPED
     assert email.started_at is None
     assert ports.email.sent == []
