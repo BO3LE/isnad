@@ -241,7 +241,7 @@ Hands on: `title`, `summary`, `article_md` — which is why almost every later s
 | **Number of images** | Number | 1–4. | 1 |
 | **Shape** | Segmented | Landscape 16:9 · Square 1:1 | Landscape |
 
-### Video — *narrates a script and assembles a playable MP4*
+### Video — *turns a script into a narrated lesson video with slides*
 
 | Field | Control | What it means | Default |
 |---|---|---|---|

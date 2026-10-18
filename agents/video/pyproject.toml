@@ -5,9 +5,9 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "gp-agent-video"
 version = "0.1.0"
-description = "Video agent — Narrates a script and assembles a playable MP4."
+description = "Video agent — Turns a script into a narrated lesson video with slides."
 requires-python = ">=3.11"
-dependencies = ["gp-contracts", "gp-exporters"]
+dependencies = ["gp-contracts", "gp-exporters[video]"]
 
 [project.optional-dependencies]
 test = ["gp-adapters"]

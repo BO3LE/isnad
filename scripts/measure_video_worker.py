@@ -1,10 +1,12 @@
 """Measure what the Video agent costs to run: wall time, render seconds per minute of video, CPU and memory.
 
-Runs the real VideoAgent (and through it exporters.video.assemble_mp4 / FFmpeg) with fake adapters, for a
-matrix of narration lengths and resolutions, and prints a Markdown table plus JSON.
+Runs the real VideoAgent (and through it exporters.video.assemble_lesson: the slides, then FFmpeg) with fake
+adapters, for a matrix of narration lengths and resolutions, and prints a Markdown table plus JSON.
 
-FakeTTS caps its silent narration at 30 s, so this script swaps in a TTS that returns exactly the requested
-duration (a quiet tone, so the AAC encoder has real signal to encode). Everything else is the fake adapter set.
+The script is lesson-shaped — a title and three parts — so the slides cost what they cost in a real run.
+FakeTTS gives every line at least a second of silence, so this script swaps in a TTS that reads at a steady
+150 words a minute (a quiet tone, so the AAC encoder has real signal to encode). Everything else is the fake
+adapter set. The video runs a little longer than the narration: the slides' pauses and the recap.
 
 Needs ffmpeg/ffprobe on PATH and psutil (a dev dependency). The numbers that matter are the ones taken
 inside the worker image — use `make measure-video` rather than running this on a laptop without FFmpeg.
@@ -42,38 +44,49 @@ except ImportError:  # pragma: no cover - guidance only
     sys.exit("psutil is required: pip install -c constraints.txt psutil")
 
 from adapters.factory import AdapterSettings, build_ports
-from agents.video.agent import VideoAgent
+from agents.video.agent import AGENDA_INTRO, VideoAgent
+from exporters.lesson import lesson_from_markdown
 
-WORDS_PER_MINUTE = 150  # typical narration pace; only sizes the script text, the TTS below fixes the duration
+WORDS_PER_MINUTE = 150  # typical narration pace: sizes the script and paces the stand-in TTS below
 
 
-class FixedDurationTTS:
-    """A stand-in TTS that returns `seconds` of 24 kHz mono audio (gTTS-like rate) regardless of text length."""
+def _wav(seconds: float, audio: str) -> bytes:
+    """`seconds` of 24 kHz mono audio (gTTS's rate)."""
+    rate = 24000
+    frames = int(rate * seconds)
+    if audio == "silence":
+        pcm = array("h", bytes(2 * frames))
+    else:  # a 220 Hz tone, amplitude-modulated at 3 Hz — roughly speech-like loudness changes
+        pcm = array(
+            "h",
+            (
+                int(6000 * (0.6 + 0.4 * math.sin(6 * math.pi * i / rate)) * math.sin(440 * math.pi * i / rate))
+                for i in range(frames)
+            ),
+        )
+    buffer = io.BytesIO()
+    with wave.open(buffer, "wb") as wav:
+        wav.setnchannels(1)
+        wav.setsampwidth(2)
+        wav.setframerate(rate)
+        wav.writeframes(pcm.tobytes())
+    return buffer.getvalue()
 
-    def __init__(self, seconds: float, audio: str = "tone") -> None:
-        # Built up front so generating the audio is not counted as render cost.
-        rate = 24000
-        frames = int(rate * seconds)
-        if audio == "silence":
-            pcm = array("h", bytes(2 * frames))
-        else:  # a 220 Hz tone, amplitude-modulated at 3 Hz — roughly speech-like loudness changes
-            pcm = array(
-                "h",
-                (
-                    int(6000 * (0.6 + 0.4 * math.sin(6 * math.pi * i / rate)) * math.sin(440 * math.pi * i / rate))
-                    for i in range(frames)
-                ),
-            )
-        buffer = io.BytesIO()
-        with wave.open(buffer, "wb") as wav:
-            wav.setnchannels(1)
-            wav.setsampwidth(2)
-            wav.setframerate(rate)
-            wav.writeframes(pcm.tobytes())
-        self.data = buffer.getvalue()
+
+class PacedTTS:
+    """A stand-in TTS that reads at WORDS_PER_MINUTE: each clip is as long as its line takes to say."""
+
+    def __init__(self, lines: list[str], audio: str = "tone") -> None:
+        # Built up front — the lines the agent will read are known — so making audio is not counted as render cost.
+        self.audio = audio
+        self.clips = {line: _wav(self.seconds(line), audio) for line in lines}
+
+    @staticmethod
+    def seconds(line: str) -> float:
+        return len(line.split()) * 60 / WORDS_PER_MINUTE
 
     async def speak(self, text: str, *, voice: str) -> bytes:
-        return self.data
+        return self.clips.get(text) or _wav(self.seconds(text), self.audio)
 
 
 class Sampler(threading.Thread):
@@ -136,22 +149,28 @@ def _file_size(root: str, relative: str) -> int:
     return Path(root, relative).stat().st_size
 
 
+SENTENCE = "Saudi Arabia receives strong sunlight all year and solar power keeps getting cheaper."
+PARTS = 3
+
+
 def _script_for(seconds: float) -> str:
-    words = max(1, int(seconds / 60 * WORDS_PER_MINUTE))
-    body = " ".join(
-        "Saudi Arabia receives strong sunlight all year and solar power keeps getting cheaper".split()[i % 13]
-        for i in range(words)
-    )
-    return f"# Measurement script\n\n{body}."
+    """About `seconds` of narration: a title and up to three parts of the same 13-word sentence."""
+    sentences = max(1, round(seconds / 60 * WORDS_PER_MINUTE / len(SENTENCE.split())))
+    parts = min(PARTS, sentences)
+    body = [f"## Part {p + 1}\n\n" + " ".join([SENTENCE] * len(range(p, sentences, parts))) for p in range(parts)]
+    return "# Measurement script\n\n" + "\n\n".join(body) + "\n"
 
 
 async def measure_once(seconds: float, resolution: str, parallel: int, audio: str) -> dict:
     with tempfile.TemporaryDirectory() as root:
         ports = build_ports(AdapterSettings(fake=True, storage_root=root))
-        ports = dataclasses.replace(ports, tts=FixedDurationTTS(seconds, audio))
+        script = _script_for(seconds)
+        lines = lesson_from_markdown(script, agenda_intro=AGENDA_INTRO).narration()
+        ports = dataclasses.replace(ports, tts=PacedTTS(lines, audio))
         agent = VideoAgent()
-        data = agent.input_model.model_validate({"script": _script_for(seconds), "resolution": resolution})
-        # Timed region = agent.execute: markdown flattening, (pre-built) TTS audio, FFmpeg + ffprobe, storage write.
+        data = agent.input_model.model_validate({"script": script, "resolution": resolution})
+        # Timed region = agent.execute: the lesson's shape, key points (the fake LLM: the plain rule),
+        # (pre-built) TTS audio, the slides, FFmpeg + ffprobe, storage write.
         cpu0, sampler = _cpu_seconds(), Sampler()
         sampler.start()
         start = time.perf_counter()
@@ -213,7 +232,13 @@ def machine() -> dict:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--durations", type=float, nargs="+", default=[30, 60, 180], help="narration seconds")
+    parser.add_argument(
+        "--durations",
+        type=float,
+        nargs="+",
+        default=[30, 60, 180],
+        help="narration seconds (the video adds pauses and the recap)",
+    )
     parser.add_argument("--resolutions", nargs="+", default=["720p", "1080p"], choices=["720p", "1080p"])
     parser.add_argument("--repeat", type=int, default=3, help="runs per case; the median is reported")
     parser.add_argument("--parallel", type=int, default=1, help="renders started at once (worker concurrency)")
