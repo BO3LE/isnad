@@ -4,12 +4,12 @@ import asyncio
 import json
 import re
 import uuid
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from pathlib import Path
 
 from pydantic import ConfigDict, ValidationError, create_model
 
-from contracts.agent import BaseAgent
+from contracts.agent import BaseAgent, Revision
 from contracts.agent_io import WriteConfig, WriteInput, WriteOutput
 from contracts.errors import AgentError, NonRetryableAgentError
 from contracts.ports import Ports
@@ -28,6 +28,14 @@ EXPAND = (
 )
 # Below this share of the target, the Writer asks once for a fuller version.
 SHORT_OF_TARGET = 0.75
+# A reviewer sent the article back (BaseAgent.revise): the prompt ends with what they asked for.
+REVISE = (
+    "\n\nA reviewer read the previous version and sent it back with this note:\n{note}\n\n"
+    "Previous version (JSON):\n{previous}\n\n"
+    "Write a new version that does what the note asks. Everything above still applies: facts come only "
+    "from the research notes."
+)
+NO_NOTE = "(no note — write a clearer, better-structured version)"
 REFORMAT = (
     "Your previous answer was not valid JSON with the keys title, summary and article_md. "
     "Problem: {problem}\n\nReturn only the corrected JSON object.\n\nPrevious answer:\n{answer}"
@@ -41,6 +49,20 @@ class WriterAgent(BaseAgent[WriteInput, WriteOutput]):
     config_model = WriteConfig
 
     async def execute(self, input_data: WriteInput, ports: Ports) -> WriteOutput:
+        return await self._write(input_data, ports)
+
+    async def revise(self, input_data: WriteInput, ports: Ports, revision: Revision) -> WriteOutput:
+        """Again, told what the reviewer asked for and shown the version they sent back. Not then
+        filled out to the target length: the reviewer may have asked for a shorter piece."""
+        previous = {key: revision.previous[key] for key in WRITTEN if revision.previous.get(key)}
+        extra = REVISE.format(note=revision.note or NO_NOTE, previous=json.dumps(previous, ensure_ascii=False))
+        return await self._write(input_data, ports, extra=extra, to_length=False)
+
+    async def accept_edit(self, output: WriteOutput, ports: Ports) -> WriteOutput:
+        """The reviewer's own text: its PDF and Word files are made again from it, so they say the same."""
+        return await self._save_files(output, [key for _, key, *_ in EXPORTS if getattr(output, key)], ports)
+
+    async def _write(self, input_data: WriteInput, ports: Ports, *, extra: str = "", to_length: bool = True):
         template = Path(__file__).with_name("prompts").joinpath("write.md").read_text(encoding="utf-8")
         prompt = template.format(
             format=input_data.format.replace("_", " "),
@@ -50,6 +72,7 @@ class WriterAgent(BaseAgent[WriteInput, WriteOutput]):
             notes="\n".join(f"- {n}" for n in input_data.notes),
             sources="\n".join(f"[{i + 1}] {s.title} — {s.url}" for i, s in enumerate(input_data.sources)) or "(none)",
         )
+        prompt += extra
         # The schema lets a provider that supports it (LM Studio, Ollama, OpenAI) constrain the answer
         # to this shape; the answer is still validated here either way.
         try:
@@ -62,16 +85,18 @@ class WriterAgent(BaseAgent[WriteInput, WriteOutput]):
             # reported as it is (it names LLM_MAX_OUTPUT_TOKENS).
             answer = await ports.llm.complete(prompt, system=SYSTEM, json_mode=True, json_schema=OUTPUT_SCHEMA)
         article = await self._first_valid(answer, ports)
-        article = await self._to_length(article, input_data, ports)
-        return await self._save_files(article, input_data, ports)
+        if to_length:
+            article = await self._to_length(article, input_data, ports)
+        wanted = [key for switch, key, *_ in EXPORTS if getattr(input_data, switch)]
+        return await self._save_files(article, wanted, ports)
 
-    async def _save_files(self, article: WriteOutput, input_data: WriteInput, ports: Ports) -> WriteOutput:
-        """FR-04: the finished article as PDF and Word files, next to the run's other outputs."""
+    async def _save_files(self, article: WriteOutput, keys: Iterable[str], ports: Ports) -> WriteOutput:
+        """FR-04: the finished article as PDF and Word files (`keys`: which), next to the run's other outputs."""
         folder = f"artifacts/articles/{uuid.uuid4().hex[:8]}"
         name = _file_stem(article.title)
         files: dict[str, str] = {}
         for switch, key, render, suffix, mime in EXPORTS:
-            if getattr(input_data, switch):
+            if key in keys:
                 data = await _render(render, switch, key, article)
                 files[key] = await ports.storage.put(f"{folder}/{name}.{suffix}", data, mime)
         return article.model_copy(update=files)
@@ -127,7 +152,19 @@ Draft = create_model(
     __config__=ConfigDict(extra="forbid"),
     **{name: (WriteOutput.model_fields[name].annotation, WriteOutput.model_fields[name]) for name in WRITTEN},
 )
-OUTPUT_SCHEMA = Draft.model_json_schema()
+
+
+def _without_hints(schema: object) -> object:
+    """The schema without the platform's own `x-…` hints (`x-editable`): they mean nothing to a model,
+    and a provider that checks the schema strictly may refuse a keyword it doesn't know."""
+    if isinstance(schema, dict):
+        return {k: _without_hints(v) for k, v in schema.items() if not (isinstance(k, str) and k.startswith("x-"))}
+    if isinstance(schema, list):
+        return [_without_hints(v) for v in schema]
+    return schema
+
+
+OUTPUT_SCHEMA = _without_hints(Draft.model_json_schema())
 DOCX_MIME = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
 # The Writer step's switch, the output it fills, and how: FR-04.
 EXPORTS = (

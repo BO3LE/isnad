@@ -213,3 +213,16 @@ async def test_ffmpeg_failures_are_reported_plainly(ports, monkeypatch, error, c
         await run(ports)
 
     assert (caught.value.code, caught.value.retryable) == (code, retryable)
+
+
+async def test_a_redo_hands_the_reviewers_note_to_the_model_writing_the_points(ports, rendered):
+    from contracts.agent import Revision
+
+    llm = FakeLLM(answer((1, "Strong sun")))
+    agent = VideoAgent()
+    data = agent.input_model.model_validate({"script": SCRIPT})
+
+    await agent.revise(data, dataclasses.replace(ports, llm=llm), Revision(note="Shorter points, please."))
+
+    assert "The reviewer of an earlier version of these notes asked: Shorter points, please." in llm.prompts[0]
+    assert rendered["lesson"].lines()[0].point == "Strong sun"
