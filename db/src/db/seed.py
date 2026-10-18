@@ -24,8 +24,10 @@ _NS = uuid.UUID("6b1f7c3e-2f0a-4d8e-9a55-3c1d0f5e7a10")
 
 
 def _node(
-    template: str, key: str, agent_type: str, x: int, configuration: dict[str, Any], approval: bool = False
+    template: str, key: str, agent_type: str, x: int, configuration: dict[str, Any], approval: bool = True
 ) -> dict[str, Any]:
+    """Every step waits for a person by default: one that sends content out before it acts (always,
+    whatever this says), any other after it runs, with its result to check, edit or redo."""
     return {
         "id": str(uuid.uuid5(_NS, f"{template}:{key}")),
         "agent_type": agent_type,
@@ -72,9 +74,7 @@ TEMPLATES: list[tuple[str, dict[str, Any]]] = [
                     {"length": "short", "style": "conversational", "format": "video_script"},
                 ),
                 _node("video", "video", "video", 640, {"voice": "en", "resolution": "720p"}),
-                _node(
-                    "video", "publish", "publisher", 960, {"platform": "youtube", "privacy": "unlisted"}, approval=True
-                ),
+                _node("video", "publish", "publisher", 960, {"platform": "youtube", "privacy": "unlisted"}),
             ],
         ),
     ),
@@ -85,7 +85,7 @@ TEMPLATES: list[tuple[str, dict[str, Any]]] = [
             [
                 _node("email", "research", "researcher", 0, TOPIC),
                 _node("email", "write", "writer", 320, {"length": "long", "style": "academic", "format": "article"}),
-                _node("email", "email", "email", 640, {"recipients": [DEMO_EMAIL]}, approval=True),
+                _node("email", "email", "email", 640, {"recipients": [DEMO_EMAIL]}),
             ],
         ),
     ),

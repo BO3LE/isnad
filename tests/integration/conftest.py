@@ -138,9 +138,17 @@ class RecordingStore(SqlRunStore):
         self.history.append(("node", node_id, NodeStatus(status).value))
         super().set_node_status(run_id, node_id, status, retry_count=retry_count, error=error)
 
-    def complete_node(self, run_id, node_id, output, *, retry_count):
+    def complete_node(self, run_id, node_id, output, *, retry_count, status=NodeStatus.SUCCESS):
+        self.history.append(("node", node_id, NodeStatus(status).value))
+        super().complete_node(run_id, node_id, output, retry_count=retry_count, status=status)
+
+    def accept_result(self, run_id, node_id, output=None):
         self.history.append(("node", node_id, NodeStatus.SUCCESS.value))
-        super().complete_node(run_id, node_id, output, retry_count=retry_count)
+        super().accept_result(run_id, node_id, output)
+
+    def start_redo(self, run_id, node_id):
+        self.history.append(("node", node_id, NodeStatus.PENDING.value))
+        super().start_redo(run_id, node_id)
 
     def run_transitions(self) -> list[str]:
         return [status for kind, _, status in self.history if kind == "run"]
@@ -171,6 +179,18 @@ class Db:
             workflow = s.scalar(select(Workflow).where(Workflow.user_id == self.demo_user_id(), Workflow.name == name))
             assert workflow is not None, f"seeded template {name!r} not found"
             return workflow
+
+    def unreviewed_graph(self, name: str) -> WorkflowGraph:
+        """A seeded template's graph with no step waiting for its result to be reviewed — every template
+        step does by default (db/seed.py), and what most tests here exercise is the run itself. A step
+        that sends content out still waits before it acts: that never depends on the graph."""
+        graph = WorkflowGraph.model_validate(self.template(name).graph_definition)
+        nodes = [node.model_copy(update={"requires_approval": False}) for node in graph.nodes]
+        return graph.model_copy(update={"nodes": nodes})
+
+    def unreviewed(self, name: str) -> uuid.UUID:
+        """A workflow made from `unreviewed_graph(name)`, deleted after the test."""
+        return self.create_workflow(f"{name} · no reviews {uuid.uuid4().hex[:6]}", self.unreviewed_graph(name))
 
     def create_workflow(self, name: str, graph: WorkflowGraph) -> uuid.UUID:
         with self.sessions.begin() as s:

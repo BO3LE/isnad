@@ -16,6 +16,7 @@ from typing import Any
 from sqlalchemy import (
     JSON,
     BigInteger,
+    Boolean,
     CheckConstraint,
     DateTime,
     Enum,
@@ -28,6 +29,7 @@ from sqlalchemy import (
     Text,
     UniqueConstraint,
     Uuid,
+    false,
     func,
 )
 from sqlalchemy.dialects.postgresql import JSONB
@@ -36,7 +38,7 @@ from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 NODE_STATUSES = ("pending", "running", "retrying", "awaiting_approval", "success", "failed", "skipped")
 RUN_STATUSES = ("queued", "running", "awaiting_approval", "succeeded", "failed", "cancelled")
 OUTPUT_TYPES = ("text", "file", "url")
-APPROVAL_DECISIONS = ("approve", "reject")
+APPROVAL_DECISIONS = ("approve", "reject", "redo")
 MAX_RETRIES = 3
 
 JSONType = JSON().with_variant(JSONB(), "postgresql")
@@ -149,6 +151,9 @@ class ExecutionLog(Base):
         index=True,
     )
     retry_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
+    # How many times a person sent this step's result back to be redone (migration 0007). The
+    # result waiting for review now is revision `revision`; each decision names the one it was on.
+    revision: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     duration_ms: Mapped[int | None] = mapped_column(Integer)
@@ -210,17 +215,21 @@ class Credential(Base):
 class Approval(Base):
     """The UC-04 audit trail.
 
-    `log_id` is unique (migration 0004): a node parks for approval once and is decided once — the
-    orchestrator never returns a node to `awaiting_approval` after a decision — so a second row
-    for the same log would only ever be a bug, not a legitimate re-review.
+    One decision per result (migration 0007; 0004 allowed one per step). A step reviewed after it
+    runs can be sent back with a note ("redo") and reviewed again, so it can have several rows —
+    one for each result, `revision` 0, 1, 2… A second row for the same result would only ever be a
+    double-submitted click, never a legitimate re-review, so (log_id, revision) is unique.
     """
 
     __tablename__ = "approvals"
-    __table_args__ = (UniqueConstraint("log_id", name="uq_approvals_log_id"),)
+    __table_args__ = (UniqueConstraint("log_id", "revision", name="uq_approvals_log_revision"),)
 
     id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
     log_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("execution_logs.id", ondelete="CASCADE"), nullable=False)
+    revision: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
     decision: Mapped[str] = mapped_column(Enum(*APPROVAL_DECISIONS, name="approval_decision"), nullable=False)
     decided_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
     decided_at: Mapped[datetime] = _now()
     note: Mapped[str | None] = mapped_column(Text)
+    # The person changed the result's text before approving it.
+    edited: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=false())

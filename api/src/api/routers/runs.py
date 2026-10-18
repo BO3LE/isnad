@@ -3,18 +3,24 @@ from __future__ import annotations
 import logging
 from datetime import UTC, datetime
 from pathlib import PurePosixPath
+from typing import Any
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, status
+from pydantic import ValidationError
 from sqlalchemy import func, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from api.deps import get_current_user, get_enqueuer, get_session, owned
+from api.catalog import CatalogSource
+from api.deps import get_catalog, get_current_user, get_enqueuer, get_session, owned
 from api.queue import Enqueuer
-from api.schemas import ApprovalRecord, ApprovalRequest, RunCreated, RunOutput
+from api.schemas import ApprovalRecord, ApprovalRequest, EditableField, RunCreated, RunOutput, StepResult
+from contracts import agent_io
+from contracts.manifest import AgentManifest
 from contracts.run import (
     TERMINAL_RUN_STATUSES,
+    ApprovalDecision,
     ApprovalInfo,
     LogEntry,
     NodeState,
@@ -29,6 +35,13 @@ log = logging.getLogger(__name__)
 router = APIRouter(prefix="/runs", tags=["runs"])
 
 ALREADY_DECIDED = "This step has already been decided."
+NOTHING_TO_REDO = (
+    "Only a step's result can be sent back to be redone. This step hasn't run yet: approve or reject what it is "
+    "about to do."
+)
+# The longest text a person can put in place of a result: well over a long article.
+MAX_EDIT_CHARS = 100_000
+MAX_EDIT_LINES = 200
 
 
 def _load(session: Session, user: User, run_id: UUID, *, lock: bool = False) -> ExecutionRun:
@@ -58,29 +71,36 @@ def _node_state(row: ExecutionLog, approval: ApprovalInfo | None = None) -> Node
         completed_at=row.completed_at,
         duration_ms=row.duration_ms,
         error_message=row.error_message,
+        revision=row.revision,
         approval=approval,
+    )
+
+
+def _info(approval: Approval, email: str | None) -> ApprovalInfo:
+    return ApprovalInfo(
+        decision=approval.decision,
+        decided_by_email=email,
+        decided_at=approval.decided_at,
+        note=approval.note,
+        revision=approval.revision,
+        edited=approval.edited,
     )
 
 
 def _approvals_by_node(session: Session, run_id: UUID) -> dict[UUID, ApprovalInfo]:
     """The latest decision per node (S-06 audit footer), oldest first so a later row wins.
 
-    `approvals.log_id` is unique (migration 0004), so in practice there is at most one row per
-    node; ordering defensively matches the worker's own "latest decision" rule in `worker.store`.
+    A step has one decision per result (migration 0007): a redone step has one for each, and the
+    one on its latest result is the one that stands.
     """
     rows = session.execute(
         select(Approval, ExecutionLog.node_id, User.email)
         .join(ExecutionLog, ExecutionLog.id == Approval.log_id)
         .outerjoin(User, User.id == Approval.decided_by)
         .where(ExecutionLog.run_id == run_id)
-        .order_by(Approval.decided_at)
+        .order_by(Approval.revision, Approval.decided_at)
     ).all()
-    by_node: dict[UUID, ApprovalInfo] = {}
-    for approval, node_id, email in rows:
-        by_node[node_id] = ApprovalInfo(
-            decision=approval.decision, decided_by_email=email, decided_at=approval.decided_at, note=approval.note
-        )
-    return by_node
+    return {node_id: _info(approval, email) for approval, node_id, email in rows}
 
 
 def _state(session: Session, run: ExecutionRun) -> RunState:
@@ -159,16 +179,99 @@ def run_approvals(run_id: UUID, user: User = Depends(get_current_user), session:
         .order_by(Approval.decided_at)
     ).all()
     return [
-        ApprovalRecord(
-            node_id=node_id,
-            agent_type=agent_type,
-            decision=approval.decision,
-            decided_by_email=email,
-            decided_at=approval.decided_at,
-            note=approval.note,
-        )
+        ApprovalRecord(node_id=node_id, agent_type=agent_type, **_info(approval, email).model_dump())
         for approval, node_id, agent_type, email in rows
     ]
+
+
+def _step(session: Session, run: ExecutionRun, node_id: UUID) -> ExecutionLog:
+    row = session.scalar(select(ExecutionLog).where(ExecutionLog.run_id == run.id, ExecutionLog.node_id == node_id))
+    if row is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "This step isn't part of the run.")
+    return row
+
+
+def _result(session: Session, row: ExecutionLog) -> AgentOutput | None:
+    """The object a step's agent returned. Only a step that has run has one: one waiting to send hasn't."""
+    return session.scalar(select(AgentOutput).where(AgentOutput.log_id == row.id, AgentOutput.output_type == "text"))
+
+
+def _manifest(catalog: CatalogSource, agent_type: str) -> AgentManifest | None:
+    return next((m for m in catalog.agents() or [] if m.name == agent_type), None)
+
+
+def _editable(manifest: AgentManifest | None) -> dict[str, tuple[str, str]]:
+    """Name → (title, kind) of the fields the agent lets a person change. Never a file or a link,
+    whatever a manifest says: an edited path could name someone else's file."""
+    if manifest is None:
+        return {}
+    return {
+        o.name: (o.title, o.editable)
+        for o in manifest.outputs
+        if o.editable and not o.name.endswith(("_path", "_paths")) and o.name != "remote_url"
+    }
+
+
+@router.get("/{run_id}/nodes/{node_id}/result", response_model=StepResult)
+def step_result(
+    run_id: UUID,
+    node_id: UUID,
+    user: User = Depends(get_current_user),
+    session: Session = Depends(get_session),
+    catalog: CatalogSource = Depends(get_catalog),
+):
+    """What a step made, with the parts its reviewer may change. Files are listed by /runs/{id}/outputs."""
+    row = _step(session, _load(session, user, run_id), node_id)
+    result = _result(session, row)
+    if result is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "This step hasn't made anything yet.")
+    content = result.content_json or {}
+    return StepResult(
+        node_id=row.node_id,
+        agent_type=row.agent_type,
+        revision=row.revision,
+        editable=[
+            EditableField(name=name, title=title, kind=kind, value=content.get(name) or ("" if kind == "text" else []))
+            for name, (title, kind) in _editable(_manifest(catalog, row.agent_type)).items()
+            if isinstance(content.get(name), str | list | None)
+        ],
+    )
+
+
+def _edited(manifest: AgentManifest | None, content: dict[str, Any], edits: dict[str, Any]) -> dict[str, Any]:
+    """The result with the person's edits in it, checked as its agent checks its own output."""
+    if manifest is None:
+        raise HTTPException(
+            status.HTTP_503_SERVICE_UNAVAILABLE,
+            "Couldn't check your edits: the list of agents isn't available. Nothing was decided. Try again in a moment.",
+        )
+    editable = _editable(manifest)
+    refused = [name for name in edits if name not in editable]
+    if refused:
+        raise HTTPException(422, f"These can't be edited: {', '.join(sorted(refused))}.")
+    changed: dict[str, Any] = {}
+    for name, value in edits.items():
+        title, kind = editable[name]
+        if kind == "text":
+            if not isinstance(value, str) or len(value) > MAX_EDIT_CHARS:
+                raise HTTPException(422, f"The {title} must be text of at most {MAX_EDIT_CHARS:,} characters.")
+            changed[name] = value.strip()
+        else:
+            lines = [line.strip() for line in value] if isinstance(value, list) else None
+            if lines is None or len(lines) > MAX_EDIT_LINES or any(len(line) > MAX_EDIT_CHARS for line in lines):
+                raise HTTPException(422, f"The {title} must be a list of at most {MAX_EDIT_LINES} lines.")
+            changed[name] = [line for line in lines if line]
+            if not changed[name]:
+                raise HTTPException(422, f"Keep at least one line in the {title}: the next step works from them.")
+    merged = {**content, **changed}
+    model = getattr(agent_io, manifest.output_type, None)
+    if model is not None:
+        try:
+            merged = model.model_validate(merged).model_dump(mode="json")
+        except ValidationError as exc:
+            problem = "; ".join(f"{e['loc'][0] if e['loc'] else 'value'}: {e['msg']}" for e in exc.errors()[:3])
+            raise HTTPException(422, f"Your edit can't be used as it is — {problem}.") from None
+    return merged
 
 
 @router.post("/{run_id}/nodes/{node_id}/approve", response_model=RunCreated, status_code=status.HTTP_202_ACCEPTED)
@@ -179,32 +282,55 @@ def decide(
     user: User = Depends(get_current_user),
     session: Session = Depends(get_session),
     enqueuer: Enqueuer = Depends(get_enqueuer),
+    catalog: CatalogSource = Depends(get_catalog),
 ):
     """UC-04: record the decision, then hand the run back to the worker, which resumes or halts it.
 
-    A step is decided once. A second decision, or one on a run that has finished or been
-    cancelled, is refused with 409. If the job queue is unavailable the decision is not kept
-    (503), so it can simply be made again.
+    A step waiting to send is approved or rejected. A step waiting with its result is approved —
+    as it is, or with the person's `edits` — rejected, or sent back with a note to be redone; its
+    new result is then decided in its turn. Each result is decided once: a second decision on it,
+    or one on a run that has finished or been cancelled, is refused with 409. If the job queue is
+    unavailable the decision is not kept (503), so it can simply be made again.
     """
     # The run row stays locked until this request commits, as `cancel` locks it, so a decision and
     # a cancel can't interleave: whichever arrives second sees what the first did.
     run = _load(session, user, run_id, lock=True)
     if RunStatus(run.status) in TERMINAL_RUN_STATUSES:
         raise HTTPException(status.HTTP_409_CONFLICT, "This run has already finished.")
-    row = session.scalar(select(ExecutionLog).where(ExecutionLog.run_id == run.id, ExecutionLog.node_id == node_id))
-    if row is None:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "This step isn't part of the run.")
+    row = _step(session, run, node_id)
     if row.status != NodeStatus.AWAITING_APPROVAL:
         raise HTTPException(status.HTTP_409_CONFLICT, "This step isn't waiting for approval.")
     # Until the worker picks the run up, the step still reads as waiting — so a double click or a
     # second tab lands here, after a decision is already on record.
-    if session.scalar(select(Approval.id).where(Approval.log_id == row.id)) is not None:
+    decided = select(Approval.id).where(Approval.log_id == row.id, Approval.revision == row.revision)
+    if session.scalar(decided) is not None:
         raise HTTPException(status.HTTP_409_CONFLICT, ALREADY_DECIDED)
-    if body.decision == "reject" and not (body.note or "").strip():
+    if body.decision == ApprovalDecision.REJECT and not (body.note or "").strip():
         raise HTTPException(422, "Add a note to reject — it's kept with the run.")
+    result = _result(session, row)
+    if body.decision == ApprovalDecision.REDO and result is None:
+        raise HTTPException(status.HTTP_409_CONFLICT, NOTHING_TO_REDO)
+
+    original = result.content_json if result is not None else None
+    edited = False
+    if body.edits:
+        if body.decision != ApprovalDecision.APPROVE:
+            raise HTTPException(422, "Edits are kept only when you approve the result.")
+        if result is None:
+            raise HTTPException(status.HTTP_409_CONFLICT, "This step hasn't made anything to edit yet.")
+        merged = _edited(_manifest(catalog, row.agent_type), original or {}, body.edits)
+        if merged != original:
+            result.content_json, edited = merged, True
 
     previous_status = run.status
-    approval = Approval(log_id=row.id, decision=body.decision.value, decided_by=user.id, note=body.note)
+    approval = Approval(
+        log_id=row.id,
+        revision=row.revision,
+        decision=body.decision.value,
+        decided_by=user.id,
+        note=body.note,
+        edited=edited,
+    )
     session.add(approval)
     run.status = RunStatus.QUEUED.value
     try:
@@ -220,6 +346,8 @@ def decide(
         # Undone rather than stranded. Kept, the decision would leave a run marked queued that no
         # worker will ever pick up — and one that can't be decided again, since a decision exists.
         session.delete(approval)
+        if edited:
+            result.content_json = original
         run.status = previous_status
         session.commit()
         raise HTTPException(

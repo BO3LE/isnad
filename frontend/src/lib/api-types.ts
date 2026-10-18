@@ -274,11 +274,33 @@ export interface paths {
          * Decide
          * @description UC-04: record the decision, then hand the run back to the worker, which resumes or halts it.
          *
-         *     A step is decided once. A second decision, or one on a run that has finished or been
-         *     cancelled, is refused with 409. If the job queue is unavailable the decision is not kept
-         *     (503), so it can simply be made again.
+         *     A step waiting to send is approved or rejected. A step waiting with its result is approved —
+         *     as it is, or with the person's `edits` — rejected, or sent back with a note to be redone; its
+         *     new result is then decided in its turn. Each result is decided once: a second decision on it,
+         *     or one on a run that has finished or been cancelled, is refused with 409. If the job queue is
+         *     unavailable the decision is not kept (503), so it can simply be made again.
          */
         post: operations["decide_runs__run_id__nodes__node_id__approve_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/runs/{run_id}/nodes/{node_id}/result": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Step Result
+         * @description What a step made, with the parts its reviewer may change. Files are listed by /runs/{id}/outputs.
+         */
+        get: operations["step_result_runs__run_id__nodes__node_id__result_get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -490,6 +512,11 @@ export interface components {
          * @description One thing an agent hands on to the steps after it.
          */
         AgentOutput: {
+            /**
+             * Editable
+             * @description A person may change it while reviewing the step's result: one text, or a list of lines. Files and links never are.
+             */
+            editable?: ("text" | "lines") | null;
             /** Name */
             name: string;
             /**
@@ -502,7 +529,7 @@ export interface components {
          * ApprovalDecision
          * @enum {string}
          */
-        ApprovalDecision: "approve" | "reject";
+        ApprovalDecision: "approve" | "reject" | "redo";
         /**
          * ApprovalInfo
          * @description The recorded human decision for a node that required approval (UC-04 audit trail).
@@ -516,8 +543,18 @@ export interface components {
             /** Decided By Email */
             decided_by_email?: string | null;
             decision: components["schemas"]["ApprovalDecision"];
+            /**
+             * Edited
+             * @default false
+             */
+            edited: boolean;
             /** Note */
             note?: string | null;
+            /**
+             * Revision
+             * @default 0
+             */
+            revision: number;
         };
         /**
          * ApprovalRecord
@@ -535,16 +572,30 @@ export interface components {
             decided_by_email?: string | null;
             decision: components["schemas"]["ApprovalDecision"];
             /**
+             * Edited
+             * @default false
+             */
+            edited: boolean;
+            /**
              * Node Id
              * Format: uuid
              */
             node_id: string;
             /** Note */
             note?: string | null;
+            /**
+             * Revision
+             * @default 0
+             */
+            revision: number;
         };
         /** ApprovalRequest */
         ApprovalRequest: {
             decision: components["schemas"]["ApprovalDecision"];
+            /** Edits */
+            edits?: {
+                [key: string]: string | string[];
+            } | null;
             /** Note */
             note?: string | null;
         };
@@ -606,6 +657,26 @@ export interface components {
         DevLoginRequest: {
             /** Email */
             email: string;
+        };
+        /**
+         * EditableField
+         * @description One part of a step's result a person may change before approving it.
+         */
+        EditableField: {
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "text" | "lines";
+            /** Name */
+            name: string;
+            /**
+             * Title
+             * @description What the agent calls it, e.g. 'article'
+             */
+            title: string;
+            /** Value */
+            value: string | string[];
         };
         /** GraphEdge */
         GraphEdge: {
@@ -677,6 +748,11 @@ export interface components {
              */
             retry_count: number;
             /**
+             * Revision
+             * @default 0
+             */
+            revision: number;
+            /**
              * Run Id
              * Format: uuid
              */
@@ -716,6 +792,11 @@ export interface components {
              * @default 0
              */
             retry_count: number;
+            /**
+             * Revision
+             * @default 0
+             */
+            revision: number;
             /** Started At */
             started_at?: string | null;
             status: components["schemas"]["NodeStatus"];
@@ -858,6 +939,29 @@ export interface components {
             /** Reason */
             reason?: "rejected" | null;
             status: components["schemas"]["RunStatus"];
+        };
+        /**
+         * StepResult
+         * @description What a step that has run made, as its reviewer edits it — GET /runs/{run_id}/nodes/{node_id}/result.
+         */
+        StepResult: {
+            /** Agent Type */
+            agent_type: string;
+            /**
+             * Editable
+             * @description Empty when nothing in it is text a person may change
+             */
+            editable: components["schemas"]["EditableField"][];
+            /**
+             * Node Id
+             * Format: uuid
+             */
+            node_id: string;
+            /**
+             * Revision
+             * @description 0 for the step's first result, 1 after one redo, and so on
+             */
+            revision: number;
         };
         /** TokenResponse */
         TokenResponse: {
@@ -1369,6 +1473,38 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["RunCreated"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    step_result_runs__run_id__nodes__node_id__result_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                run_id: string;
+                node_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StepResult"];
                 };
             };
             /** @description Validation Error */

@@ -189,6 +189,19 @@ Four rules that are new in this document:
 3. **There is no Save button.** Every change autosaves into the workflow's existing 800 ms debounce, and the footer says so. A Save button implies work can be lost.
 4. **Secrets are never text fields.** The Google account is a picker holding a reference, never a pasted token — and no secret ever appears in the form, the graph or the URL.
 
+#### Every step waits for a person — before it sends, or after it makes something
+
+The footer switch means one of two things, and its label says which:
+
+- **Require approval** (Publisher, Email — locked on, D-08): the step waits *before* it acts, and the person approves what is about to go out.
+- **Review the result** (every other step — on for a new step and in the templates; switch it off for a step you trust): the step runs, then waits *with its result*. On the run page (or the canvas's **Review**) the person reads the research notes, the article, the video — and chooses:
+  - **Approve and run ‹next step›** — as it is;
+  - **Edit** — change the result's text (the notes, the title, summary or article) and approve their version; the Writer makes its PDF and Word files again from the edit;
+  - **Redo with a note** — the step runs again with the note ("shorter", "focus on costs", "only recent sources") and its new result is reviewed in its turn;
+  - **Stop the run** — with a reason, kept with the run.
+
+  Files and links are never editable. A step that sends is never "redone": it is approved or rejected before anything leaves.
+
 #### The rule that makes inheriting actually work
 
 **The form must never write a default into a step's settings.** This sounds like an implementation detail. It is not — it is the difference between the product working and not.

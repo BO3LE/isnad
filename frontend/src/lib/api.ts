@@ -23,6 +23,11 @@ export type RunStatus = Schemas["RunStatus"];
 export type Connection = Schemas["Connection"];
 /** What one Google consent asks for: Google won't grant YouTube and Drive together, so each is a connection. */
 export type ConnectionAccess = Exclude<Connection["access"], "all">;
+export type StepResult = Schemas["StepResult"];
+export type EditableField = Schemas["EditableField"];
+/** A decision on a waiting step. "redo" only for one that waits with its result. */
+export type Decision = Schemas["ApprovalDecision"];
+export type Edits = Record<string, string | string[]>;
 
 export const API_URL = (import.meta.env.VITE_API_URL as string | undefined) ?? "http://localhost:8000";
 
@@ -72,8 +77,13 @@ export const endpoints = {
   run: (id: string) => api<RunCreated>(`/workflows/${id}/run`, { method: "POST" }),
   workflowRuns: (id: string) => api<RunSummary[]>(`/workflows/${id}/runs`),
   runState: (id: string) => api<RunState>(`/runs/${id}`),
-  approve: (runId: string, nodeId: string, decision: "approve" | "reject", note?: string) =>
-    api<RunCreated>(`/runs/${runId}/nodes/${nodeId}/approve`, { method: "POST", body: JSON.stringify({ decision, note }) }),
+  approve: (runId: string, nodeId: string, decision: Decision, note?: string, edits?: Edits) =>
+    api<RunCreated>(`/runs/${runId}/nodes/${nodeId}/approve`, {
+      method: "POST",
+      body: JSON.stringify({ decision, note, edits }),
+    }),
+  /** What a step that has run made, with the parts its reviewer may change. */
+  stepResult: (runId: string, nodeId: string) => api<StepResult>(`/runs/${runId}/nodes/${nodeId}/result`),
   cancel: (runId: string) => api<RunState>(`/runs/${runId}/cancel`, { method: "POST" }),
   runOutputs: (runId: string) => api<RunOutput[]>(`/runs/${runId}/outputs`),
   runLogs: (runId: string) => api<LogEntry[]>(`/runs/${runId}/logs`),

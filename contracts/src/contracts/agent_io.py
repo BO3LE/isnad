@@ -66,7 +66,7 @@ class ResearchInput(_In):
 
 
 class ResearchOutput(_Out):
-    notes: list[str] = Field(title="notes")
+    notes: list[str] = Field(title="notes", json_schema_extra={"x-editable": "lines"})
     sources: list[Source] = Field(title="sources")
 
 
@@ -96,9 +96,9 @@ class WriteInput(_In):
 
 
 class WriteOutput(_Out):
-    title: str = Field(min_length=1, max_length=200, title="title")
-    summary: str = Field(min_length=1, title="summary")
-    article_md: str = Field(min_length=1, title="article")
+    title: str = Field(min_length=1, max_length=200, title="title", json_schema_extra={"x-editable": "text"})
+    summary: str = Field(min_length=1, title="summary", json_schema_extra={"x-editable": "text"})
+    article_md: str = Field(min_length=1, title="article", json_schema_extra={"x-editable": "text"})
     # Set by the Writer from what it rendered — never taken from the model's answer.
     pdf_path: str | None = Field(None, title="PDF")
     docx_path: str | None = Field(None, title="Word document")

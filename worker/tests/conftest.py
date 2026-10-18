@@ -91,17 +91,41 @@ class SendAgent(BaseAgent[TextIn, TextOut]):
         return TextOut(text=f"sent:{input_data.text}")
 
 
+class DraftAgent(BaseAgent[TextIn, TextOut]):
+    """Writes a draft, redoes it with the reviewer's note, and marks an edited draft as kept."""
+
+    manifest = _manifest("draft")
+    input_model, output_model, config_model = TextIn, TextOut, ShoutConfig
+    revisions: ClassVar[list] = []
+    edits: ClassVar[list] = []
+    edit_fails: ClassVar[bool] = False
+
+    async def execute(self, input_data, ports):
+        return TextOut(text=f"draft of {input_data.text}")
+
+    async def revise(self, input_data, ports, revision):
+        type(self).revisions.append(revision)
+        return TextOut(text=f"{revision.previous['text']}, {revision.note}")
+
+    async def accept_edit(self, output, ports):
+        type(self).edits.append(output.text)
+        if type(self).edit_fails:
+            raise NonRetryableAgentError("The edited draft couldn't be saved as a PDF.")
+        return TextOut(text=f"{output.text} (kept)")
+
+
 @pytest.fixture(autouse=True)
 def _reset_reverse():
     ReverseAgent.calls = 0
     ReverseAgent.failures_before_success = 0
     ReverseAgent.non_retryable = False
     SendAgent.calls = 0
+    DraftAgent.revisions, DraftAgent.edits, DraftAgent.edit_fails = [], [], False
 
 
 @pytest.fixture()
 def registry() -> Registry:
-    return Registry([ShoutAgent, ReverseAgent, GateAgent, SendAgent])
+    return Registry([ShoutAgent, ReverseAgent, GateAgent, SendAgent, DraftAgent])
 
 
 @pytest.fixture()
@@ -124,10 +148,15 @@ def sleeps() -> Sleeps:
     return Sleeps()
 
 
-def chain(*agent_types: str, config: dict | None = None) -> WorkflowGraph:
+def chain(*agent_types: str, config: dict | None = None, review: tuple[int, ...] = ()) -> WorkflowGraph:
+    """Steps one after another; those at the `review` positions wait for a person with their result."""
     nodes = [
         GraphNode(
-            id=uuid4(), agent_type=t, position=Position(x=i * 300), configuration=(config or {}) if i == 0 else {}
+            id=uuid4(),
+            agent_type=t,
+            position=Position(x=i * 300),
+            configuration=(config or {}) if i == 0 else {},
+            requires_approval=i in review,
         )
         for i, t in enumerate(agent_types)
     ]

@@ -23,3 +23,24 @@ async def test_returns_notes_and_sources(ports):
 def test_manifest_matches_folder():
     assert ResearcherAgent.manifest.name == "researcher"
     assert "topic" in ResearcherAgent.catalog_entry().config_schema["required"]
+
+
+async def test_a_redo_searches_for_the_reviewers_note_with_the_topic(ports):
+    from dataclasses import replace
+
+    from contracts.agent import Revision
+
+    searched = []
+
+    class Search:
+        async def search(self, query, n):
+            searched.append(query)
+            return await ports.search.search(query, n)
+
+    agent = ResearcherAgent()
+    data = agent.input_model.model_validate(FIXTURE)
+    out = await agent.revise(data, replace(ports, search=Search()), Revision(note="only sources from 2025 " * 40))
+
+    assert searched[0].startswith(f"{data.topic} — only sources from 2025")
+    assert len(searched[0]) <= 400
+    assert len(out.sources) == data.num_sources

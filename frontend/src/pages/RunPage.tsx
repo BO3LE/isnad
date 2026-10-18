@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { AppShell, PageBody } from "@/components/app/AppShell";
+import { ResultReview } from "@/components/runs/ResultReview";
 import { RunTabs } from "@/components/runs/RunTabs";
 import { StepList } from "@/components/runs/StepList";
 import { Banner } from "@/design-system/components/Banner";
@@ -12,6 +13,7 @@ import { StatusChip } from "@/design-system/status/StatusChip";
 import { runStatusMeta, TERMINAL_RUN_STATUSES } from "@/design-system/status/statusMeta";
 import { agentTitle } from "@/design-system/agents/agentMeta";
 import { formatAbsoluteTime, pluralise } from "@/lib/format";
+import { approvalMoment } from "@/lib/graph";
 import { stepError } from "@/lib/runPlayback";
 import { ApiError, endpoints, type RunState } from "@/lib/api";
 import { useToast } from "@/design-system/components/toast-context";
@@ -28,7 +30,8 @@ import { NotFoundState } from "@/pages/NotFoundPage";
 
 const POLL_MS = 2000;
 
-/** Approving happens on the canvas, where the run is shown with what each step is about to send. */
+/** Approving what a step is about to send happens on the canvas, where the run is shown with where
+ *  it goes. A result to review is shown here, on the page. */
 function ReviewLink({ workflowId }: { workflowId: string }) {
   return (
     <Link
@@ -91,6 +94,9 @@ export function RunPage() {
   const done = steps.filter((s) => s.status === "success").length;
   const total = state?.total_nodes || steps.length;
   const waiting = steps.find((s) => s.status === "awaiting_approval");
+  // A step that sends waits before it acts; any other waits after it runs, with its result to review.
+  const moment = waiting ? approvalMoment(catalog.data?.find((a) => a.name === waiting.agent_type)) : undefined;
+  const next = waiting ? steps[steps.indexOf(waiting) + 1] : undefined;
   const failed = steps.find((s) => s.status === "failed");
   const failure = stepError(failed?.error_message);
   // "publisher is waiting for your approval" is what the raw type reads like; wait for the name.
@@ -172,13 +178,27 @@ export function RunPage() {
               <RunTabs runId={state.id} current="overview" />
             </header>
 
-            {waiting && (
+            {waiting && moment === "before" && (
               <Banner
                 variant="approval"
                 action={<ReviewLink workflowId={state.workflow_id} />}
               >
                 {titleOf(waiting.agent_type)} is waiting for your approval. Nothing has been sent yet.
               </Banner>
+            )}
+            {waiting && moment === "after" && (
+              <>
+                <Banner variant="approval">
+                  {titleOf(waiting.agent_type)} has finished. Check its result below before the run goes on.
+                </Banner>
+                <ResultReview
+                  runId={state.id}
+                  step={waiting}
+                  agents={catalog.data}
+                  nextTitle={next ? titleOf(next.agent_type) : null}
+                  onDecided={refresh}
+                />
+              </>
             )}
 
             {/* A rejection is the user's own decision and never reads as a failure (§2 rule 7). */}
@@ -205,7 +225,9 @@ export function RunPage() {
                 steps={steps}
                 agents={catalog.data}
                 actionFor={(step) =>
-                  step.status === "awaiting_approval" ? <ReviewLink workflowId={state.workflow_id} /> : null
+                  step.status === "awaiting_approval" && moment === "before" ? (
+                    <ReviewLink workflowId={state.workflow_id} />
+                  ) : null
                 }
               />
             </section>

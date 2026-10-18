@@ -149,6 +149,22 @@
         "additionalProperties": false,
         "description": "One thing an agent hands on to the steps after it.",
         "properties": {
+          "editable": {
+            "anyOf": [
+              {
+                "enum": [
+                  "text",
+                  "lines"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "A person may change it while reviewing the step's result: one text, or a list of lines. Files and links never are.",
+            "title": "Editable"
+          },
           "name": {
             "title": "Name",
             "type": "string"
@@ -169,7 +185,8 @@
       "ApprovalDecision": {
         "enum": [
           "approve",
-          "reject"
+          "reject",
+          "redo"
         ],
         "title": "ApprovalDecision",
         "type": "string"
@@ -196,6 +213,11 @@
           "decision": {
             "$ref": "#/components/schemas/ApprovalDecision"
           },
+          "edited": {
+            "default": false,
+            "title": "Edited",
+            "type": "boolean"
+          },
           "note": {
             "anyOf": [
               {
@@ -206,6 +228,12 @@
               }
             ],
             "title": "Note"
+          },
+          "revision": {
+            "default": 0,
+            "minimum": 0.0,
+            "title": "Revision",
+            "type": "integer"
           }
         },
         "required": [
@@ -241,6 +269,11 @@
           "decision": {
             "$ref": "#/components/schemas/ApprovalDecision"
           },
+          "edited": {
+            "default": false,
+            "title": "Edited",
+            "type": "boolean"
+          },
           "node_id": {
             "format": "uuid",
             "title": "Node Id",
@@ -256,6 +289,12 @@
               }
             ],
             "title": "Note"
+          },
+          "revision": {
+            "default": 0,
+            "minimum": 0.0,
+            "title": "Revision",
+            "type": "integer"
           }
         },
         "required": [
@@ -271,6 +310,30 @@
         "properties": {
           "decision": {
             "$ref": "#/components/schemas/ApprovalDecision"
+          },
+          "edits": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "items": {
+                        "type": "string"
+                      },
+                      "type": "array"
+                    }
+                  ]
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Edits"
           },
           "note": {
             "anyOf": [
@@ -395,6 +458,50 @@
           "email"
         ],
         "title": "DevLoginRequest",
+        "type": "object"
+      },
+      "EditableField": {
+        "description": "One part of a step's result a person may change before approving it.",
+        "properties": {
+          "kind": {
+            "enum": [
+              "text",
+              "lines"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "title": {
+            "description": "What the agent calls it, e.g. 'article'",
+            "title": "Title",
+            "type": "string"
+          },
+          "value": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              }
+            ],
+            "title": "Value"
+          }
+        },
+        "required": [
+          "name",
+          "title",
+          "kind",
+          "value"
+        ],
+        "title": "EditableField",
         "type": "object"
       },
       "GraphEdge": {
@@ -542,6 +649,12 @@
             "title": "Retry Count",
             "type": "integer"
           },
+          "revision": {
+            "default": 0,
+            "minimum": 0.0,
+            "title": "Revision",
+            "type": "integer"
+          },
           "run_id": {
             "format": "uuid",
             "title": "Run Id",
@@ -652,6 +765,12 @@
             "maximum": 3.0,
             "minimum": 0.0,
             "title": "Retry Count",
+            "type": "integer"
+          },
+          "revision": {
+            "default": 0,
+            "minimum": 0.0,
+            "title": "Revision",
             "type": "integer"
           },
           "started_at": {
@@ -977,6 +1096,41 @@
           "created_at"
         ],
         "title": "RunSummary",
+        "type": "object"
+      },
+      "StepResult": {
+        "description": "What a step that has run made, as its reviewer edits it \u2014 GET /runs/{run_id}/nodes/{node_id}/result.",
+        "properties": {
+          "agent_type": {
+            "title": "Agent Type",
+            "type": "string"
+          },
+          "editable": {
+            "description": "Empty when nothing in it is text a person may change",
+            "items": {
+              "$ref": "#/components/schemas/EditableField"
+            },
+            "title": "Editable",
+            "type": "array"
+          },
+          "node_id": {
+            "format": "uuid",
+            "title": "Node Id",
+            "type": "string"
+          },
+          "revision": {
+            "description": "0 for the step's first result, 1 after one redo, and so on",
+            "title": "Revision",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "node_id",
+          "agent_type",
+          "revision",
+          "editable"
+        ],
+        "title": "StepResult",
         "type": "object"
       },
       "TokenResponse": {
@@ -1825,7 +1979,7 @@
     },
     "/runs/{run_id}/nodes/{node_id}/approve": {
       "post": {
-        "description": "UC-04: record the decision, then hand the run back to the worker, which resumes or halts it.\n\nA step is decided once. A second decision, or one on a run that has finished or been\ncancelled, is refused with 409. If the job queue is unavailable the decision is not kept\n(503), so it can simply be made again.",
+        "description": "UC-04: record the decision, then hand the run back to the worker, which resumes or halts it.\n\nA step waiting to send is approved or rejected. A step waiting with its result is approved \u2014\nas it is, or with the person's `edits` \u2014 rejected, or sent back with a note to be redone; its\nnew result is then decided in its turn. Each result is decided once: a second decision on it,\nor one on a run that has finished or been cancelled, is refused with 409. If the job queue is\nunavailable the decision is not kept (503), so it can simply be made again.",
         "operationId": "decide_runs__run_id__nodes__node_id__approve_post",
         "parameters": [
           {
@@ -1887,6 +2041,65 @@
           }
         ],
         "summary": "Decide",
+        "tags": [
+          "runs"
+        ]
+      }
+    },
+    "/runs/{run_id}/nodes/{node_id}/result": {
+      "get": {
+        "description": "What a step made, with the parts its reviewer may change. Files are listed by /runs/{id}/outputs.",
+        "operationId": "step_result_runs__run_id__nodes__node_id__result_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Run Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "node_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Node Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StepResult"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Step Result",
         "tags": [
           "runs"
         ]

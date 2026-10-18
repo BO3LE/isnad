@@ -3,6 +3,12 @@
 Re-entrant: running it again on the same run skips nodes already `success`, so the same
 code path resumes a run after an approval or after a worker restart.
 
+A step waits for a person at one of two moments (AgentManifest.approval_moment). One that sends
+content out waits *before* it acts: approved, it runs; rejected, the run stops. One the person asked
+to review waits *after* it runs, with its result: approved (as it is, or with their edits), the run
+goes on; rejected, it stops; sent back with a note ("redo"), the step runs again with that note, and
+its new result waits in its turn.
+
 A cancel is final. The API records it at once; the step running then is left to end, and the
 orchestrator stops at the next point it checks — before each step and between retries — skips
 what is left and closes the run. A cancel that lands after the last check is still kept: the store
@@ -21,6 +27,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, ValidationError
 
+from contracts.agent import Revision
 from contracts.errors import AgentError, NonRetryableAgentError
 from contracts.graph import CycleError, ancestors, topological_order
 from contracts.ports import Ports
@@ -125,16 +132,31 @@ class Orchestrator:
                 return self._halt(snap, order[index + 1 :], node, str(exc))
 
             # The manifest decides, not the graph: a distribute agent waits even if the saved
-            # workflow says it needn't (see AgentManifest.needs_approval).
-            if agent.manifest.needs_approval(node.requires_approval):
+            # workflow says it needn't (see AgentManifest.approval_moment).
+            moment = agent.manifest.approval_moment(node.requires_approval)
+            if moment == "before":
                 decision = self.store.approval(run_id, node.id)
                 if decision is None:
                     self.store.set_node_status(run_id, node.id, NodeStatus.AWAITING_APPROVAL)
-                    if self.store.set_run_status(run_id, RunStatus.AWAITING_APPROVAL) == RunStatus.CANCELLED:
-                        return self._cancelled(snap, order[index:])
-                    return RunStatus.AWAITING_APPROVAL
-                if decision == ApprovalDecision.REJECT:
+                    return self._wait(snap, order[index:])
+                if decision.decision != ApprovalDecision.APPROVE:
                     return self._halt(snap, order[index + 1 :], node, REJECTED_BY_REVIEWER)
+            elif moment == "after" and status == NodeStatus.AWAITING_APPROVAL:
+                # It has run; its result waits for the person.
+                decision = self.store.approval(run_id, node.id)
+                if decision is None:
+                    return self._wait(snap, order[index:])
+                if decision.decision == ApprovalDecision.REJECT:
+                    return self._halt(snap, order[index + 1 :], node, REJECTED_BY_REVIEWER)
+                if decision.decision == ApprovalDecision.APPROVE:
+                    accepted = await self._accept(snap, node, agent, outputs.get(node.id, {}), edited=decision.edited)
+                    if accepted is None:
+                        return self._finish_failed(snap, order[index + 1 :])
+                    outputs[node.id] = accepted
+                    continue
+                # Sent back with a note: it runs again below, from its first attempt.
+                self.store.start_redo(run_id, node.id)
+                snap.retry_counts[node.id] = 0
 
             # Run context: outputs of every upstream agent (not only the direct parent), oldest first,
             # so Publisher sees Writer's title as well as Video's file. Configuration wins.
@@ -150,29 +172,70 @@ class Orchestrator:
                     snap, order[index + 1 :], node, f"{agent.manifest.title} is missing input: {_describe(exc)}"
                 )
 
+            # A redo — just asked for, or interrupted by a worker restart — still has its note.
+            revision = self.store.revision_request(run_id, node.id) if moment == "after" else None
+            then = NodeStatus.AWAITING_APPROVAL if moment == "after" else NodeStatus.SUCCESS
             try:
-                result = await self._run_with_retry(snap, node, agent, input_obj)
+                result = await self._run_with_retry(snap, node, agent, input_obj, revision=revision, then=then)
             except _Cancelled:
                 return self._cancelled(snap, order[index + 1 :])
             if result is None:
                 return self._finish_failed(snap, order[index + 1 :])
             outputs[node.id] = result
+            if moment == "after":
+                return self._wait(snap, order[index:])
 
         return self.store.set_run_status(run_id, RunStatus.SUCCEEDED)
 
+    def _wait(self, snap: RunSnapshot, remaining: list[GraphNode]) -> RunStatus:
+        """The run waits for a person — unless it was cancelled meanwhile."""
+        if self.store.set_run_status(snap.run_id, RunStatus.AWAITING_APPROVAL) == RunStatus.CANCELLED:
+            return self._cancelled(snap, remaining)
+        return RunStatus.AWAITING_APPROVAL
+
+    async def _ports(self, snap: RunSnapshot, node: GraphNode) -> Ports:
+        # Resolved per attempt: a network blip while refreshing a Google token is retried; an
+        # expired connection (not retryable) fails at once.
+        base = await self._ports_for(snap.run_id, node) if self._ports_for else self.ports
+        return run_ports(base, snap.user_id, snap.run_id)  # files land under {user_id}/{run_id}/
+
+    async def _accept(
+        self, snap: RunSnapshot, node: GraphNode, agent, output: dict[str, Any], *, edited: bool
+    ) -> dict[str, Any] | None:
+        """The person approved the step's result. An edited one goes back to its agent first, so
+        what the agent also made from the text (the Writer's PDF) matches the edit."""
+        if not edited:
+            self.store.accept_result(snap.run_id, node.id)
+            return output
+        try:
+            finished = await agent.accept_edit(agent.output_model.model_validate(output), await self._ports(snap, node))
+            payload = finished.model_dump() if isinstance(finished, BaseModel) else finished
+            output = agent.output_model.model_validate(payload).model_dump(mode="json")
+        except Exception as exc:
+            message = _describe(exc)
+            self.store.set_node_status(snap.run_id, node.id, NodeStatus.FAILED, error=message)
+            log.warning("run %s node %s: couldn't keep the edit: %s", snap.run_id, node.id, message)
+            return None
+        self.store.accept_result(snap.run_id, node.id, output)
+        return output
+
     async def _run_with_retry(
-        self, snap: RunSnapshot, node: GraphNode, agent, input_obj: BaseModel
+        self,
+        snap: RunSnapshot,
+        node: GraphNode,
+        agent,
+        input_obj: BaseModel,
+        *,
+        revision: Revision | None = None,
+        then: NodeStatus = NodeStatus.SUCCESS,
     ) -> dict[str, Any] | None:
         run_id = snap.run_id
         retry_count = snap.retry_counts.get(node.id, 0)
         self.store.set_node_status(run_id, node.id, NodeStatus.RUNNING, retry_count=retry_count)
         while True:
             try:
-                # Resolved per attempt, inside the retry loop: a network blip while refreshing a
-                # Google token is retried; an expired connection (not retryable) fails at once.
-                base = await self._ports_for(run_id, node) if self._ports_for else self.ports
-                ports = run_ports(base, snap.user_id, run_id)  # files land under {user_id}/{run_id}/
-                produced = await self._attempt(agent, input_obj, ports)
+                ports = await self._ports(snap, node)
+                produced = await self._attempt(agent, input_obj, ports, revision)
                 payload = produced.model_dump() if isinstance(produced, BaseModel) else produced
                 output = agent.output_model.model_validate(payload).model_dump(mode="json")
             except Exception as exc:
@@ -191,7 +254,7 @@ class Orchestrator:
                 self._stop_if_cancelled(run_id, node, retry_count)  # landed during the wait
                 self.store.set_node_status(run_id, node.id, NodeStatus.RUNNING, retry_count=retry_count)
                 continue
-            self.store.complete_node(run_id, node.id, output, retry_count=retry_count)
+            self.store.complete_node(run_id, node.id, output, retry_count=retry_count, status=then)
             return output
 
     def _stop_if_cancelled(self, run_id: UUID, node: GraphNode, retry_count: int) -> None:
@@ -201,10 +264,12 @@ class Orchestrator:
             self.store.set_node_status(run_id, node.id, NodeStatus.SKIPPED, retry_count=retry_count)
             raise _Cancelled
 
-    async def _attempt(self, agent, input_obj: BaseModel, ports: Ports) -> Any:
+    async def _attempt(self, agent, input_obj: BaseModel, ports: Ports, revision: Revision | None = None) -> Any:
         deadline = asyncio.timeout(self.step_timeout_s)  # None: no deadline
         try:
             async with deadline:
+                if revision is not None:
+                    return await agent.revise(input_obj, ports, revision)
                 return await agent.execute(input_obj, ports)
         except TimeoutError as exc:
             if deadline.expired():  # ours ran out — not a TimeoutError an adapter raised (that is retried)

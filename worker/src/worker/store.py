@@ -15,9 +15,10 @@ from pathlib import Path
 from typing import Any, Protocol
 from uuid import UUID
 
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session, sessionmaker
 
+from contracts.agent import Revision
 from contracts.run import TERMINAL_RUN_STATUSES, ApprovalDecision, NodeStatus, RunStatus, WorkflowGraph
 from db.models import AgentOutput, Approval, ExecutionLog, ExecutionRun, Workflow
 
@@ -28,6 +29,15 @@ INTERRUPTED_SEND = (
 )
 
 
+@dataclass(frozen=True)
+class Decision:
+    """A person's decision on a step — on what it is about to send, or on the result it made."""
+
+    decision: ApprovalDecision
+    note: str | None = None
+    edited: bool = False  # they changed the result's text before approving it
+
+
 @dataclass
 class RunSnapshot:
     run_id: UUID
@@ -35,6 +45,7 @@ class RunSnapshot:
     graph: WorkflowGraph
     node_status: dict[UUID, NodeStatus] = field(default_factory=dict)
     retry_counts: dict[UUID, int] = field(default_factory=dict)
+    # Of every step that has run: done, or waiting with its result for a person.
     outputs: dict[UUID, dict[str, Any]] = field(default_factory=dict)
     # The workflow's owner — files a run writes are stored under `{user_id}/{run_id}/`.
     user_id: UUID | None = None
@@ -56,11 +67,34 @@ class RunStore(Protocol):
         retry_count: int | None = None,
         error: str | None = None,
     ) -> None: ...
-    def complete_node(self, run_id: UUID, node_id: UUID, output: dict[str, Any], *, retry_count: int) -> None:
-        """Saves the step's output and marks it `success` — both, or neither if the worker is lost."""
+    def complete_node(
+        self,
+        run_id: UUID,
+        node_id: UUID,
+        output: dict[str, Any],
+        *,
+        retry_count: int,
+        status: NodeStatus = NodeStatus.SUCCESS,
+    ) -> None:
+        """Saves the step's output and marks it `status` — both, or neither if the worker is lost.
+        `awaiting_approval`: the result waits for a person. A redone step's output replaces the last."""
         ...
 
-    def approval(self, run_id: UUID, node_id: UUID) -> ApprovalDecision | None: ...
+    def approval(self, run_id: UUID, node_id: UUID) -> Decision | None:
+        """The decision on what the step waits with now — for a redone step, on its latest result."""
+        ...
+
+    def accept_result(self, run_id: UUID, node_id: UUID, output: dict[str, Any] | None = None) -> None:
+        """A person approved the step's result: it is done, with `output` in place of it when edited."""
+        ...
+
+    def start_redo(self, run_id: UUID, node_id: UUID) -> None:
+        """A person sent the result back: the step runs again, and what it makes is its next revision."""
+        ...
+
+    def revision_request(self, run_id: UUID, node_id: UUID) -> Revision | None:
+        """What the person asked for when they sent the step's last result back; None on a first run."""
+        ...
 
 
 def _now() -> datetime:
@@ -108,13 +142,15 @@ class SqlRunStore:
                 retry_counts={log.node_id: log.retry_count for log in logs},
                 user_id=s.scalar(select(Workflow.user_id).where(Workflow.id == run.workflow_id)),
             )
-            success_ids = {log.id: log.node_id for log in logs if log.status == NodeStatus.SUCCESS}
-            if success_ids:
+            ran = {
+                log.id: log.node_id for log in logs if log.status in (NodeStatus.SUCCESS, NodeStatus.AWAITING_APPROVAL)
+            }
+            if ran:
                 rows = s.scalars(
-                    select(AgentOutput).where(AgentOutput.log_id.in_(success_ids), AgentOutput.output_type == "text")
+                    select(AgentOutput).where(AgentOutput.log_id.in_(ran), AgentOutput.output_type == "text")
                 ).all()
                 for row in rows:
-                    snapshot.outputs[success_ids[row.log_id]] = row.content_json or {}
+                    snapshot.outputs[ran[row.log_id]] = row.content_json or {}
             return snapshot
 
     def run_status(self, run_id: UUID) -> RunStatus:
@@ -148,17 +184,26 @@ class SqlRunStore:
         with self._sessions.begin() as s:
             _apply_node_status(self._log(s, run_id, node_id), status, retry_count=retry_count, error=error)
 
-    def complete_node(self, run_id: UUID, node_id: UUID, output: dict[str, Any], *, retry_count: int) -> None:
-        """The step's output and its `success`, in one transaction.
+    def complete_node(
+        self,
+        run_id: UUID,
+        node_id: UUID,
+        output: dict[str, Any],
+        *,
+        retry_count: int,
+        status: NodeStatus = NodeStatus.SUCCESS,
+    ) -> None:
+        """The step's output and its status, in one transaction.
 
         Two commits left a window: a worker lost between them left the step `running` with its output
         saved, and the redelivery ran it again and saved a second copy. Now a lost worker leaves
-        neither, and the step simply runs again.
+        neither, and the step simply runs again. A redone step's earlier result is replaced in the
+        same transaction, so until then it is still there to be shown.
         """
         with self._sessions.begin() as s:
             log = self._log(s, run_id, node_id)
-            self._add_outputs(s, log.id, output)
-            _apply_node_status(log, NodeStatus.SUCCESS, retry_count=retry_count)
+            self._replace_outputs(s, log.id, output)
+            _apply_node_status(log, status, retry_count=retry_count)
 
     @staticmethod
     def _log(s: Session, run_id: UUID, node_id: UUID) -> ExecutionLog:
@@ -167,7 +212,8 @@ class SqlRunStore:
             raise LookupError(f"no execution_logs row for run {run_id} node {node_id}")
         return log
 
-    def _add_outputs(self, s: Session, log_id: UUID, output: dict[str, Any]) -> None:
+    def _replace_outputs(self, s: Session, log_id: UUID, output: dict[str, Any]) -> None:
+        s.execute(delete(AgentOutput).where(AgentOutput.log_id == log_id))
         s.add(AgentOutput(log_id=log_id, output_type="text", content_json=output))
         for key, value in output.items():
             if isinstance(value, str) and key.endswith("_path"):
@@ -180,16 +226,56 @@ class SqlRunStore:
             elif isinstance(value, str) and key == "remote_url":
                 s.add(AgentOutput(log_id=log_id, output_type="url", content=value))
 
-    def approval(self, run_id: UUID, node_id: UUID) -> ApprovalDecision | None:
+    def approval(self, run_id: UUID, node_id: UUID) -> Decision | None:
         with self._sessions() as s:
-            decision = s.scalar(
-                select(Approval.decision)
+            row = s.execute(
+                select(Approval.decision, Approval.note, Approval.edited)
                 .join(ExecutionLog, ExecutionLog.id == Approval.log_id)
-                .where(ExecutionLog.run_id == run_id, ExecutionLog.node_id == node_id)
+                .where(
+                    ExecutionLog.run_id == run_id,
+                    ExecutionLog.node_id == node_id,
+                    Approval.revision == ExecutionLog.revision,
+                )
                 .order_by(Approval.decided_at.desc())
                 .limit(1)
+            ).first()
+            return Decision(ApprovalDecision(row.decision), row.note, row.edited) if row else None
+
+    def accept_result(self, run_id: UUID, node_id: UUID, output: dict[str, Any] | None = None) -> None:
+        with self._sessions.begin() as s:
+            log = self._log(s, run_id, node_id)
+            if output is not None:
+                self._replace_outputs(s, log.id, output)
+            _apply_node_status(log, NodeStatus.SUCCESS)
+
+    def start_redo(self, run_id: UUID, node_id: UUID) -> None:
+        """The result stays until the new one replaces it (complete_node): it is what the agent is
+        told it made, and what the person still sees meanwhile."""
+        with self._sessions.begin() as s:
+            log = self._log(s, run_id, node_id)
+            log.revision += 1
+            log.status = NodeStatus.PENDING.value
+            log.retry_count = 0
+            log.started_at = log.completed_at = log.duration_ms = log.error_message = None
+
+    def revision_request(self, run_id: UUID, node_id: UUID) -> Revision | None:
+        with self._sessions() as s:
+            log = self._log(s, run_id, node_id)
+            if log.revision == 0:
+                return None
+            asked = s.scalar(
+                select(Approval).where(
+                    Approval.log_id == log.id,
+                    Approval.revision == log.revision - 1,
+                    Approval.decision == ApprovalDecision.REDO.value,
+                )
             )
-            return ApprovalDecision(decision) if decision else None
+            if asked is None:
+                return None
+            previous = s.scalar(
+                select(AgentOutput.content_json).where(AgentOutput.log_id == log.id, AgentOutput.output_type == "text")
+            )
+            return Revision(note=(asked.note or "").strip(), previous=previous or {})
 
     def mark_interrupted(self, run_id: UUID, *, unrepeatable: Collection[str] = ()) -> None:
         """Used when a worker restarts mid-node (RB-01): a `running` node is put back to `pending`, so
@@ -225,7 +311,12 @@ def _apply_node_status(
         log.error_message = f"{log.error_message}\n{prefix}{error}" if log.error_message else prefix + error
     if status == NodeStatus.RUNNING and log.started_at is None:
         log.started_at = now
-    if status in (NodeStatus.SUCCESS, NodeStatus.FAILED, NodeStatus.SKIPPED):
+    # A step that ran and waits with its result has finished its work: the time a person then takes
+    # to review it isn't the step's. One that waits before it runs hasn't started.
+    finished = status in (NodeStatus.SUCCESS, NodeStatus.FAILED, NodeStatus.SKIPPED) or (
+        status == NodeStatus.AWAITING_APPROVAL and log.started_at is not None
+    )
+    if finished and log.completed_at is None:
         log.completed_at = now
         if log.started_at is not None:
             started = log.started_at if log.started_at.tzinfo else log.started_at.replace(tzinfo=UTC)

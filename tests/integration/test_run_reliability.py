@@ -20,7 +20,7 @@ from sqlalchemy import event, select
 from sqlalchemy.orm import sessionmaker
 
 from contracts.errors import AgentError, NonRetryableAgentError
-from contracts.run import MAX_RETRIES, ApprovalDecision, NodeStatus, RunStatus, WorkflowGraph
+from contracts.run import MAX_RETRIES, ApprovalDecision, NodeStatus, RunStatus
 from db.models import AgentOutput, Approval, ExecutionLog, ExecutionRun
 from worker.orchestrator import Orchestrator
 from worker.store import INTERRUPTED_SEND
@@ -145,7 +145,7 @@ async def test_retries_run_out_then_the_step_fails_and_the_rest_are_skipped(
 ):
     search = Search(ports.search, _always(make_error))
     llm = LLM(ports.llm)
-    run_id = db.start_run(db.template(EMAIL).id)
+    run_id = db.start_run(db.unreviewed(EMAIL))
 
     status = await _orchestrator(store, registry, ports, sleeps, search=search, llm=llm).execute(run_id)
 
@@ -207,7 +207,7 @@ def _malformed(_: int) -> object:
 )
 async def test_a_non_retryable_error_fails_the_step_at_once(db, store, registry, ports, sleeps, behaviour, fragment):
     search = Search(ports.search, behaviour)
-    run_id = db.start_run(db.template(EMAIL).id)
+    run_id = db.start_run(db.unreviewed(EMAIL))
 
     status = await _orchestrator(store, registry, ports, sleeps, search=search).execute(run_id)
 
@@ -230,7 +230,7 @@ async def test_a_non_retryable_error_fails_the_step_at_once(db, store, registry,
 
 async def test_missing_input_fails_the_step_before_it_runs(db, store, registry, ports, sleeps):
     """A ValidationError on the step's input: nothing is called, nothing is retried."""
-    template = WorkflowGraph.model_validate(db.template(BLOG).graph_definition)
+    template = db.unreviewed_graph(BLOG)
     nodes = [
         n.model_copy(update={"configuration": {k: v for k, v in n.configuration.items() if k != "topic"}})
         if n.agent_type == "researcher"
@@ -260,7 +260,7 @@ async def test_missing_input_fails_the_step_before_it_runs(db, store, registry, 
 
 async def test_cancel_mid_run_stops_at_the_next_step_and_keeps_what_was_made(db, store, registry, ports, sleeps):
     """Cancelled while the writer runs: the writer finishes, the email step never starts."""
-    run_id = db.start_run(db.template(EMAIL).id)
+    run_id = db.start_run(db.unreviewed(EMAIL))
     llm = LLM(ports.llm, before=lambda call: db.cancel_run(run_id) if call == 1 else None)
 
     status = await _orchestrator(store, registry, ports, sleeps, llm=llm).execute(run_id)
@@ -287,7 +287,7 @@ async def test_cancel_mid_run_stops_at_the_next_step_and_keeps_what_was_made(db,
 
 
 async def test_cancel_while_awaiting_approval(db, store, registry, ports, sleeps):
-    run_id = db.start_run(db.template(EMAIL).id)
+    run_id = db.start_run(db.unreviewed(EMAIL))
     orchestrator = _orchestrator(store, registry, ports, sleeps)
     assert await orchestrator.execute(run_id) == RunStatus.AWAITING_APPROVAL
 
@@ -312,7 +312,7 @@ async def test_cancel_while_awaiting_approval(db, store, registry, ports, sleeps
 
 async def test_cancel_during_the_last_step_leaves_the_run_cancelled(db, store, registry, ports, sleeps):
     """The loop ends right after the cancel lands; `succeeded` must not replace it."""
-    run_id = db.start_run(db.template(BLOG).id)
+    run_id = db.start_run(db.unreviewed(BLOG))
     llm = LLM(ports.llm, before=lambda call: db.cancel_run(run_id) if call == 1 else None)
 
     assert await _orchestrator(store, registry, ports, sleeps, llm=llm).execute(run_id) == RunStatus.CANCELLED
@@ -327,7 +327,7 @@ async def test_cancel_during_the_last_step_leaves_the_run_cancelled(db, store, r
 
 
 async def test_cancel_during_a_retry_backoff_stops_retrying(db, store, registry, ports):
-    run_id = db.start_run(db.template(EMAIL).id)
+    run_id = db.start_run(db.unreviewed(EMAIL))
     search = Search(ports.search, _always(lambda: AgentError("Couldn't reach the search service.")))
     sleeps: list[float] = []
 
@@ -356,7 +356,7 @@ async def test_cancel_during_a_retry_backoff_stops_retrying(db, store, registry,
 
 
 async def test_a_cancel_during_an_attempt_that_fails_starts_no_wait(db, store, registry, ports, sleeps):
-    run_id = db.start_run(db.template(BLOG).id)
+    run_id = db.start_run(db.unreviewed(BLOG))
 
     def cancel_then_fail(_: int) -> object:
         db.cancel_run(run_id)
@@ -373,7 +373,7 @@ async def test_a_cancel_during_an_attempt_that_fails_starts_no_wait(db, store, r
 
 
 async def test_a_cancelled_run_records_when_it_ended(db, store, registry, ports, sleeps):
-    run_id = db.start_run(db.template(EMAIL).id)
+    run_id = db.start_run(db.unreviewed(EMAIL))
     llm = LLM(ports.llm, before=lambda call: db.cancel_run(run_id) if call == 1 else None)
 
     assert await _orchestrator(store, registry, ports, sleeps, llm=llm).execute(run_id) == RunStatus.CANCELLED
@@ -389,7 +389,7 @@ async def test_a_run_cancelled_while_its_worker_was_lost_is_closed_on_redelivery
         if call == 1:
             raise WorkerKilled
 
-    run_id = db.start_run(db.template(BLOG).id)
+    run_id = db.start_run(db.unreviewed(BLOG))
     with pytest.raises(WorkerKilled):
         await _orchestrator(store, registry, ports, sleeps, llm=LLM(ports.llm, before=die_on_first_call)).execute(
             run_id
@@ -423,7 +423,7 @@ async def test_a_redelivered_run_resumes_at_the_interrupted_step(db, store, regi
 
     search = Search(ports.search)
     llm = LLM(ports.llm, before=die_on_first_call)
-    run_id = db.start_run(db.template(BLOG).id)
+    run_id = db.start_run(db.unreviewed(BLOG))
 
     with pytest.raises(WorkerKilled):
         await _orchestrator(store, registry, ports, sleeps, search=search, llm=llm).execute(run_id)
@@ -464,7 +464,7 @@ async def test_a_send_a_lost_worker_was_making_is_not_made_again(db, store, regi
             raise WorkerKilled
 
     email_port = Email(ports.email, before=die_while_sending)
-    run_id = db.start_run(db.template(EMAIL).id)
+    run_id = db.start_run(db.unreviewed(EMAIL))
     orchestrator = _orchestrator(store, registry, ports, sleeps, email=email_port)
     assert await orchestrator.execute(run_id) == RunStatus.AWAITING_APPROVAL
     _approve(db, run_id, _logs(db, run_id)[2].node_id)
@@ -496,7 +496,7 @@ async def test_a_send_waiting_to_retry_when_the_worker_died_is_retried(db, store
             raise AgentError("Couldn't reach the mail server.")
 
     email_port = Email(ports.email, before=refuse_first)
-    run_id = db.start_run(db.template(EMAIL).id)
+    run_id = db.start_run(db.unreviewed(EMAIL))
 
     async def die(seconds: float) -> None:
         raise WorkerKilled
@@ -527,7 +527,7 @@ async def test_a_send_waiting_to_retry_when_the_worker_died_is_retried(db, store
 async def test_a_redelivered_run_keeps_the_retry_budget_it_had_used(db, store, registry, ports):
     """The worker dies during a backoff; the new worker carries on from retry 1, never past retry 3."""
     search = Search(ports.search, _always(lambda: AgentError("Couldn't reach the search service.")))
-    run_id = db.start_run(db.template(BLOG).id)
+    run_id = db.start_run(db.unreviewed(BLOG))
 
     async def die(seconds: float) -> None:
         raise WorkerKilled
@@ -578,7 +578,7 @@ async def test_a_worker_lost_while_a_step_is_saved_never_leaves_an_output_withou
     """The output and the step's `success` are one transaction, so a lost worker leaves both or neither.
     With two commits, a worker lost right after the first left the step `running` with its output saved,
     and the redelivery ran it again and saved a second copy."""
-    run_id = db.start_run(db.template(BLOG).id)
+    run_id = db.start_run(db.unreviewed(BLOG))
     _, write = _logs(db, run_id)
     sessions = sessionmaker(**session_factory.kw)  # same database, its own hooks
 

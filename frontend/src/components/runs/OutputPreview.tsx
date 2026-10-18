@@ -43,8 +43,10 @@ export function OutputLoading() {
   );
 }
 
-/** One output, rendered as what it actually is. Shared with the drawer's "Last output" tab. */
-export function OutputBody({ output }: { output: RunOutput }) {
+/** One output, rendered as what it actually is. Shared with the drawer's "Last output" tab and the
+ *  step review, where it is `roomy`: the article or the video is the thing being decided on. */
+export function OutputBody({ output, roomy = false }: { output: RunOutput; roomy?: boolean }) {
+  const tall = roomy ? "max-h-[60vh]" : "max-h-72";
   // What a run produced never changes, so this is fetched once. Without it every tab switch
   // remounts this component and refetches — re-minting a download URL to show the same file.
   const link = useQuery({
@@ -71,7 +73,7 @@ export function OutputBody({ output }: { output: RunOutput }) {
         <p className="flex items-center gap-1.5 text-caption text-text-muted">
           <Sparkles size={12} aria-hidden /> Generated
         </p>
-        <p className="max-h-72 max-w-[68ch] overflow-y-auto whitespace-pre-wrap text-body-md text-text">{text}</p>
+        <p className={`${tall} max-w-[68ch] overflow-y-auto whitespace-pre-wrap text-body-md text-text`}>{text}</p>
       </div>
     );
   }
@@ -80,14 +82,14 @@ export function OutputBody({ output }: { output: RunOutput }) {
 
   if (isVideo(output)) {
     return (
-      <video controls src={url} className="max-h-72 w-full rounded-sm bg-bg-sunken" aria-label={output.filename ?? "Video"}>
+      <video controls src={url} className={`${tall} w-full rounded-sm bg-bg-sunken`} aria-label={output.filename ?? "Video"}>
         <a href={url}>Download the video</a>
       </video>
     );
   }
 
   if (isImage(output)) {
-    return <img src={url} alt={output.filename ?? "Image"} className="max-h-72 rounded-sm object-contain" />;
+    return <img src={url} alt={output.filename ?? "Image"} className={`${tall} rounded-sm object-contain`} />;
   }
 
   // Anything else — a PDF, a document, a published link — is offered rather than rendered.

@@ -52,6 +52,8 @@ UUID_PATTERN = r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0
 class ApprovalDecision(StrEnum):
     APPROVE = "approve"
     REJECT = "reject"
+    # Only for a step reviewed after it runs: run it again, with the person's note on what to change.
+    REDO = "redo"
 
 
 class OutputType(StrEnum):
@@ -101,6 +103,10 @@ class ApprovalInfo(BaseModel):
     decided_by_email: str | None = None
     decided_at: datetime
     note: str | None = None
+    # Which result was decided: 0 for the step's first, 1 after one redo, and so on.
+    revision: int = Field(0, ge=0)
+    # The person changed the result's text before approving it.
+    edited: bool = False
 
 
 class NodeState(BaseModel):
@@ -112,7 +118,9 @@ class NodeState(BaseModel):
     completed_at: datetime | None = None
     duration_ms: int | None = None
     error_message: str | None = None
-    # Present only for a node that has been approved or rejected (UC-04); null otherwise.
+    # How many times a person has asked for this step's result to be redone.
+    revision: int = Field(0, ge=0)
+    # The latest decision on this node (UC-04); null until one is made.
     approval: ApprovalInfo | None = None
 
 

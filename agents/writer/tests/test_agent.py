@@ -52,9 +52,13 @@ async def test_the_writer_asks_for_its_output_schema(ports):
         assert set(schema["properties"]) == {"title", "summary", "article_md"}
         assert schema["required"] == ["title", "summary", "article_md"]
         assert schema["additionalProperties"] is False
+        # As WriteOutput defines them, less the platform's own hints (x-editable), which mean nothing to a model.
         assert {k: schema["properties"][k] for k in schema["properties"]} == {
-            k: v for k, v in WriteOutput.model_json_schema()["properties"].items() if k in schema["properties"]
+            k: {key: value for key, value in v.items() if not key.startswith("x-")}
+            for k, v in WriteOutput.model_json_schema()["properties"].items()
+            if k in schema["properties"]
         }
+        assert "x-editable" not in json.dumps(schema)
         assert call["json_mode"] is True
 
 
@@ -307,3 +311,47 @@ async def test_a_file_path_in_the_models_answer_is_never_taken(ports):
         await agent.execute(agent.input_model.model_validate(FIXTURE), replace(ports, llm=llm))
     assert failed.value.code == "invalid_model_output"  # an unknown key, after the one reformat call
     assert "pdf_path" in failed.value.message
+
+
+# ---------------------------------------------------------------- reviewed: redone with a note, or edited
+async def test_a_redo_tells_the_model_the_note_and_the_version_sent_back(ports):
+    from dataclasses import replace
+
+    from contracts.agent import Revision
+
+    llm = FakeLLM(response=ARTICLE)
+    agent = WriterAgent()
+    sent_back = {"title": "Solar", "summary": "Old.", "article_md": "# Solar\n\nOld text.", "pdf_path": "x/y.pdf"}
+
+    out = await agent.revise(
+        agent.input_model.model_validate(FIXTURE),
+        replace(ports, llm=llm),
+        Revision(note="Explain what it costs.", previous=sent_back),
+    )
+
+    assert out.title == "Solar energy in Saudi Arabia"
+    (prompt,) = llm.prompts  # and no fuller rewrite after it: the reviewer may have asked for less
+    assert "sent it back with this note:\nExplain what it costs." in prompt
+    assert '"article_md": "# Solar\\n\\nOld text."' in prompt
+    assert "x/y.pdf" not in prompt  # the files are the Writer's, never part of what the model is shown
+    assert "Research notes:\n- Solar capacity is growing." in prompt  # still writing from the same notes
+
+
+async def test_an_edited_article_gets_its_word_document_made_again_from_the_edit(ports):
+    from dataclasses import replace
+
+    from docx import Document
+
+    agent = WriterAgent()
+    first = await agent.execute(
+        agent.input_model.model_validate({**FIXTURE, "save_docx": True}), replace(ports, llm=FakeLLM(response=ARTICLE))
+    )
+    edited = first.model_copy(update={"title": "My title", "article_md": "# My title\n\nMy own words."})
+
+    kept = await agent.accept_edit(edited, ports)
+
+    assert kept.article_md == "# My title\n\nMy own words."
+    assert kept.docx_path != first.docx_path and kept.docx_path.endswith("/my-title.docx")
+    assert kept.pdf_path is None  # wasn't made before, isn't now
+    text = [p.text for p in Document(io.BytesIO(await ports.storage.get(kept.docx_path))).paragraphs]
+    assert "My own words." in text

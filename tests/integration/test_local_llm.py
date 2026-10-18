@@ -100,7 +100,7 @@ def _writer_log(db, run_id) -> ExecutionLog:
 
 
 async def test_the_blog_template_writes_its_article_with_a_local_model(db, store, registry, ports, lm_studio):
-    run_id = db.start_run(db.template("Blog post").id)
+    run_id = db.start_run(db.unreviewed("Blog post"))
     ports = dataclasses.replace(ports, llm=_local_llm(lm_studio.server_address[1]))
 
     assert await Orchestrator(store, registry, ports).execute(run_id) == RunStatus.SUCCEEDED
@@ -125,7 +125,7 @@ async def test_the_blog_template_writes_its_article_with_a_local_model(db, store
 
 
 async def test_with_lm_studio_stopped_the_writer_retries_then_says_what_to_do(db, store, registry, ports, sleeps):
-    run_id = db.start_run(db.template("Blog post").id)
+    run_id = db.start_run(db.unreviewed("Blog post"))
     ports = dataclasses.replace(ports, llm=_local_llm(_closed_port()))
 
     assert await Orchestrator(store, registry, ports, sleep=sleeps).execute(run_id) == RunStatus.FAILED
@@ -138,7 +138,7 @@ async def test_with_lm_studio_stopped_the_writer_retries_then_says_what_to_do(db
 
 async def test_with_no_model_loaded_the_writer_fails_at_once(db, store, registry, ports, sleeps, lm_studio):
     lm_studio.mode = "no-model"
-    run_id = db.start_run(db.template("Blog post").id)
+    run_id = db.start_run(db.unreviewed("Blog post"))
     ports = dataclasses.replace(ports, llm=_local_llm(lm_studio.server_address[1]))
 
     assert await Orchestrator(store, registry, ports, sleep=sleeps).execute(run_id) == RunStatus.FAILED

@@ -5,8 +5,9 @@ from __future__ import annotations
 from typing import Any
 from uuid import UUID
 
+from contracts.agent import Revision
 from contracts.run import TERMINAL_RUN_STATUSES, ApprovalDecision, NodeStatus, RunStatus, WorkflowGraph
-from worker.store import RunSnapshot
+from worker.store import Decision, RunSnapshot
 
 
 class InMemoryRunStore:
@@ -15,7 +16,10 @@ class InMemoryRunStore:
         self.graphs: dict[UUID, WorkflowGraph] = {}
         self.nodes: dict[tuple[UUID, UUID], dict[str, Any]] = {}
         self.outputs: dict[tuple[UUID, UUID], dict[str, Any]] = {}
-        self.approvals: dict[tuple[UUID, UUID], ApprovalDecision] = {}
+        # The decision on what a step waits with now: a plain ApprovalDecision, or a Decision with a note.
+        self.approvals: dict[tuple[UUID, UUID], ApprovalDecision | Decision] = {}
+        # Decisions on a step's earlier results, oldest first (each redo moves one here).
+        self.decided: dict[tuple[UUID, UUID], list[Decision]] = {}
         self.history: list[tuple[str, NodeStatus | RunStatus]] = []
         self.users: dict[UUID, UUID] = {}
 
@@ -25,7 +29,12 @@ class InMemoryRunStore:
             self.users[run_id] = user_id
         self.graphs[run_id] = graph
         for node in graph.nodes:
-            self.nodes[(run_id, node.id)] = {"status": NodeStatus.PENDING, "retry_count": 0, "errors": []}
+            self.nodes[(run_id, node.id)] = {
+                "status": NodeStatus.PENDING,
+                "retry_count": 0,
+                "errors": [],
+                "revision": 0,
+            }
 
     def load(self, run_id: UUID) -> RunSnapshot:
         snap = RunSnapshot(
@@ -57,12 +66,40 @@ class InMemoryRunStore:
             row["errors"].append(error)
         self.history.append((str(node_id), status))
 
-    def complete_node(self, run_id: UUID, node_id: UUID, output: dict[str, Any], *, retry_count: int) -> None:
+    def complete_node(
+        self,
+        run_id: UUID,
+        node_id: UUID,
+        output: dict[str, Any],
+        *,
+        retry_count: int,
+        status: NodeStatus = NodeStatus.SUCCESS,
+    ) -> None:
         self.outputs[(run_id, node_id)] = output
-        self.set_node_status(run_id, node_id, NodeStatus.SUCCESS, retry_count=retry_count)
+        self.set_node_status(run_id, node_id, status, retry_count=retry_count)
 
-    def approval(self, run_id: UUID, node_id: UUID) -> ApprovalDecision | None:
-        return self.approvals.get((run_id, node_id))
+    def approval(self, run_id: UUID, node_id: UUID) -> Decision | None:
+        decision = self.approvals.get((run_id, node_id))
+        return Decision(decision) if isinstance(decision, ApprovalDecision) else decision
+
+    def accept_result(self, run_id: UUID, node_id: UUID, output: dict[str, Any] | None = None) -> None:
+        if output is not None:
+            self.outputs[(run_id, node_id)] = output
+        self.set_node_status(run_id, node_id, NodeStatus.SUCCESS)
+
+    def start_redo(self, run_id: UUID, node_id: UUID) -> None:
+        key = (run_id, node_id)
+        self.decided.setdefault(key, []).append(self.approval(run_id, node_id))
+        del self.approvals[key]
+        self.nodes[key]["revision"] += 1
+        self.nodes[key]["retry_count"] = 0
+        self.set_node_status(run_id, node_id, NodeStatus.PENDING)
+
+    def revision_request(self, run_id: UUID, node_id: UUID) -> Revision | None:
+        earlier = self.decided.get((run_id, node_id))
+        if not earlier or earlier[-1].decision != ApprovalDecision.REDO:
+            return None
+        return Revision(note=earlier[-1].note or "", previous=self.outputs.get((run_id, node_id), {}))
 
     def status_of(self, run_id: UUID, node_id: UUID) -> NodeStatus:
         return self.nodes[(run_id, node_id)]["status"]

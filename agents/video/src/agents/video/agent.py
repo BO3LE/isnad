@@ -15,7 +15,7 @@ import re
 import subprocess
 import uuid
 
-from contracts.agent import BaseAgent
+from contracts.agent import BaseAgent, Revision
 from contracts.agent_io import VideoConfig, VideoInput, VideoOutput
 from contracts.errors import AgentError, NonRetryableAgentError
 from contracts.ports import LLMPort, Ports, TTSPort
@@ -40,13 +40,21 @@ class VideoAgent(BaseAgent[VideoInput, VideoOutput]):
     config_model = VideoConfig
 
     async def execute(self, input_data: VideoInput, ports: Ports) -> VideoOutput:
+        return await self._make(input_data, ports)
+
+    async def revise(self, input_data: VideoInput, ports: Ports, revision: Revision) -> VideoOutput:
+        """The reviewer's note goes to the model that writes the slides' key points; the script, and
+        so what the voice reads, is the Writer's (send the Writer's result back to change that)."""
+        return await self._make(input_data, ports, note=revision.note)
+
+    async def _make(self, input_data: VideoInput, ports: Ports, *, note: str = "") -> VideoOutput:
         english = input_data.voice.lower().startswith("en")
         lesson = lesson_from_markdown(
             input_data.script, title=input_data.title, agenda_intro=AGENDA_INTRO if english else None
         )
         if not lesson.parts:
             raise NonRetryableAgentError("The script has no sentences to narrate.", code="empty_script")
-        lesson = await with_model_points(lesson, ports.llm)
+        lesson = await with_model_points(lesson, ports.llm, note=note)
         narration = await speak_all(lesson.narration(), ports.tts, input_data.voice)
         try:
             rendered = await asyncio.to_thread(assemble_lesson, lesson, narration, resolution=input_data.resolution)
@@ -75,7 +83,7 @@ async def speak_all(lines: list[str], tts: TTSPort, voice: str) -> list[bytes]:
     return list(await asyncio.gather(*(speak(line) for line in lines)))
 
 
-def points_prompt(lesson: Lesson) -> str:
+def points_prompt(lesson: Lesson, note: str = "") -> str:
     numbered, n = [], 0
     for index, part in enumerate(lesson.parts, start=1):
         numbered.append(f"Part {index} — {part.heading}")
@@ -83,12 +91,13 @@ def points_prompt(lesson: Lesson) -> str:
             n += 1
             numbered.append(f"{n}. {line.text}")
     body = "\n".join(numbered)
+    asked = f"The reviewer of an earlier version of these notes asked: {note}\n\n" if note else ""
     return (
         f"Lesson: {lesson.title}\n\n"
         "Below is the narration, one numbered line per sentence, grouped by part. For each line write the key "
         "point a student would copy into their notes about that line: at most 8 words, plain words, no full stop "
         "at the end. Give every line a point unless it only repeats an earlier one.\n\n"
-        f"{body}\n\n"
+        f"{asked}{body}\n\n"
         f'Answer as {{"points": [{{"line": 1, "point": "..."}}, ...]}}, lines 1 to {n} in order.'
     )
 
@@ -116,12 +125,14 @@ def points_schema(count: int) -> dict:
     }
 
 
-async def with_model_points(lesson: Lesson, llm: LLMPort) -> Lesson:
+async def with_model_points(lesson: Lesson, llm: LLMPort, *, note: str = "") -> Lesson:
     """The lesson with the model's key points, or unchanged (the plain rule's points) when the model
-    can't be reached or its answer doesn't fit."""
+    can't be reached or its answer doesn't fit. `note`: what a reviewer asked of the last version."""
     lines = lesson.lines()
     try:
-        answer = await llm.complete(points_prompt(lesson), system=POINTS_SYSTEM, json_schema=points_schema(len(lines)))
+        answer = await llm.complete(
+            points_prompt(lesson, note), system=POINTS_SYSTEM, json_schema=points_schema(len(lines))
+        )
         points = _parse_points(answer, len(lines))
     except (AgentError, ValueError, TypeError, KeyError) as exc:
         log.warning("video key points: using the plain rule (%s)", type(exc).__name__)

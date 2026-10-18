@@ -98,6 +98,16 @@ export function approvalIsLocked(agentType: string, catalog: AgentManifest[]): b
   return catalog.find((a) => a.name === agentType)?.requires_approval === true;
 }
 
+/**
+ * When a step waits for a person (AgentManifest.approval_moment): "before" it acts, for one that sends
+ * content out — the person approves what is about to go — or "after" it runs, for any other, with
+ * its result to check, edit or send back. Unknown while the catalog hasn't loaded.
+ */
+export function approvalMoment(manifest: AgentManifest | undefined): "before" | "after" | undefined {
+  if (!manifest) return undefined;
+  return manifest.requires_approval || manifest.family === "distribute" ? "before" : "after";
+}
+
 /** The API's graph shape, rebuilt from what is on the canvas. */
 export function toWorkflowGraph(
   nodes: { id: string; position: { x: number; y: number }; data: { agentType: string; configuration: Record<string, unknown>; requiresApproval: boolean } }[],

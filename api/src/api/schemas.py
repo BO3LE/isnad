@@ -87,7 +87,29 @@ class RunCreated(BaseModel):
 
 class ApprovalRequest(BaseModel):
     decision: ApprovalDecision
+    # For a reject, why (required); for a redo, what to change.
     note: str | None = Field(None, max_length=2000)
+    # Approving a step's result: the person's own version of its editable fields (GET …/result),
+    # by name. A "text" field takes a string; a "lines" field a list of them.
+    edits: dict[str, str | list[str]] | None = None
+
+
+class EditableField(BaseModel):
+    """One part of a step's result a person may change before approving it."""
+
+    name: str
+    title: str = Field(description="What the agent calls it, e.g. 'article'")
+    kind: Literal["text", "lines"]
+    value: str | list[str]
+
+
+class StepResult(BaseModel):
+    """What a step that has run made, as its reviewer edits it — GET /runs/{run_id}/nodes/{node_id}/result."""
+
+    node_id: UUID
+    agent_type: str
+    revision: int = Field(description="0 for the step's first result, 1 after one redo, and so on")
+    editable: list[EditableField] = Field(description="Empty when nothing in it is text a person may change")
 
 
 class ApprovalRecord(ApprovalInfo):
