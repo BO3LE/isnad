@@ -4,8 +4,11 @@ from __future__ import annotations
 
 import json
 from abc import ABC, abstractmethod
+from collections.abc import Mapping
+from dataclasses import dataclass
+from dataclasses import field as dataclass_field
 from pathlib import Path
-from typing import ClassVar, Generic, TypeVar
+from typing import Any, ClassVar, Generic, TypeVar
 
 from pydantic import AliasChoices, BaseModel
 
@@ -14,6 +17,14 @@ from contracts.ports import Ports
 
 InT = TypeVar("InT", bound=BaseModel)
 OutT = TypeVar("OutT", bound=BaseModel)
+
+
+@dataclass(frozen=True)
+class Revision:
+    """A person sent the step's result back: what they want changed, and the result they saw."""
+
+    note: str
+    previous: Mapping[str, Any] = dataclass_field(default_factory=dict)
 
 
 class BaseAgent(ABC, Generic[InT, OutT]):
@@ -25,6 +36,16 @@ class BaseAgent(ABC, Generic[InT, OutT]):
     @abstractmethod
     async def execute(self, input_data: InT, ports: Ports) -> OutT:
         """Do exactly one job and return a validated result. No DB, no queue, no other agents."""
+
+    async def revise(self, input_data: InT, ports: Ports, revision: Revision) -> OutT:
+        """Do the job again because a person asked, with their note. By default the step simply runs
+        again; an agent that can act on the note (a model writes its result) overrides this."""
+        return await self.execute(input_data, ports)
+
+    async def accept_edit(self, output: OutT, ports: Ports) -> OutT:
+        """A person edited the result's text and approved it. An agent that also saved that text in
+        another form (the Writer's PDF) makes it match here; by default the edit is the result."""
+        return output
 
     @classmethod
     def catalog_entry(cls) -> AgentManifest:
@@ -71,8 +92,12 @@ def describe_inputs(input_model: type[BaseModel], config_model: type[BaseModel])
 
 
 def describe_outputs(output_model: type[BaseModel]) -> list[AgentOutput]:
-    """What an agent hands on. A field's `title` is its human name; otherwise the name is tidied up."""
-    return [
-        AgentOutput(name=name, title=field.title or name.replace("_", " "))
-        for name, field in output_model.model_fields.items()
-    ]
+    """What an agent hands on. A field's `title` is its human name; otherwise the name is tidied up.
+    `x-editable` on a field ("text" or "lines") lets a person change it while reviewing the result."""
+    outputs = []
+    for name, info in output_model.model_fields.items():
+        extra = info.json_schema_extra if isinstance(info.json_schema_extra, dict) else {}
+        outputs.append(
+            AgentOutput(name=name, title=info.title or name.replace("_", " "), editable=extra.get("x-editable"))
+        )
+    return outputs

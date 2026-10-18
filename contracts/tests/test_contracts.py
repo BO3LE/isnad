@@ -8,12 +8,17 @@ from contracts.agent import describe_inputs, describe_outputs
 from contracts.agent_io import (
     EmailConfig,
     EmailInput,
+    EmailOutput,
     ImageConfig,
     ImageInput,
+    ImageOutput,
     PublishConfig,
     PublishInput,
+    PublishOutput,
+    ResearchOutput,
     VideoConfig,
     VideoInput,
+    VideoOutput,
     WriteConfig,
     WriteInput,
     WriteOutput,
@@ -85,14 +90,23 @@ def test_inputs_say_where_each_value_can_come_from():
     assert writer["notes"].required and not writer["notes"].settable
 
 
-def test_outputs_carry_human_names():
-    assert [(o.name, o.title) for o in describe_outputs(WriteOutput)] == [
-        ("title", "title"),
-        ("summary", "summary"),
-        ("article_md", "article"),
-        ("pdf_path", "PDF"),
-        ("docx_path", "Word document"),
+def test_outputs_carry_human_names_and_which_a_reviewer_may_edit():
+    assert [(o.name, o.title, o.editable) for o in describe_outputs(WriteOutput)] == [
+        ("title", "title", "text"),
+        ("summary", "summary", "text"),
+        ("article_md", "article", "text"),
+        ("pdf_path", "PDF", None),
+        ("docx_path", "Word document", None),
     ]
+    assert [(o.name, o.editable) for o in describe_outputs(ResearchOutput)] == [("notes", "lines"), ("sources", None)]
+
+
+def test_no_file_or_link_is_ever_editable():
+    """An edited path could name another person's file (the API refuses one whatever a manifest says)."""
+    for model in (ResearchOutput, WriteOutput, ImageOutput, VideoOutput, PublishOutput, EmailOutput):
+        for output in describe_outputs(model):
+            if output.name.endswith(("_path", "_paths")) or output.name == "remote_url":
+                assert output.editable is None, (model.__name__, output.name)
 
 
 def test_config_schemas_carry_what_the_form_shows():
@@ -149,6 +163,30 @@ def test_who_decides_that_a_step_waits_for_a_person(family, manifest_says, user_
         requires_approval=manifest_says,
     )
     assert manifest.needs_approval(user_asks) is waits
+
+
+@pytest.mark.parametrize(
+    ("family", "manifest_says", "user_asks", "moment"),
+    [
+        ("distribute", False, False, "before"),  # what it is about to send is approved before it acts
+        ("distribute", False, True, "before"),  # asking to review its result can't let it send first
+        ("create", True, False, "before"),
+        ("create", False, True, "after"),  # the user reviews what it made
+        ("create", False, False, None),
+    ],
+)
+def test_a_step_that_sends_waits_before_it_acts_and_a_reviewed_one_after(family, manifest_says, user_asks, moment):
+    manifest = AgentManifest(
+        name="x",
+        version="1.0.0",
+        title="X",
+        description="d",
+        family=family,
+        input_type="A",
+        output_type="B",
+        requires_approval=manifest_says,
+    )
+    assert manifest.approval_moment(user_asks) == moment
 
 
 def test_ancestors():

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from enum import StrEnum
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -28,6 +28,9 @@ class AgentInput(BaseModel):
     )
 
 
+ApprovalMoment = Literal["before", "after"]
+
+
 class AgentOutput(BaseModel):
     """One thing an agent hands on to the steps after it."""
 
@@ -35,6 +38,11 @@ class AgentOutput(BaseModel):
 
     name: str
     title: str = Field(description="What a person calls it, e.g. 'article'")
+    editable: Literal["text", "lines"] | None = Field(
+        None,
+        description="A person may change it while reviewing the step's result: one text, or a list of lines. "
+        "Files and links never are.",
+    )
 
 
 class AgentManifest(BaseModel):
@@ -68,4 +76,16 @@ class AgentManifest(BaseModel):
         client writes, so the promise can't rest on it. Any other agent waits when its
         manifest or the user (`requested`) asks it to.
         """
-        return requested or self.requires_approval or self.family == AgentFamily.DISTRIBUTE
+        return self.approval_moment(requested) is not None
+
+    def approval_moment(self, requested: bool = False) -> ApprovalMoment | None:
+        """When a step running this agent waits for a person.
+
+        "before": it sends content out (or its manifest says it must wait), so a person approves
+        what is about to go out before it acts. "after": the person asked to review it, so it runs,
+        then waits with its result, which the person approves, edits or sends back with a note.
+        None: it runs straight through.
+        """
+        if self.requires_approval or self.family == AgentFamily.DISTRIBUTE:
+            return "before"
+        return "after" if requested else None
