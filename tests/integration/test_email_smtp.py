@@ -55,7 +55,7 @@ def _approve(db, run_id: uuid.UUID, node_id: uuid.UUID) -> None:
 
 
 async def test_the_email_is_sent_only_after_approval_and_carries_the_article(db, store, registry, ports, mail):
-    run_id = db.start_run(db.template(EMAIL).id)
+    run_id = db.start_run(db.unreviewed(EMAIL))
     orchestrator = Orchestrator(store, registry, _smtp_ports(ports, mail))
 
     assert await orchestrator.execute(run_id) == RunStatus.AWAITING_APPROVAL
@@ -78,7 +78,7 @@ async def test_the_email_is_sent_only_after_approval_and_carries_the_article(db,
 
 async def test_a_send_whose_answer_was_lost_fails_once_and_is_never_repeated(db, store, registry, ports, mail, sleeps):
     mail.mode = "drop"
-    run_id = db.start_run(db.template(EMAIL).id)
+    run_id = db.start_run(db.unreviewed(EMAIL))
     orchestrator = Orchestrator(store, registry, _smtp_ports(ports, mail), sleep=sleeps)
     assert await orchestrator.execute(run_id) == RunStatus.AWAITING_APPROVAL
     email = _logs(db, run_id)[-1]
@@ -94,7 +94,7 @@ async def test_a_send_whose_answer_was_lost_fails_once_and_is_never_repeated(db,
 
 async def test_a_busy_server_is_retried_since_nothing_was_sent(db, store, registry, ports, mail, sleeps):
     mail.mode = "busy"
-    run_id = db.start_run(db.template(EMAIL).id)
+    run_id = db.start_run(db.unreviewed(EMAIL))
     smtp_ports = _smtp_ports(ports, mail)
     assert await Orchestrator(store, registry, smtp_ports, sleep=sleeps).execute(run_id) == RunStatus.AWAITING_APPROVAL
     email = _logs(db, run_id)[-1]

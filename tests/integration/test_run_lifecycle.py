@@ -89,7 +89,7 @@ def _assert_finished_in_order(db, run_id: uuid.UUID, store) -> list[ExecutionLog
 
 
 async def test_blog_template_runs_queued_to_succeeded(db, store, registry, ports, storage_root):
-    run_id = db.start_run(db.template(BLOG).id)
+    run_id = db.start_run(db.unreviewed(BLOG))
     assert _run(db, run_id).status == RunStatus.QUEUED
     assert {log.status for log in _logs(db, run_id)} == {NodeStatus.PENDING}
 
@@ -118,7 +118,7 @@ async def test_blog_template_runs_queued_to_succeeded(db, store, registry, ports
 @pytest.mark.usefixtures("ffmpeg")
 async def test_video_template_records_the_rendered_file(db, store, registry, ports, storage_root):
     """Blog → Video → YouTube: the video is a real MP4 on disk and an `agent_outputs` file row."""
-    run_id = db.start_run(db.template(VIDEO).id)
+    run_id = db.start_run(db.unreviewed(VIDEO))
     orchestrator = Orchestrator(store, registry, ports)
 
     assert await orchestrator.execute(run_id) == RunStatus.AWAITING_APPROVAL
@@ -143,7 +143,7 @@ async def test_video_template_records_the_rendered_file(db, store, registry, por
 
 
 async def test_email_template_parks_for_approval_then_resumes(db, store, registry, ports):
-    run_id = db.start_run(db.template(EMAIL).id)
+    run_id = db.start_run(db.unreviewed(EMAIL))
     orchestrator = Orchestrator(store, registry, ports)
 
     assert await orchestrator.execute(run_id) == RunStatus.AWAITING_APPROVAL
@@ -186,7 +186,7 @@ async def test_email_template_parks_for_approval_then_resumes(db, store, registr
 
 async def test_a_rejection_halts_the_run_and_skips_what_follows(db, store, registry, ports):
     """The email template with the writer's result reviewed too, so the rejected step has a step after it."""
-    template = WorkflowGraph.model_validate(db.template(EMAIL).graph_definition)
+    template = db.unreviewed_graph(EMAIL)
     nodes = [
         n.model_copy(update={"requires_approval": True}) if n.agent_type == "writer" else n for n in template.nodes
     ]
@@ -236,7 +236,7 @@ class FlakySearch:
 
 async def test_a_transient_failure_is_retried_and_recorded(db, store, registry, ports, sleeps):
     flaky = FlakySearch(ports.search)
-    run_id = db.start_run(db.template(BLOG).id)
+    run_id = db.start_run(db.unreviewed(BLOG))
 
     status = await Orchestrator(
         store, registry, dataclasses.replace(ports, search=flaky), sleep=sleeps, jitter=lambda: 0.0

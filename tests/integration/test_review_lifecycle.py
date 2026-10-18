@@ -130,3 +130,17 @@ async def test_each_result_is_reviewed_redone_with_a_note_edited_and_approved(db
         ("researcher", 1, "approve", True),
         ("writer", 0, "approve", True),
     ]
+
+
+async def test_every_template_step_waits_for_a_person_by_default(db, store, registry, ports):
+    """Blog post as seeded: the research waits with its result, then the article does, then it's done."""
+    run_id = db.start_run(db.template("Blog post").id)
+    orchestrator = Orchestrator(store, registry, ports)
+    graph = WorkflowGraph.model_validate(db.template("Blog post").graph_definition)
+
+    for node in graph.nodes:
+        assert await orchestrator.execute(run_id) == RunStatus.AWAITING_APPROVAL
+        assert _log(db, run_id, node.id).status == NodeStatus.AWAITING_APPROVAL
+        _decide(db, run_id, node.id, ApprovalDecision.APPROVE)
+
+    assert await orchestrator.execute(run_id) == RunStatus.SUCCEEDED
