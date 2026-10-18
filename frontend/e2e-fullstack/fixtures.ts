@@ -43,29 +43,37 @@ export async function openTemplate(page: Page, templateName: string): Promise<vo
   await expect(page.getByRole("button", { name: "Run", exact: true })).toBeVisible({ timeout: 20_000 });
 }
 
-/** Presses Run and watches the canvas RunBar to a terminal state, approving the run's one gate
- *  through the real ApprovalDialog when the template has one. */
-export async function runToCompletion(page: Page, { approve }: { approve: boolean }) {
+/** Presses Run and watches the canvas RunBar to a terminal state, approving every step that waits
+ *  for a person on the way: each result to review (every template step, by default) and what a step
+ *  is about to send — through the real dialogs, as a person would. */
+export async function runToCompletion(page: Page) {
   await page.getByRole("button", { name: "Run", exact: true }).click();
 
   const runBar = page.getByRole("region", { name: "Run progress" });
   await expect(runBar).toBeVisible({ timeout: 20_000 });
 
-  if (approve) {
-    // Generous: research + write run for real before the gate opens.
-    await expect(page.getByRole("button", { name: "Review" })).toBeVisible({ timeout: 90_000 });
-    await page.getByRole("button", { name: "Review" }).click();
-
-    const dialog = page.getByRole("dialog", { name: "Review before it goes out" });
+  // The RunBar only swaps "Cancel run" for "Back to editing" once the run has reached a terminal
+  // status (RunBar.tsx `finished`).
+  const finished = page.getByRole("button", { name: "Back to editing" });
+  const review = runBar.getByRole("button", { name: "Review" });
+  const status = runBar.locator("p[aria-live]");
+  for (let gates = 0; gates < 10; gates += 1) {
+    // Generous: the steps run for real, and video rendering is the slow one even in fake mode.
+    await expect(review.or(finished)).toBeVisible({ timeout: 120_000 });
+    if (await finished.isVisible()) break;
+    const waiting = await status.textContent();
+    await review.click();
+    // "Review before it goes out" for a step that sends; "Review <step>'s result" for any other.
+    // Their approve buttons are worded for what happens next ("Approve and run Writer", "…send to YouTube").
+    const dialog = page.getByRole("dialog");
     await expect(dialog).toBeVisible();
-    // The label is dynamic ("Approve and send to youtube", "…to 1 recipient" — ApprovalDialog.approveLabel).
     await dialog.getByRole("button", { name: /^Approve/ }).click();
     await expect(dialog).toBeHidden({ timeout: 10_000 });
+    // Until the worker moves on, the bar still shows this step waiting: don't review it twice.
+    await expect(status).not.toHaveText(waiting ?? "", { timeout: 120_000 });
   }
 
-  // The RunBar only swaps "Cancel run" for "Back to editing" once the run has reached a terminal
-  // status (RunBar.tsx `finished`). Video rendering is the slow step even in fake mode.
-  await expect(page.getByRole("button", { name: "Back to editing" })).toBeVisible({ timeout: 120_000 });
+  await expect(finished).toBeVisible({ timeout: 120_000 });
   await expect(runBar.getByText("Succeeded")).toBeVisible();
 }
 

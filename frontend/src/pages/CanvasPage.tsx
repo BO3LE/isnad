@@ -25,6 +25,7 @@ import { AGENT_DRAG_TYPE, AgentPalette } from "@/components/canvas/AgentPalette"
 import { CanvasStatusBar } from "@/components/canvas/CanvasStatusBar";
 import { HandoverEdge, type HandoverEdgeData } from "@/components/canvas/HandoverEdge";
 import { ApprovalDialog } from "@/components/canvas/ApprovalDialog";
+import { ResultReview } from "@/components/runs/ResultReview";
 import { RunBar } from "@/components/canvas/RunBar";
 import { StepDrawer } from "@/components/canvas/StepDrawer";
 import { ValidationPanel } from "@/components/canvas/ValidationPanel";
@@ -32,6 +33,7 @@ import { useCanvasRun } from "@/components/canvas/useCanvasRun";
 import { useGraphHistory } from "@/components/canvas/useGraphHistory";
 import { agentTitle } from "@/design-system/agents/agentMeta";
 import { Button } from "@/design-system/components/Button";
+import { Dialog } from "@/design-system/components/Dialog";
 import { IconButton } from "@/design-system/components/IconButton";
 import { Spinner } from "@/design-system/components/Progress";
 import { Tooltip } from "@/design-system/components/Tooltip";
@@ -40,7 +42,16 @@ import { NotFoundState } from "@/pages/NotFoundPage";
 import { TERMINAL_RUN_STATUSES } from "@/design-system/status/statusMeta";
 import { ApiError, endpoints, type AgentManifest, type NodeStatus, type ValidationResult, type WorkflowOut } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
-import { GRID, graphsEqual, refuseConnection, snapPosition, snapToGrid, stepNumbers, toWorkflowGraph } from "@/lib/graph";
+import {
+  GRID,
+  approvalMoment,
+  graphsEqual,
+  refuseConnection,
+  snapPosition,
+  snapToGrid,
+  stepNumbers,
+  toWorkflowGraph,
+} from "@/lib/graph";
 import { chainTail, describeStep, handover, suggestNext, type StepHandover } from "@/lib/handover";
 import { missingSettings, summarise, type Configuration } from "@/lib/schema";
 import { validationFrom } from "@/lib/validation";
@@ -273,7 +284,6 @@ function CanvasPageInner() {
 
   const addNode = useCallback(
     (agentType: string, at?: { x: number; y: number }) => {
-      const manifest = agents.find((a) => a.name === agentType);
       const tail = at ? undefined : nodes.find((n) => n.id === tailId);
       let position: { x: number; y: number };
       if (at) {
@@ -305,8 +315,10 @@ function CanvasPageInner() {
           position,
           data: {
             agentType,
-            // D-08: Distribute agents always require approval, and the catalog is what says so.
-            requiresApproval: manifest?.requires_approval ?? false,
+            // Every new step waits for a person: one that sends content out before it acts (D-08 —
+            // always, and the catalog says which), any other after it runs, with its result to
+            // check, edit or redo. A step the user trusts is switched off in its settings.
+            requiresApproval: true,
             // Empty on purpose: a new step holds only what the user chooses (UX-SPEC §4.5).
             configuration: {},
           },
@@ -524,6 +536,10 @@ function CanvasPageInner() {
 
   const waitingNode = canvasRun.run?.nodes?.find((n) => n.status === "awaiting_approval" && canvasRun.shown[n.node_id] === "awaiting_approval");
   const waitingStep = waitingNode ? nodes.find((n) => n.id === waitingNode.node_id) : undefined;
+  const momentOf = (nodeId: string) => approvalMoment(agents.find((a) => a.name === typeOf(nodeId)));
+  // The step after the waiting one in this run, so the review says what runs once it is approved.
+  const runOrder = canvasRun.run?.nodes ?? [];
+  const nextAfterWaiting = waitingNode ? runOrder[runOrder.findIndex((n) => n.node_id === waitingNode.node_id) + 1] : undefined;
 
   const decide = useMutation({
     mutationFn: ({ decision, note }: { decision: "approve" | "reject"; note?: string }) =>
@@ -776,6 +792,7 @@ function CanvasPageInner() {
               cancelling={cancelRun.isPending}
               onReview={() => setReviewing(true)}
               onExit={canvasRun.exit}
+              momentOf={momentOf}
             />
           ) : (
           <CanvasStatusBar
@@ -804,7 +821,27 @@ function CanvasPageInner() {
           )}
         </div>
 
-        {waitingStep && (
+        {waitingStep && waitingNode && canvasRun.runId && momentOf(waitingStep.id) === "after" && (
+          <Dialog
+            open={reviewing}
+            onClose={() => setReviewing(false)}
+            size="content"
+            title={`Review ${agentTitle(waitingStep.data.agentType, agents)}'s result`}
+          >
+            <ResultReview
+              runId={canvasRun.runId}
+              step={waitingNode}
+              agents={agents}
+              nextTitle={nextAfterWaiting ? agentTitle(nextAfterWaiting.agent_type, agents) : null}
+              onDecided={() => {
+                setReviewing(false);
+                canvasRun.refresh();
+              }}
+            />
+          </Dialog>
+        )}
+
+        {waitingStep && momentOf(waitingStep.id) !== "after" && (
           <ApprovalDialog
             open={reviewing}
             runId={canvasRun.runId}

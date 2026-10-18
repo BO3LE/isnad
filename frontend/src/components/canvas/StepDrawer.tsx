@@ -213,8 +213,12 @@ export function StepDrawer({
       <footer className="grid shrink-0 gap-1 border-t border-border px-4 py-3">
         <div className="flex items-center gap-3">
           <Switch
-            label="Require approval"
-            description={locked ? "Always on — this step sends things outside the platform." : "Pause before this step until you approve."}
+            label={locked ? "Require approval" : "Review the result"}
+            description={
+              locked
+                ? "Always on — this step sends things outside the platform."
+                : "Pause after this step so you can check, edit or redo its result before the next step runs."
+            }
             checked={locked || data.requiresApproval}
             disabled={locked}
             onChange={(next) => {

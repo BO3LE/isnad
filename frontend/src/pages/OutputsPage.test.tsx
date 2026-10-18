@@ -129,7 +129,7 @@ describe("OutputsPage", () => {
     // The worker records a rejection as `failed`; §2 rule 7 says it never reads as one.
     show([], {}, run({
       status: "failed",
-      nodes: [{ node_id: "n", agent_type: "publisher", status: "failed", retry_count: 0, started_at: null, completed_at: null, duration_ms: null, error_message: "[attempt 1] Rejected by reviewer." }],
+      nodes: [{ node_id: "n", agent_type: "publisher", status: "failed", retry_count: 0, revision: 0, started_at: null, completed_at: null, duration_ms: null, error_message: "[attempt 1] Rejected by reviewer." }],
     }));
     expect(await screen.findByText("Rejected by you")).toBeInTheDocument();
     expect(screen.getByText(/You stopped this run/)).toBeInTheDocument();

@@ -94,15 +94,18 @@
     "outputs": [
       {
         "name": "message_id",
-        "title": "message id"
+        "title": "message id",
+        "editable": null
       },
       {
         "name": "sent_at",
-        "title": "sent time"
+        "title": "sent time",
+        "editable": null
       },
       {
         "name": "recipients",
-        "title": "recipients"
+        "title": "recipients",
+        "editable": null
       }
     ]
   },
@@ -186,7 +189,8 @@
     "outputs": [
       {
         "name": "image_paths",
-        "title": "images"
+        "title": "images",
+        "editable": null
       }
     ]
   },
@@ -329,15 +333,18 @@
     "outputs": [
       {
         "name": "platform",
-        "title": "platform"
+        "title": "platform",
+        "editable": null
       },
       {
         "name": "remote_url",
-        "title": "link"
+        "title": "link",
+        "editable": null
       },
       {
         "name": "platform_id",
-        "title": "upload id"
+        "title": "upload id",
+        "editable": null
       }
     ]
   },
@@ -397,11 +404,13 @@
     "outputs": [
       {
         "name": "notes",
-        "title": "notes"
+        "title": "notes",
+        "editable": "lines"
       },
       {
         "name": "sources",
-        "title": "sources"
+        "title": "sources",
+        "editable": null
       }
     ]
   },
@@ -475,11 +484,13 @@
     "outputs": [
       {
         "name": "video_path",
-        "title": "video"
+        "title": "video",
+        "editable": null
       },
       {
         "name": "duration_seconds",
-        "title": "duration"
+        "title": "duration",
+        "editable": null
       }
     ]
   },
@@ -578,15 +589,18 @@
     "outputs": [
       {
         "name": "title",
-        "title": "title"
+        "title": "title",
+        "editable": "text"
       },
       {
         "name": "summary",
-        "title": "summary"
+        "title": "summary",
+        "editable": "text"
       },
       {
         "name": "article_md",
-        "title": "article"
+        "title": "article",
+        "editable": "text"
       }
     ]
   }

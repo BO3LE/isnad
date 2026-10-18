@@ -19,7 +19,7 @@ test("Research → PDF → Email: run, approve the Email step, and it shows up o
 }) => {
   await signIn(page);
   await openTemplate(page, "Research → PDF → Email");
-  await runToCompletion(page, { approve: true });
+  await runToCompletion(page);
   await openOutputsFromCanvas(page);
 
   await expect(page.getByRole("heading", { name: "Text" })).toBeVisible();

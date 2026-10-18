@@ -9,7 +9,7 @@ test("Blog → Video → YouTube: run, approve the Publisher, and the MP4 + link
 }) => {
   await signIn(page);
   await openTemplate(page, "Blog → Video → YouTube");
-  await runToCompletion(page, { approve: true });
+  await runToCompletion(page);
   await openOutputsFromCanvas(page);
 
   // The video's output (video_path) becomes a "file" output — a FileCard under "Files", with a

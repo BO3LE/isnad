@@ -20,6 +20,8 @@ export interface RunBarProps {
   cancelling: boolean;
   onReview: () => void;
   onExit: () => void;
+  /** When a step waits for a person: before it sends, or after it runs with its result to review. */
+  momentOf?: (nodeId: string) => "before" | "after" | undefined;
 }
 
 function clock(ms: number): string {
@@ -32,7 +34,7 @@ function spoken(ms: number): string {
   return seconds < 60 ? `${seconds}s` : `${Math.floor(seconds / 60)}m ${seconds % 60}s`;
 }
 
-export function RunBar({ run, status, shown, titleOf, onCancel, cancelling, onReview, onExit }: RunBarProps) {
+export function RunBar({ run, status, shown, titleOf, onCancel, cancelling, onReview, onExit, momentOf }: RunBarProps) {
   const [now, setNow] = useState(() => Date.now());
   const finished = status === "succeeded" || status === "failed" || status === "cancelled";
 
@@ -56,7 +58,11 @@ export function RunBar({ run, status, shown, titleOf, onCancel, cancelling, onRe
 
   let message: string;
   if (!status || status === "queued") message = "Queued — starting in a moment…";
-  else if (status === "awaiting_approval" && waiting) message = `${titleOf(waiting.node_id)} is waiting for your approval. Nothing has been sent yet.`;
+  else if (status === "awaiting_approval" && waiting)
+    message =
+      momentOf?.(waiting.node_id) === "after"
+        ? `${titleOf(waiting.node_id)} has finished. Review its result before the run goes on.`
+        : `${titleOf(waiting.node_id)} is waiting for your approval. Nothing has been sent yet.`;
   else if (status === "succeeded") message = `Run finished in ${spoken(endedAt - startedAt)}.`;
   else if (status === "cancelled") message = "Run cancelled. Steps that hadn't started were skipped.";
   else if (status === "failed" && failedNode) {

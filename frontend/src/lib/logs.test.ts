@@ -11,6 +11,7 @@ const row = (over: Partial<LogEntry> = {}): LogEntry => ({
   agent_type: "publisher",
   status: "failed",
   retry_count: 0,
+  revision: 0,
   started_at: "2026-09-20T16:09:40.000Z",
   completed_at: "2026-09-20T16:11:12.000Z",
   duration_ms: 92000,
