@@ -41,11 +41,13 @@ CATALOG = [
         input_type="WriteInput",
         output_type="WriteOutput",
         config_schema={"properties": {}},
-        # As the real writer publishes them: the agent's own word for each field it hands on.
+        # As the real writer publishes them: the agent's own word for each field it hands on, and
+        # which of them its reviewer may change.
         outputs=[
-            AgentOutput(name="title", title="title"),
-            AgentOutput(name="summary", title="summary"),
-            AgentOutput(name="article_md", title="article"),
+            AgentOutput(name="title", title="title", editable="text"),
+            AgentOutput(name="summary", title="summary", editable="text"),
+            AgentOutput(name="article_md", title="article", editable="text"),
+            AgentOutput(name="pdf_path", title="PDF"),
         ],
     ),
 ]
