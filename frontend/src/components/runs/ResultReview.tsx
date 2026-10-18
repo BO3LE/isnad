@@ -33,9 +33,12 @@ function asText(field: EditableField): string {
 }
 
 function rowsFor(field: EditableField): number {
-  const lines = asText(field).split("\n").length;
+  const text = asText(field);
+  const lines = text.split("\n").length;
   if (field.kind === "lines") return Math.min(12, Math.max(4, lines + 1));
-  return asText(field).length < 120 ? 2 : Math.min(24, Math.max(6, lines + 2));
+  // A title or a summary is a line or two; anything with paragraphs (an article) gets room.
+  if (lines === 1 && text.length < 120) return 2;
+  return Math.min(24, Math.max(8, lines + 2, Math.ceil(text.length / 90)));
 }
 
 /** Only what the person actually changed, in the shape the API takes. */
